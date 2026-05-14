@@ -1,0 +1,27 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Database
+db.sqlite3
+
+# Node / React
+dashboard_app/node_modules/
+dashboard_app/dist/
+dashboard_app/.env.local
+dashboard_app/.env.*.local
+
+# OS
+.DS_Store
+.vscode/
+
+# Logs
+logs/
+*.log
