@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2 } from 'lucide-react';
 import './index.css';
 
 export default function App() {
@@ -96,6 +96,27 @@ export default function App() {
       });
   };
 
+  const handleDelete = (id) => {
+    if (window.confirm("Sei sicuro di voler eliminare questa chiusura? L'operazione è irreversibile.")) {
+      fetch(`/api/closures/delete/${id}/`, {
+        method: 'DELETE',
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          fetchClosures();
+          if (expandedId === id) setExpandedId(null);
+        } else {
+          alert("Errore durante l'eliminazione: " + data.error);
+        }
+      })
+      .catch(err => {
+        console.error("Errore eliminazione:", err);
+        alert("Errore di rete durante l'eliminazione.");
+      });
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Sidebar */}
@@ -160,6 +181,7 @@ export default function App() {
                   <th>Contanti</th>
                   <th>Pag. POS</th>
                   <th>Totale Generale</th>
+                  <th>Azioni</th>
                 </tr>
               </thead>
               <tbody>
@@ -176,11 +198,20 @@ export default function App() {
                       <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>
                         € {closure.summary.totale.toFixed(2)}
                       </td>
+                      <td>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} 
+                          title="Elimina"
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Trash2 size={16} color="var(--danger)" />
+                        </button>
+                      </td>
                     </tr>
                     
                     {expandedId === closure.id && (
                       <tr>
-                        <td colSpan="6" style={{ padding: 0, borderBottom: 'none' }}>
+                        <td colSpan="7" style={{ padding: 0, borderBottom: 'none' }}>
                           <div className="expanded-content">
                             
                             {/* Summary Edit Section */}

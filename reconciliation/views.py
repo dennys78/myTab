@@ -137,3 +137,17 @@ def api_update_closure(request, closure_id):
             return JsonResponse({'error': str(e)}, status=500)
             
     return JsonResponse({'error': 'Metodo non consentito. Usa PUT o POST.'}, status=405)
+
+@csrf_exempt
+def api_delete_closure(request, closure_id):
+    if request.method == 'DELETE':
+        try:
+            closure = CashClosure.objects.get(id=closure_id)
+            closure.delete()
+            return JsonResponse({'status': 'success', 'message': 'Chiusura eliminata correttamente.'})
+        except CashClosure.DoesNotExist:
+            return JsonResponse({'error': 'Chiusura non trovata'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+            
+    return JsonResponse({'error': 'Metodo non consentito. Usa DELETE.'}, status=405)
