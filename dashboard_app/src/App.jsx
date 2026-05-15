@@ -232,9 +232,14 @@ export default function App() {
                                     </button>
                                   </div>
                                 ) : (
-                                  <button onClick={(e) => { e.stopPropagation(); handleEditClick(closure); }} className="btn-edit" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                    <Edit2 size={14} /> Modifica
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(closure); }} className="btn-edit" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                      <Edit2 size={14} /> Modifica
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} className="btn-delete" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                      <Trash2 size={14} /> Elimina
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                               
