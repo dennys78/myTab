@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu } from 'lucide-react';
 import './index.css';
 
 export default function App() {
@@ -11,6 +11,9 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [saving, setSaving] = useState(false);
+  
+  // Mobile Menu state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const fetchClosures = () => {
     fetch('/api/closures/list/')
@@ -64,7 +67,7 @@ export default function App() {
     setEditFormData(prev => ({
       ...prev,
       items: prev.items.map(item => 
-        item.id === itemId ? { ...item, [field]: parseFloat(value) || 0 } : item
+        item.id === itemId ? { ...item, [field]: field === 'descrizione' ? value : (parseFloat(value) || 0) } : item
       )
     }));
   };
@@ -119,8 +122,14 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Sidebar Overlay */}
+      <div 
+        className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`} 
+        onClick={() => setIsMobileMenuOpen(false)}
+      ></div>
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Cigarette size={24} color="var(--accent)" />
           myTab
@@ -143,6 +152,17 @@ export default function App() {
 
       {/* Main Content */}
       <main className="main-content">
+        {/* Mobile Header */}
+        <div className="mobile-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)' }}>
+            <Cigarette size={24} />
+            myTab
+          </div>
+          <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
+            <Menu size={24} />
+          </button>
+        </div>
+
         <h1>Panoramica Chiusure</h1>
         
         {/* Stats */}
@@ -172,8 +192,9 @@ export default function App() {
               Nessuna chiusura presente.
             </div>
           ) : (
-            <table>
-              <thead>
+            <div className="table-responsive-wrapper">
+              <table>
+                <thead>
                 <tr>
                   <th></th>
                   <th>Data</th>
@@ -284,7 +305,19 @@ export default function App() {
                                   const editItem = editingId === closure.id ? editFormData.items.find(i => i.id === item.id) : item;
                                   return (
                                   <tr key={item.id} style={{ cursor: 'default' }}>
-                                    <td>{item.descrizione}</td>
+                                    <td>
+                                      {editingId === closure.id ? (
+                                        <input 
+                                          type="text"
+                                          value={editItem?.descrizione || ''}
+                                          onChange={(e) => handleItemInputChange(item.id, 'descrizione', e.target.value)}
+                                          style={{ width: '100%', minWidth: '120px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                          placeholder={item.descrizione}
+                                        />
+                                      ) : (
+                                        item.descrizione
+                                      )}
+                                    </td>
                                     <td>
                                       {editingId === closure.id ? (
                                         <input 
@@ -340,6 +373,7 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </main>

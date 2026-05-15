@@ -25,16 +25,54 @@ body {
   line-height: 1.5;
 }
 
-/* Layout */
 .app-container {
   display: flex;
   min-height: 100vh;
+  position: relative;
 }
 
 .main-content {
   flex: 1;
   padding: 2rem;
   overflow-y: auto;
+  width: 100%;
+}
+
+/* Header for mobile */
+.mobile-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  margin: -2rem -2rem 2rem -2rem;
+}
+
+.menu-button {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.menu-button:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 40;
+  backdrop-filter: blur(2px);
 }
 
 /* Typography */
@@ -95,6 +133,12 @@ h2 {
   border-radius: 12px;
   border: 1px solid var(--border);
   overflow: hidden;
+  width: 100%;
+}
+
+.table-responsive-wrapper {
+  overflow-x: auto;
+  width: 100%;
 }
 
 table {
@@ -147,6 +191,8 @@ tbody tr:hover {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  z-index: 50;
+  transition: transform 0.3s ease;
 }
 
 .sidebar-header {
@@ -191,4 +237,52 @@ tbody tr:hover {
 }
 .inner-table th {
   background: transparent;
+}
+
+/* Media Queries for Mobile Responsiveness */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay.show {
+    display: block;
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+
+  .main-content {
+    padding: 1rem;
+  }
+  
+  .mobile-header {
+    margin: -1rem -1rem 1rem -1rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  th, td {
+    padding: 0.75rem 1rem;
+    white-space: nowrap;
+  }
+  
+  .expanded-content {
+    padding: 1rem;
+  }
 }

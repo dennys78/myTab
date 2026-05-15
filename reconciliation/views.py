@@ -123,6 +123,7 @@ def api_update_closure(request, closure_id):
                         if 'entrate' in item_data: item.incomes = float(item_data['entrate'])
                         if 'uscite' in item_data: item.expenses = float(item_data['uscite'])
                         if 'saldo' in item_data: item.balance = float(item_data['saldo'])
+                        if 'descrizione' in item_data: item.department_name = str(item_data['descrizione'])
                         item.save()
                     except CashClosureItem.DoesNotExist:
                         pass # Ignora gli ID non validi
