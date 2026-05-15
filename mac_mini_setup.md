@@ -24,8 +24,8 @@ Assicurati che sul Mac Mini siano installati **Git** e **Docker Desktop** (o Doc
    docker-compose up -d --build
    ```
 
-A questo punto l'applicativo è in ascolto sulla **porta 80** del Mac Mini. 
-(Se il Mac Mini ha IP `192.168.1.100`, la dashboard sarà visibile dal browser semplicemente visitando `http://192.168.1.100`).
+A questo punto l'applicativo è in ascolto sulla **porta 8080** del Mac Mini. 
+(Se il Mac Mini ha IP `192.168.1.100`, la dashboard sarà visibile dal browser semplicemente visitando `http://192.168.1.100:8080`).
 
 ---
 
@@ -65,6 +65,6 @@ Quando lo sviluppatore effettua nuove modifiche al codice e le carica su GitHub,
 
 L'applicativo espone un endpoint per l'ingestion dei dati tramite OCR (OpenClaw).
 Se l'IP del Mac Mini è statico (es. `192.168.1.x`), assicurarsi che l'agente OCR invii i dati a:
-`http://<IP_MAC_MINI>/api/closures/insert/`
+`http://<IP_MAC_MINI>:8080/api/closures/insert/`
 
-Non c'è bisogno di specificare la porta 8000. Nginx sulla porta 80 farà da reverse-proxy intercettando tutto il traffico `/api/` e smistandolo in sicurezza al container Backend.
+Non c'è bisogno di specificare la porta 8000. Nginx sulla porta 8080 farà da reverse-proxy intercettando tutto il traffico `/api/` e smistandolo in sicurezza al container Backend.
