@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Camera, Tag, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles } from 'lucide-react';
 import AcquisisciChiusure from './AcquisisciChiusure';
 import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
@@ -148,16 +148,6 @@ export default function App() {
             <span>Chiusure Cassa</span>
           </div>
 
-          <div style={{ marginTop: '1rem', marginBottom: '0.5rem', paddingLeft: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>
-            Utility
-          </div>
-          <div
-            className={`nav-item ${currentView === 'acquisisci' ? 'active' : ''}`}
-            onClick={() => { setCurrentView('acquisisci'); setIsMobileMenuOpen(false); }}
-          >
-            <Camera size={20} />
-            <span>Acquisisci Chiusure</span>
-          </div>
           <div
             className={`nav-item ${currentView === 'acquisisci-ai' ? 'active' : ''}`}
             onClick={() => { setCurrentView('acquisisci-ai'); setIsMobileMenuOpen(false); }}
