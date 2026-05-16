@@ -82,9 +82,17 @@ export default function AcquisisciChiusure({ onBack }) {
   const handleItemChange = (id, field, value) => {
     setPreviewData(prev => ({
       ...prev,
-      items: prev.items.map(item => 
-        item.id === id ? { ...item, [field]: field === 'descrizione' ? value : (parseFloat(value) || 0) } : item
-      )
+      items: prev.items.map(item => {
+        if (item.id !== id) return item;
+        const updated = {
+          ...item,
+          [field]: field === 'descrizione' ? value : (parseFloat(value) || 0),
+        };
+        if (field === 'entrate' || field === 'uscite') {
+          updated.saldo = Math.round((updated.entrate - updated.uscite) * 100) / 100;
+        }
+        return updated;
+      })
     }));
   };
 
@@ -282,13 +290,15 @@ export default function AcquisisciChiusure({ onBack }) {
                       />
                     </td>
                     <td>
-                      <input 
-                        type="number" 
-                        value={item.saldo === 0 ? '' : item.saldo} 
-                        onChange={(e) => handleItemChange(item.id, 'saldo', e.target.value)}
-                        placeholder="0.00"
-                        style={{ width: '100px', padding: '0.5rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '6px' }}
-                      />
+                      <span style={{
+                        display: 'inline-block',
+                        width: '100px',
+                        padding: '0.5rem',
+                        fontWeight: '600',
+                        color: item.saldo > 0 ? 'var(--success, #22c55e)' : item.saldo < 0 ? 'var(--danger)' : 'var(--text-muted)',
+                      }}>
+                        {item.saldo.toFixed(2)}
+                      </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <button 

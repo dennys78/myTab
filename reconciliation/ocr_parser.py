@@ -115,13 +115,12 @@ def parse_closure_receipt(ocr_text: str) -> dict:
 
         entrate = amounts[0]
         uscite  = amounts[1]
-        saldo   = amounts[2] if len(amounts) >= 3 else round(entrate - uscite, 2)
 
         data['items'].append({
             'descrizione': desc,
             'entrate': entrate,
             'uscite':  uscite,
-            'saldo':   saldo,
+            'saldo':   round(entrate - uscite, 2),
         })
 
     # Deduplica per nome esatto: se due foto si sovrappongono, un reparto può
