@@ -287,6 +287,65 @@ tbody tr:hover {
   }
 }
 
+/* Acquisisci con IA — layout classes */
+.acq-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.acq-items-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.acq-items-table th,
+.acq-items-table td {
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.acq-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .acq-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .acq-items-table th,
+  .acq-items-table td {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.8rem;
+  }
+
+  .acq-items-table input[type="text"],
+  .acq-items-table input[type="number"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 0.8rem;
+  }
+
+  .acq-actions {
+    flex-direction: column-reverse;
+    gap: 0.75rem;
+  }
+
+  .acq-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Animations */
 @keyframes spin {
   from { transform: rotate(0deg); }
