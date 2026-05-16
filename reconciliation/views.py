@@ -294,16 +294,23 @@ def api_delete_department(request, dept_id):
 
 # ── IMPOSTAZIONI ─────────────────────────────────────────────────────────────
 
+def _get_groq_key():
+    key = os.environ.get('GROQ_API_KEY', '').strip()
+    if not key:
+        try:
+            key = AppSetting.objects.get(key='groq_api_key').value.strip()
+        except AppSetting.DoesNotExist:
+            pass
+    return key
+
+
 @csrf_exempt
 def api_get_settings(request):
     if request.method == 'GET':
-        key_configured = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
-        if not key_configured:
-            try:
-                key_configured = bool(AppSetting.objects.get(key='anthropic_api_key').value.strip())
-            except AppSetting.DoesNotExist:
-                pass
-        return JsonResponse({'status': 'success', 'data': {'anthropic_key_configured': key_configured}})
+        return JsonResponse({
+            'status': 'success',
+            'data': {'groq_key_configured': bool(_get_groq_key())},
+        })
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
@@ -312,10 +319,10 @@ def api_save_settings(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            key = data.get('anthropic_api_key', '').strip()
+            key = data.get('groq_api_key', '').strip()
             if key:
                 AppSetting.objects.update_or_create(
-                    key='anthropic_api_key',
+                    key='groq_api_key',
                     defaults={'value': key},
                 )
             return JsonResponse({'status': 'success'})
@@ -324,17 +331,7 @@ def api_save_settings(request):
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
-def _get_anthropic_key():
-    key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
-    if not key:
-        try:
-            key = AppSetting.objects.get(key='anthropic_api_key').value.strip()
-        except AppSetting.DoesNotExist:
-            pass
-    return key
-
-
-# ── ACQUISIZIONE IA (Claude claude-haiku-4-5) ─────────────────────────────────────────
+# ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
 
 AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
 Analizza questa immagine di un riepilogo di chiusura cassa ed estrai i dati.
@@ -373,44 +370,43 @@ def api_extract_closure_ai(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
-    api_key = _get_anthropic_key()
+    api_key = _get_groq_key()
     if not api_key:
-        return JsonResponse({'error': 'Chiave API Anthropic non configurata. Vai su Impostazioni per inserirla.'}, status=500)
+        return JsonResponse({'error': 'Chiave API Groq non configurata. Vai su Impostazioni per inserirla.'}, status=500)
 
     if not request.FILES:
         return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
 
     try:
-        import anthropic
+        from openai import OpenAI
 
-        # Costruisce il contenuto del messaggio con tutte le immagini allegate
+        client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
+
+        # Costruisce il contenuto con tutte le immagini (OpenAI-compatible format)
         content = []
         for file_key in request.FILES:
             f = request.FILES[file_key]
             mime = f.content_type or 'image/jpeg'
             b64 = base64.standard_b64encode(f.read()).decode('utf-8')
             content.append({
-                'type': 'image',
-                'source': {'type': 'base64', 'media_type': mime, 'data': b64},
+                'type': 'image_url',
+                'image_url': {'url': f'data:{mime};base64,{b64}'},
             })
         content.append({'type': 'text', 'text': AI_PROMPT})
 
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model='claude-haiku-4-5-20251001',
+        response = client.chat.completions.create(
+            model='meta-llama/llama-4-scout-17b-16e-instruct',
             max_tokens=2048,
             messages=[{'role': 'user', 'content': content}],
         )
 
-        raw_json = response.content[0].text.strip()
-        # Rimuove eventuale wrapper markdown che il modello potrebbe aggiungere
+        raw_json = response.choices[0].message.content.strip()
         if raw_json.startswith('```'):
             raw_json = raw_json.split('```')[1]
             if raw_json.startswith('json'):
                 raw_json = raw_json[4:]
         parsed = json.loads(raw_json)
 
-        # Normalizza e calcola saldo come entrate - uscite
         items = []
         for item in parsed.get('items', []):
             entrate = float(item.get('entrate', 0))
@@ -445,7 +441,7 @@ def api_extract_closure_ai(request):
             'status': 'success',
             'data': {
                 'date': parsed.get('date', ''),
-                'operator': 'IA Claude',
+                'operator': 'IA Groq',
                 'summary': {
                     'contanti':   float(summary.get('contanti', 0)),
                     'pag_pos':    float(summary.get('pag_pos', 0)),
