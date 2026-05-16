@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, PiggyBank } from 'lucide-react';
+import { Plus, Trash2, Loader2, PiggyBank, Pencil, Check, X } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
 export default function FondoCassa() {
@@ -18,6 +18,34 @@ export default function FondoCassa() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [filtro, setFiltro] = useState('mese');
+
+  // Editing inline
+  const [editingId, setEditingId] = useState(null);
+  const [editRow, setEditRow] = useState({});
+  const [updating, setUpdating] = useState(false);
+
+  const startEdit = (m) => {
+    setEditingId(m.id);
+    setEditRow({ date: m.date, importo: m.importo, descrizione: m.descrizione });
+  };
+  const cancelEdit = () => { setEditingId(null); setEditRow({}); };
+
+  const saveEdit = () => {
+    setUpdating(true);
+    fetch(`/api/fondo-cassa/${editingId}/update/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: editRow.date,
+        importo: parseFloat(editRow.importo) || 0,
+        descrizione: editRow.descrizione,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') { cancelEdit(); fetchData(); } })
+      .catch(() => {})
+      .finally(() => setUpdating(false));
+  };
 
   const movimentiFiltrati = movimenti.filter(m => {
     if (filtro === 'tutti') return true;
@@ -180,33 +208,66 @@ export default function FondoCassa() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Data', 'Descrizione', 'Importo', ...(isAdmin ? [''] : [])].map(h => (
+                  {['Data', 'Descrizione', 'Importo', ...(isAdmin ? ['Azioni'] : [])].map(h => (
                     <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {movimentiFiltrati.map(m => (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
-                      {new Date(m.date).toLocaleDateString('it-IT')}
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      {m.descrizione || (m.versamento_id ? 'Accantonamento da versamento' : '—')}
-                    </td>
-                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: m.importo >= 0 ? '#f59e0b' : 'var(--danger)' }}>
-                      {m.importo >= 0 ? '+' : ''}€ {Number(m.importo).toFixed(2)}
-                    </td>
-                    {isAdmin && (
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <button onClick={() => handleDelete(m.id)}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}>
-                          <Trash2 size={16} />
-                        </button>
+                {movimentiFiltrati.map(m => {
+                  const isEditing = editingId === m.id;
+                  const tdStyle = { padding: '0.6rem 1rem', borderBottom: '1px solid var(--border)' };
+                  const inpStyle = { padding: '0.35rem 0.5rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.875rem' };
+                  return (
+                    <tr key={m.id}>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        {isEditing
+                          ? <input type="date" value={editRow.date} onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))} style={{ ...inpStyle, width: '130px' }} />
+                          : new Date(m.date).toLocaleDateString('it-IT')}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                        {isEditing
+                          ? <input type="text" value={editRow.descrizione} onChange={e => setEditRow(r => ({ ...r, descrizione: e.target.value }))} style={{ ...inpStyle, width: '100%', minWidth: '180px' }} />
+                          : (m.descrizione || (m.versamento_id ? 'Accantonamento da versamento' : '—'))}
+                      </td>
+                      <td style={tdStyle}>
+                        {isEditing
+                          ? <input type="number" step="0.01" value={editRow.importo} onChange={e => setEditRow(r => ({ ...r, importo: e.target.value }))} style={{ ...inpStyle, width: '100px' }} />
+                          : <span style={{ fontWeight: 700, color: m.importo >= 0 ? '#f59e0b' : 'var(--danger)' }}>
+                              {m.importo >= 0 ? '+' : ''}€ {Number(m.importo).toFixed(2)}
+                            </span>}
+                      </td>
+                      {isAdmin && (
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <button onClick={saveEdit} disabled={updating}
+                                title="Salva"
+                                style={{ background: 'transparent', border: 'none', color: '#22c55e', cursor: 'pointer', padding: '0.25rem' }}>
+                                {updating ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+                              </button>
+                              <button onClick={cancelEdit} title="Annulla"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <button onClick={() => startEdit(m)} title="Modifica"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <Pencil size={15} />
+                              </button>
+                              <button onClick={() => handleDelete(m.id)} title="Elimina"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

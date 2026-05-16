@@ -772,3 +772,28 @@ def api_fondo_cassa_delete(request, mov_id):
         return JsonResponse({'status': 'success'})
     except FondoCassaMovimento.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+
+
+@csrf_exempt
+@require_admin
+def api_fondo_cassa_update(request, mov_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        m = FondoCassaMovimento.objects.get(id=mov_id)
+        if 'date' in data:
+            parsed = parse_date(data['date'])
+            if not parsed:
+                return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+            m.date = parsed
+        if 'importo' in data:
+            m.importo = float(data['importo'])
+        if 'descrizione' in data:
+            m.descrizione = data['descrizione'].strip()
+        m.save()
+        return JsonResponse({'status': 'success'})
+    except FondoCassaMovimento.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
