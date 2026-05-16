@@ -29,8 +29,8 @@ def parse_closure_receipt(ocr_text: str) -> dict:
             pass
 
     # --- SUMMARY ---
-    # L'OCR mette etichette e valori su righe separate.
-    # La riga dei valori ha esattamente 7 importi di fila (contanti, pag_pos, …, totale).
+    # I valori (contanti, pag_pos, …, totale) sono su una riga con 6-7 importi consecutivi.
+    # Le etichette ("Contanti", "Pag.Pos"…) sono sulla riga precedente — separata.
     for line in ocr_text.split('\n'):
         amounts = AMOUNT_RE.findall(line.replace('€', ''))
         if len(amounts) >= 6:
@@ -43,41 +43,41 @@ def parse_closure_receipt(ocr_text: str) -> dict:
     # --- ITEMS ---
     SKIP = {
         'TOTALE', 'SALDO', 'DATA', 'ENTRATE', 'USCITE', 'REPARTO',
-        'DESCRIZIONE', 'NOTE', 'PAG', 'CONTANTI', 'DISTRIB', 'RIEPILOGO',
-        'TELEFONO', 'CHIUSURA', 'CASSA',
+        'DESCRIZIONE', 'NOTE', 'PAG', 'CONTANTI', 'DISTRIB',
+        'RIEPILOGO', 'TELEFONO', 'CHIUSURA', 'CASSA',
     }
 
     for line in ocr_text.split('\n'):
-        # Rimuovi il simbolo € e i pipe come separatori di colonna
+        # Normalizza: rimuovi € e tratta | come spazio
         clean = line.replace('€', '').replace('|', ' ').strip()
         if not clean:
             continue
 
-        # Rimuovi spazzatura OCR iniziale: simboli, parentesi, lettere isolate
-        clean = re.sub(r'^[\[\(\{\|©=\-\s\.\,\!\@\#\$\%\^\&\*\~\`\'\"\{\}]+', '', clean)
+        # Se la riga contiene una data YYYY-MM-DD, prendi solo la parte dopo
+        date_parts = re.split(r'\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?', clean)
+        remainder = date_parts[-1] if len(date_parts) > 1 else clean
 
-        # Rimuovi prefisso data (es. "2026-05-09" o "2026-05-09.")
-        clean = re.sub(r'^\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?\s*', '', clean)
+        # Elimina tutto ciò che precede la prima lettera (simboli OCR, pipe, spazi)
+        remainder = re.sub(r'^[^A-Za-zÀÈÉÌÒÙàèéìòù]+', '', remainder)
+        if not remainder:
+            continue
 
-        # Cerca: nome_reparto (testo) + 3 importi italiani
+        # Cerca: nome_reparto + 3 importi italiani (separati da qualunque spazio/simbolo)
         m = re.search(
-            r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/0-9]*?)'
-            r'\s{2,}'
-            r'(-?[\d\.]+,\d{2})'    # entrate
+            r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/]*?)'
+            r'\s+'
+            r'(-?[\d\.]+,\d{2})'   # entrate
             r'[\s\€\|]+'
-            r'(-?[\d\.]+,\d{2})'    # uscite
+            r'(-?[\d\.]+,\d{2})'   # uscite
             r'[\s\€\|]+'
-            r'(-?[\d\.]+,\d{2})',   # saldo
-            clean,
+            r'(-?[\d\.]+,\d{2})',  # saldo
+            remainder,
             re.IGNORECASE
         )
         if not m:
             continue
 
         desc = re.sub(r'\s+', ' ', m.group(1)).strip().upper()
-
-        # Scarta singolo carattere OCR spurio iniziale (es. "L" davanti a "ART.")
-        desc = re.sub(r'^[A-Z]\s+(?=[A-Z])', '', desc)
 
         if len(desc) < 3:
             continue
