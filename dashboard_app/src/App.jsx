@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Camera } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Camera, Tag } from 'lucide-react';
 import AcquisisciChiusure from './AcquisisciChiusure';
+import RepartiManager from './RepartiManager';
 import './index.css';
 
 export default function App() {
@@ -155,6 +156,13 @@ export default function App() {
             <Camera size={20} />
             <span>Acquisisci Chiusure</span>
           </div>
+          <div
+            className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('reparti'); setIsMobileMenuOpen(false); }}
+          >
+            <Tag size={20} />
+            <span>Reparti</span>
+          </div>
 
           <div className="nav-item" style={{ marginTop: 'auto' }}>
             <Settings size={20} />
@@ -178,6 +186,8 @@ export default function App() {
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
+        ) : currentView === 'reparti' ? (
+          <RepartiManager />
         ) : (
           <>
             <h1>Panoramica Chiusure</h1>

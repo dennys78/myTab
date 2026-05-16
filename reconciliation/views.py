@@ -3,7 +3,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.db import transaction
-from .models import CashClosure, CashClosureItem
+from difflib import get_close_matches
+from .models import CashClosure, CashClosureItem, Department
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
@@ -86,6 +87,14 @@ def api_extract_closure(request):
 
             parsed_data = parse_closure_receipt(full_text)
             date_str = parsed_data['date'].isoformat() if parsed_data['date'] else ""
+
+            # Fuzzy match nomi reparti contro l'archivio dei reparti noti
+            known = list(Department.objects.values_list('name', flat=True))
+            if known:
+                for item in parsed_data['items']:
+                    matches = get_close_matches(item['descrizione'], known, n=1, cutoff=0.6)
+                    if matches:
+                        item['descrizione'] = matches[0]
 
             response_data = {
                 'date': date_str,
@@ -202,3 +211,59 @@ def api_delete_closure(request, closure_id):
             return JsonResponse({'error': str(e)}, status=500)
             
     return JsonResponse({'error': 'Metodo non consentito. Usa DELETE.'}, status=405)
+
+
+# ── REPARTI ──────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def api_list_departments(request):
+    if request.method == 'GET':
+        data = [{'id': d.id, 'name': d.name} for d in Department.objects.all()]
+        return JsonResponse({'status': 'success', 'data': data})
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+@csrf_exempt
+def api_create_department(request):
+    if request.method == 'POST':
+        try:
+            name = json.loads(request.body).get('name', '').strip().upper()
+            if not name:
+                return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
+            dept, created = Department.objects.get_or_create(name=name)
+            return JsonResponse({'status': 'success', 'id': dept.id, 'name': dept.name},
+                                status=201 if created else 200)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+@csrf_exempt
+def api_update_department(request, dept_id):
+    if request.method in ['POST', 'PUT']:
+        try:
+            dept = Department.objects.get(id=dept_id)
+            name = json.loads(request.body).get('name', '').strip().upper()
+            if not name:
+                return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
+            dept.name = name
+            dept.save()
+            return JsonResponse({'status': 'success', 'id': dept.id, 'name': dept.name})
+        except Department.DoesNotExist:
+            return JsonResponse({'error': 'Reparto non trovato.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+@csrf_exempt
+def api_delete_department(request, dept_id):
+    if request.method == 'DELETE':
+        try:
+            Department.objects.get(id=dept_id).delete()
+            return JsonResponse({'status': 'success'})
+        except Department.DoesNotExist:
+            return JsonResponse({'error': 'Reparto non trovato.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)

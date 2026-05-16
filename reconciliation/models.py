@@ -39,6 +39,18 @@ class CashClosureItem(models.Model):
     def __str__(self):
         return f"{self.department_name} (Saldo: € {self.balance})"
 
+class Department(models.Model):
+    name = models.CharField(max_length=150, unique=True, verbose_name="Nome Reparto")
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Reparto'
+        verbose_name_plural = 'Reparti'
+
+    def __str__(self):
+        return self.name
+
+
 class BankTransaction(models.Model):
     TRANSACTION_TYPES = [
         ('VERSAMENTO', 'Versamento Contanti'),
