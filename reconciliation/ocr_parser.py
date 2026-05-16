@@ -1,63 +1,83 @@
 import re
 from datetime import datetime
 
+
 def parse_closure_receipt(ocr_text: str) -> dict:
-    """
-    Analizza il testo grezzo estratto dall'OCR e restituisce un dizionario strutturato.
-    Gestisce formati numerici italiani (es. 1.250,00).
-    """
     data = {
         'date': None,
         'total_in': 0.00,
-        'total_out': 0.00,
-        'calculated_balance': 0.00,
+        'contanti': 0.00,
+        'pag_pos': 0.00,
+        'cassa_auto': 0.00,
+        'reso_cont': 0.00,
+        'reso_auto': 0.00,
+        'distrib': 0.00,
         'items': []
     }
-    
-    # Estrazione Data (es: "Data: 14/05/2026" o "14-05-2026")
-    date_match = re.search(r'(?:Data|Del)[\s:]*(\d{2}[/-]\d{2}[/-]\d{4})', ocr_text, re.IGNORECASE)
-    if date_match:
-        # Normalizziamo la data per Django (YYYY-MM-DD)
-        raw_date = date_match.group(1).replace('-', '/')
-        data['date'] = datetime.strptime(raw_date, "%d/%m/%Y").date()
-        
-    # Helper function per convertire stringhe "1.250,00" in float 1250.00
-    def str_to_float(match_obj):
-        if match_obj:
-            return float(match_obj.group(1).replace('.', '').replace(',', '.'))
+
+    def to_float(s):
+        if s:
+            return float(s.strip().replace('.', '').replace(',', '.'))
         return 0.00
 
-    # Estrazione Totale Incassi
-    in_match = re.search(r'TOTALE INCASS[IO][\s:]*([\d\.]+,\d{2})', ocr_text, re.IGNORECASE)
-    data['total_in'] = str_to_float(in_match)
-        
-    # Estrazione Totale Uscite
-    out_match = re.search(r'TOTALE USCITE[\s:]*([\d\.]+,\d{2})', ocr_text, re.IGNORECASE)
-    data['total_out'] = str_to_float(out_match)
-        
-    # Estrazione Saldo Finale
-    balance_match = re.search(r'SALDO FINALE[\s:]*([\d\.]+,\d{2})', ocr_text, re.IGNORECASE)
-    data['calculated_balance'] = str_to_float(balance_match)
-        
-    # Estrazione Righe Reparto (es. "TABACCHI 3.106,20 € 0,00 € 3.106,20 €")
-    # Cerchiamo un pattern: NOME REPARTO (almeno 3 lettere) seguito da 3 importi (Entrate, Uscite, Saldo)
-    # Può esserci l'euro in mezzo.
-    lines = ocr_text.split('\n')
-    for line in lines:
-        line_clean = line.replace('€', '').strip()
-        # Regex per cercare: TESTO (eventualmente con spazi) e 3 numeri con virgola
-        item_match = re.search(r'^([A-Z\s\.]+?)\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})', line_clean)
-        if item_match:
-            desc = item_match.group(1).strip()
-            # Ignora righe che sono chiaramente totali o intestazioni
-            if 'TOTALE' in desc.upper() or 'SALDO' in desc.upper() or len(desc) < 3:
-                continue
-                
-            data['items'].append({
-                'descrizione': desc,
-                'entrate': float(item_match.group(2).replace('.', '').replace(',', '.')),
-                'uscite': float(item_match.group(3).replace('.', '').replace(',', '.')),
-                'saldo': float(item_match.group(4).replace('.', '').replace(',', '.'))
-            })
+    # Data: "del 09/05/2026" oppure "Data: 14/05/2026"
+    date_match = re.search(r'(?:Data|del)[\s:]+(\d{2}[/-]\d{2}[/-]\d{4})', ocr_text, re.IGNORECASE)
+    if date_match:
+        try:
+            raw = date_match.group(1).replace('-', '/')
+            data['date'] = datetime.strptime(raw, "%d/%m/%Y").date()
+        except ValueError:
+            pass
+
+    # Campi riepilogo in fondo (seconda immagine)
+    # Es: "Contanti  3.682,80 €"
+    patterns = {
+        'contanti':   r'[Cc]ontanti\s+([\d\.]+,\d{2})',
+        'pag_pos':    r'[Pp]ag\.?\s*[Pp]os\s+([\d\.]+,\d{2})',
+        'cassa_auto': r'[Cc]assa\s+[Aa]uto\s+([\d\.]+,\d{2})',
+        'reso_cont':  r'[Rr]eso\s+[Cc]ont\.?\s+([\d\.]+,\d{2})',
+        'reso_auto':  r'[Rr]eso\s+[Aa]uto\s+([\d\.]+,\d{2})',
+        'distrib':    r'[Dd]istrib\.?\s+([\d\.]+,\d{2})',
+        'total_in':   r'TOTALE\s+([\d\.]+,\d{2})',
+    }
+    for field, pattern in patterns.items():
+        m = re.search(pattern, ocr_text, re.IGNORECASE)
+        if m:
+            data[field] = to_float(m.group(1))
+
+    # Righe reparto — formato tabella:
+    # "2026-05-09  TABACCHI   3.106,20 €   0,00 €   3.106,20 €   01"
+    # La data iniziale è opzionale (OCR potrebbe non stamparla su ogni riga).
+    SKIP = {'TOTALE', 'SALDO', 'DATA', 'ENTRATE', 'USCITE', 'REPARTO', 'DESCRIZIONE', 'NOTE', 'PAG'}
+    for line in ocr_text.split('\n'):
+        clean = line.replace('€', '').strip()
+        if not clean:
+            continue
+
+        # Pattern: (data opzionale) + nome reparto + 3 importi
+        m = re.search(
+            r'(?:\d{4}[-/]\d{2}[-/]\d{2}\s+)?'        # data opzionale
+            r'([A-ZÀÈÌÒÙA-Z][A-Z\sÀÈÉÌÒÙ\.\-\/]+?)'  # nome reparto (almeno maiuscolo)
+            r'\s{2,}'                                   # almeno 2 spazi (separa dal numero)
+            r'([\d\.]+,\d{2})'                         # entrate
+            r'\s+([\d\.]+,\d{2})'                      # uscite
+            r'\s+([\d\.]+,\d{2})',                      # saldo
+            clean
+        )
+        if not m:
+            continue
+
+        desc = m.group(1).strip()
+        if len(desc) < 3:
+            continue
+        if any(kw in desc.upper() for kw in SKIP):
+            continue
+
+        data['items'].append({
+            'descrizione': desc,
+            'entrate': to_float(m.group(2)),
+            'uscite':  to_float(m.group(3)),
+            'saldo':   to_float(m.group(4)),
+        })
 
     return data
