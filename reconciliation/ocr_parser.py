@@ -15,8 +15,11 @@ def parse_closure_receipt(ocr_text: str) -> dict:
         'items': []
     }
 
-    # Standard Italian format (1.234,56) OR amount without comma where OCR dropped it (5910€ → 59.10)
-    AMOUNT_RE = re.compile(r'-?[\d\.]+,\d{2}|-?\d{4,}\s*€')
+    # Three amount formats:
+    # 1. Italian comma-decimal: 1.234,56
+    # 2. OCR dropped comma, uses €: 184140€ → 1841.40
+    # 3. OCR read comma as period (period-decimal): 42.20 (1–3 digits before period)
+    AMOUNT_RE = re.compile(r'-?[\d\.]+,\d{2}|-?\d{4,}\s*€|-?\d{1,3}\.\d{2}(?!\d)')
 
     def to_float(s):
         s = s.strip()
@@ -49,12 +52,13 @@ def parse_closure_receipt(ocr_text: str) -> dict:
             break
 
     # --- ITEMS ---
-    # ENTRATE / USCITE are intentionally excluded: they appear as modifiers in legitimate
-    # department names (ALTRE ENTRATE, ALTRE USCITE) and those rows would fail on amounts anyway.
+    # Kept minimal: only words that appear in lines that also have amounts (subtotal rows).
+    # PAG, CASSA, CONTANTI, TELEFONO etc. removed because they appear in header/info lines
+    # with no amounts (filtered by the amounts check) OR in legitimate dept names (PAG FORNITORI).
     SKIP = {
-        'TOTALE', 'SALDO', 'DATA', 'REPARTO',
-        'DESCRIZIONE', 'NOTE', 'PAG', 'CONTANTI', 'DISTRIB',
-        'RIEPILOGO', 'TELEFONO', 'CHIUSURA', 'CASSA',
+        'TOTALE', 'SALDO', 'DATA',
+        'DESCRIZIONE', 'REPARTO',
+        'RIEPILOGO', 'CHIUSURA',
     }
 
     for line in ocr_text.split('\n'):
@@ -64,8 +68,8 @@ def parse_closure_receipt(ocr_text: str) -> dict:
         if not clean:
             continue
 
-        # Item rows always have an ISO date; split there to isolate the name+amounts portion
-        date_parts = re.split(r'\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?', clean)
+        # Item rows always have a date (ISO: 2026-05-09 or Italian: 16/04/2026)
+        date_parts = re.split(r'\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?|\d{2}[/-]\d{2}[/-]\d{4}', clean)
         has_date = len(date_parts) > 1
         remainder = date_parts[-1] if has_date else clean
         remainder = re.sub(r'^[^A-Za-zÀÈÉÌÒÙàèéìòù]+', '', remainder)
