@@ -41,7 +41,7 @@ function AppShell() {
   useEffect(() => { fetchClosures(); }, []);
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
-  const totalContanti = closures.reduce((acc, c) => acc + c.summary.contanti, 0);
+  const totalContanti = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0);
 
   const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
