@@ -599,12 +599,13 @@ def api_extract_closure_ai(request):
                 seen[name] = item
         items = list(seen.values())
 
-        totale   = float(summary.get('totale', 0))
-        pag_pos  = float(summary.get('pag_pos', 0))
-        distrib  = float(summary.get('distrib', 0))
+        totale    = float(summary.get('totale', 0))
+        pag_pos   = float(summary.get('pag_pos', 0))
+        distrib   = float(summary.get('distrib', 0))
         reso_auto = float(summary.get('reso_auto', 0))
         reso_cont = float(summary.get('reso_cont', 0))
-        differenza = round(totale - distrib - reso_auto - reso_cont - pag_pos, 2)
+        # differenza = cassetto fisico − importo atteso; al momento dell'estrazione cassetto = 0
+        differenza = 0.0
 
         return JsonResponse({
             'status': 'success',

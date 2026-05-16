@@ -52,14 +52,16 @@ function AppShell() {
 
   const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
 
-  const calcDifferenza = (s) =>
-    Math.round(((s.totale || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0) - (s.pag_pos || 0)) * 100) / 100;
+  const calcDifferenza = (s) => {
+    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
+    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setEditFormData(prev => {
       const updated = { ...prev, [name]: parseFloat(value) || 0 };
-      if (name !== 'totale_cassetto') updated.differenza = calcDifferenza(updated);
+      updated.differenza = calcDifferenza(updated);
       return updated;
     });
   };

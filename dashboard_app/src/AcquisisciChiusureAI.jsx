@@ -82,14 +82,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
     }));
   };
 
-  const calcDifferenza = (s) =>
-    Math.round(((s.totale || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0) - (s.pag_pos || 0)) * 100) / 100;
+  const calcDifferenza = (s) => {
+    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
+    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
+  };
 
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
     setPreviewData(prev => {
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      if (name !== 'totale_cassetto') updated.differenza = calcDifferenza(updated);
+      updated.differenza = calcDifferenza(updated);
       return { ...prev, summary: updated };
     });
   };
