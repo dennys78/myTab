@@ -65,6 +65,22 @@ class AppSetting(models.Model):
         return self.key
 
 
+class Versamento(models.Model):
+    date = models.DateField(verbose_name="Data Versamento")
+    operator = models.CharField(max_length=100, verbose_name="Operatore")
+    importo_versato = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo Versato")
+    saldo_precedente = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Saldo Precedente")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Versamento"
+        verbose_name_plural = "Versamenti"
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"Versamento {self.date.strftime('%d/%m/%Y')} — € {self.importo_versato} ({self.operator})"
+
+
 class BankTransaction(models.Model):
     TRANSACTION_TYPES = [
         ('VERSAMENTO', 'Versamento Contanti'),

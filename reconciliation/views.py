@@ -9,7 +9,7 @@ from django.db import transaction
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from difflib import get_close_matches
-from .models import CashClosure, CashClosureItem, Department, AppSetting
+from .models import CashClosure, CashClosureItem, Department, AppSetting, Versamento
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
@@ -631,3 +631,70 @@ def api_extract_closure_ai(request):
         return JsonResponse({'error': f'Risposta IA non in formato JSON valido: {e}'}, status=500)
     except Exception as e:
         return JsonResponse({'error': f'Errore acquisizione IA: {e}'}, status=500)
+
+
+# ── VERSAMENTI ────────────────────────────────────────────────────────────────
+
+def _get_saldo_cassa():
+    from django.db.models import Sum
+    tc   = CashClosure.objects.aggregate(s=Sum('totale_cassetto'))['s'] or 0
+    diff = CashClosure.objects.aggregate(s=Sum('differenza'))['s'] or 0
+    vers = Versamento.objects.aggregate(s=Sum('importo_versato'))['s'] or 0
+    return round(float(tc) + float(diff) - float(vers), 2)
+
+
+@csrf_exempt
+@require_auth
+def api_versamenti_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    items = Versamento.objects.all()
+    return JsonResponse({
+        'status': 'success',
+        'saldo_cassa': _get_saldo_cassa(),
+        'data': [{
+            'id': v.id,
+            'date': v.date.isoformat(),
+            'operator': v.operator,
+            'importo_versato': float(v.importo_versato),
+            'saldo_precedente': float(v.saldo_precedente),
+        } for v in items],
+    })
+
+
+@csrf_exempt
+@require_auth
+def api_versamenti_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        date_str = data.get('date', '')
+        parsed_date = parse_date(date_str)
+        if not parsed_date:
+            return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+        importo = float(data.get('importo_versato', 0))
+        if importo <= 0:
+            return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+        saldo_prec = _get_saldo_cassa()
+        v = Versamento.objects.create(
+            date=parsed_date,
+            operator=data.get('operator', ''),
+            importo_versato=importo,
+            saldo_precedente=saldo_prec,
+        )
+        return JsonResponse({'status': 'success', 'id': v.id, 'saldo_precedente': saldo_prec})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_admin
+def api_versamenti_delete(request, vers_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        Versamento.objects.get(id=vers_id).delete()
+        return JsonResponse({'status': 'success'})
+    except Versamento.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)

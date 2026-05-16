@@ -26,6 +26,11 @@ urlpatterns = [
     path('api/departments/update/<int:dept_id>/',   views.api_update_department),
     path('api/departments/delete/<int:dept_id>/',   views.api_delete_department),
 
+    # Versamenti
+    path('api/versamenti/',                         views.api_versamenti_list),
+    path('api/versamenti/create/',                  views.api_versamenti_create),
+    path('api/versamenti/<int:vers_id>/delete/',    views.api_versamenti_delete),
+
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),
     path('api/settings/',                           views.api_get_settings),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import Login from './Login';
 import AcquisisciChiusure from './AcquisisciChiusure';
@@ -7,12 +7,14 @@ import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
 import Impostazioni from './Impostazioni';
 import GestioneUtenti from './GestioneUtenti';
+import Versamenti from './Versamenti';
 import './index.css';
 
 function AppShell() {
   const { user, logout } = useAuth();
 
   const [closures, setClosures] = useState([]);
+  const [versamenti, setVersamenti] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
@@ -31,17 +33,22 @@ function AppShell() {
     if (!isAdmin) return;
     fetch('/api/closures/list/')
       .then(res => res.json())
-      .then(data => {
-        if (data.status === 'success') setClosures(data.data);
-        setLoading(false);
-      })
+      .then(data => { if (data.status === 'success') setClosures(data.data); setLoading(false); })
       .catch(() => setLoading(false));
   };
 
-  useEffect(() => { fetchClosures(); }, []);
+  const fetchVersamenti = () => {
+    fetch('/api/versamenti/')
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') setVersamenti(d.data); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { fetchClosures(); fetchVersamenti(); }, []);
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
-  const totalContanti = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0);
+  const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
+  const totalContanti = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
 
   const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
@@ -130,6 +137,10 @@ function AppShell() {
             <Sparkles size={20} /><span>Acquisisci con IA</span>
           </div>
 
+          <div className={`nav-item ${currentView === 'versamenti' ? 'active' : ''}`} onClick={() => navigate('versamenti')}>
+            <Wallet size={20} /><span>Versamenti</span>
+          </div>
+
           {isAdmin && (
             <>
               <div className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`} onClick={() => navigate('reparti')}>
@@ -176,6 +187,8 @@ function AppShell() {
           <Impostazioni />
         ) : currentView === 'utenti' ? (
           <GestioneUtenti />
+        ) : currentView === 'versamenti' ? (
+          <Versamenti />
         ) : (
           <>
             <h1>Panoramica Chiusure</h1>
@@ -187,7 +200,7 @@ function AppShell() {
               </div>
               <div className="stat-card">
                 <div className="stat-title">Contanti in Cassa</div>
-                <div className="stat-value success">€ {totalContanti.toFixed(2)}</div>
+                <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
               </div>
               <div className="stat-card">
                 <div className="stat-title">Chiusure Ricevute</div>
