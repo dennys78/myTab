@@ -7,6 +7,8 @@ export default function AcquisisciChiusure({ onBack }) {
   const [error, setError] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [rawText, setRawText] = useState(null);
+  const [showRaw, setShowRaw] = useState(false);
 
   const handleFileChange = (e) => {
     if (e.target.files) {
@@ -45,6 +47,7 @@ export default function AcquisisciChiusure({ onBack }) {
             dataWithIds.date = new Date().toISOString().split('T')[0];
           }
           setPreviewData(dataWithIds);
+          setRawText(data.data.raw_text || null);
         } else {
           setError(data.error || "Errore sconosciuto durante l'estrazione.");
         }
@@ -172,6 +175,22 @@ export default function AcquisisciChiusure({ onBack }) {
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', padding: '1rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <AlertCircle size={20} />
             {error}
+          </div>
+        )}
+
+        {rawText && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1rem', marginBottom: '2rem' }}>
+            <button
+              onClick={() => setShowRaw(v => !v)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem', padding: 0 }}
+            >
+              {showRaw ? '▲' : '▶'} Testo grezzo OCR (debug)
+            </button>
+            {showRaw && (
+              <pre style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '300px', overflowY: 'auto' }}>
+                {rawText}
+              </pre>
+            )}
           </div>
         )}
 
