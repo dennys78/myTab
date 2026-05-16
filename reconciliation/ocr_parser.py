@@ -120,4 +120,15 @@ def parse_closure_receipt(ocr_text: str) -> dict:
             'saldo':   saldo,
         })
 
+    # Deduplica per nome esatto: se due foto si sovrappongono, un reparto può
+    # comparire due volte. Si preferisce l'istanza con valori non-zero.
+    seen: dict = {}
+    for item in data['items']:
+        name = item['descrizione']
+        if name not in seen:
+            seen[name] = item
+        elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
+            seen[name] = item  # sostituisci lo zero con i dati reali
+    data['items'] = list(seen.values())
+
     return data

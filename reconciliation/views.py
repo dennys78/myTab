@@ -106,6 +106,17 @@ def api_extract_closure(request):
                     if matches:
                         item['descrizione'] = matches[0]
 
+            # Secondo dedup post-fuzzy: due letture OCR diverse dello stesso reparto
+            # possono convergere sullo stesso nome canonico dopo il match.
+            seen: dict = {}
+            for item in parsed_data['items']:
+                name = item['descrizione']
+                if name not in seen:
+                    seen[name] = item
+                elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
+                    seen[name] = item
+            parsed_data['items'] = list(seen.values())
+
             response_data = {
                 'date': date_str,
                 'operator': 'Sistema Esterno',
