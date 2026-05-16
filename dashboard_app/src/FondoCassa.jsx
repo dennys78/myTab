@@ -17,6 +17,19 @@ export default function FondoCassa() {
   const [descrizione, setDescrizione] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [filtro, setFiltro] = useState('mese');
+
+  const movimentiFiltrati = movimenti.filter(m => {
+    if (filtro === 'tutti') return true;
+    const data = new Date(m.date);
+    const ora = new Date();
+    if (filtro === 'mese') {
+      return data.getFullYear() === ora.getFullYear() && data.getMonth() === ora.getMonth();
+    }
+    // tre mesi
+    const treM = new Date(ora.getFullYear(), ora.getMonth() - 2, 1);
+    return data >= treM;
+  });
 
   const fetchData = () => {
     setLoading(true);
@@ -144,16 +157,24 @@ export default function FondoCassa() {
 
       {/* Storico movimenti */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0, fontSize: '1rem' }}>Storico Movimenti</h2>
+          <select value={filtro} onChange={e => setFiltro(e.target.value)}
+            style={{ padding: '0.4rem 0.75rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '6px', fontSize: '0.875rem', cursor: 'pointer' }}>
+            <option value="mese">Mese corrente</option>
+            <option value="tre">Tre mesi</option>
+            <option value="tutti">Tutti</option>
+          </select>
         </div>
 
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento...</div>
         ) : error ? (
           <div style={{ padding: '1.5rem', color: 'var(--danger)', fontSize: '0.9rem' }}>{error}</div>
-        ) : movimenti.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun movimento registrato.</div>
+        ) : movimentiFiltrati.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            {movimenti.length === 0 ? 'Nessun movimento registrato.' : 'Nessun movimento nel periodo selezionato.'}
+          </div>
         ) : (
           <div className="table-responsive-wrapper">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -165,7 +186,7 @@ export default function FondoCassa() {
                 </tr>
               </thead>
               <tbody>
-                {movimenti.map(m => (
+                {movimentiFiltrati.map(m => (
                   <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
                       {new Date(m.date).toLocaleDateString('it-IT')}
