@@ -51,6 +51,18 @@ class Department(models.Model):
         return self.name
 
 
+class AppSetting(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Impostazione'
+        verbose_name_plural = 'Impostazioni'
+
+    def __str__(self):
+        return self.key
+
+
 class BankTransaction(models.Model):
     TRANSACTION_TYPES = [
         ('VERSAMENTO', 'Versamento Contanti'),

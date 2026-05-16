@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.db import transaction
 from difflib import get_close_matches
-from .models import CashClosure, CashClosureItem, Department
+from .models import CashClosure, CashClosureItem, Department, AppSetting
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
@@ -292,6 +292,48 @@ def api_delete_department(request, dept_id):
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
+# ── IMPOSTAZIONI ─────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def api_get_settings(request):
+    if request.method == 'GET':
+        key_configured = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
+        if not key_configured:
+            try:
+                key_configured = bool(AppSetting.objects.get(key='anthropic_api_key').value.strip())
+            except AppSetting.DoesNotExist:
+                pass
+        return JsonResponse({'status': 'success', 'data': {'anthropic_key_configured': key_configured}})
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+@csrf_exempt
+def api_save_settings(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            key = data.get('anthropic_api_key', '').strip()
+            if key:
+                AppSetting.objects.update_or_create(
+                    key='anthropic_api_key',
+                    defaults={'value': key},
+                )
+            return JsonResponse({'status': 'success'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+def _get_anthropic_key():
+    key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if not key:
+        try:
+            key = AppSetting.objects.get(key='anthropic_api_key').value.strip()
+        except AppSetting.DoesNotExist:
+            pass
+    return key
+
+
 # ── ACQUISIZIONE IA (Claude claude-haiku-4-5) ─────────────────────────────────────────
 
 AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
@@ -331,9 +373,9 @@ def api_extract_closure_ai(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    api_key = _get_anthropic_key()
     if not api_key:
-        return JsonResponse({'error': 'ANTHROPIC_API_KEY non configurata sul server.'}, status=500)
+        return JsonResponse({'error': 'Chiave API Anthropic non configurata. Vai su Impostazioni per inserirla.'}, status=500)
 
     if not request.FILES:
         return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)

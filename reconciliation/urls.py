@@ -14,4 +14,7 @@ urlpatterns = [
     path('api/departments/delete/<int:dept_id>/', views.api_delete_department),
 
     path('api/closures/extract-ai/', views.api_extract_closure_ai),
+
+    path('api/settings/', views.api_get_settings),
+    path('api/settings/save/', views.api_save_settings),
 ]

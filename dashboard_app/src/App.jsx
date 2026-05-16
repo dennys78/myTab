@@ -3,6 +3,7 @@ import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Ci
 import AcquisisciChiusure from './AcquisisciChiusure';
 import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
+import Impostazioni from './Impostazioni';
 import './index.css';
 
 export default function App() {
@@ -172,7 +173,11 @@ export default function App() {
             <span>Reparti</span>
           </div>
 
-          <div className="nav-item" style={{ marginTop: 'auto' }}>
+          <div
+            className={`nav-item ${currentView === 'impostazioni' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('impostazioni'); setIsMobileMenuOpen(false); }}
+            style={{ marginTop: 'auto' }}
+          >
             <Settings size={20} />
             <span>Impostazioni</span>
           </div>
@@ -198,6 +203,8 @@ export default function App() {
           <AcquisisciChiusureAI onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
         ) : currentView === 'reparti' ? (
           <RepartiManager />
+        ) : currentView === 'impostazioni' ? (
+          <Impostazioni />
         ) : (
           <>
             <h1>Panoramica Chiusure</h1>
