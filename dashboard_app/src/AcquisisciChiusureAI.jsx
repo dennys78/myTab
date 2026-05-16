@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images } from 'lucide-react';
+import { useAuth } from './AuthContext';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -14,6 +15,7 @@ function useIsMobile() {
 
 export default function AcquisisciChiusureAI({ onBack }) {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const filesRef = useRef([]);            // ref stabile per evitare stale closure su mobile
@@ -111,7 +113,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: previewData.date,
-        operator: 'IA Groq',
+        operator: user?.username || 'IA Groq',
         summary: previewData.summary,
         items: previewData.items.map(({ id, ...r }) => r),
       }),
