@@ -15,10 +15,19 @@ def parse_closure_receipt(ocr_text: str) -> dict:
         'items': []
     }
 
-    AMOUNT_RE = re.compile(r'-?[\d\.]+,\d{2}')
+    # Standard Italian format (1.234,56) OR amount without comma where OCR dropped it (5910€ → 59.10)
+    AMOUNT_RE = re.compile(r'-?[\d\.]+,\d{2}|-?\d{4,}\s*€')
 
     def to_float(s):
-        return float(s.strip().replace('.', '').replace(',', '.'))
+        s = s.strip()
+        if ',' in s:
+            return float(s.replace('€', '').replace('.', '').replace(',', '.'))
+        # No-comma format: digits-only + € → insert decimal before last 2 digits
+        s = s.replace('€', '').replace(' ', '')
+        negative = s.startswith('-')
+        digits = s.lstrip('-').replace('.', '')
+        val = int(digits) / 100
+        return -val if negative else val
 
     # --- DATA ---
     date_match = re.search(r'(?:Data|del)\s+(\d{2}[/-]\d{2}[/-]\d{4})', ocr_text, re.IGNORECASE)
@@ -29,10 +38,9 @@ def parse_closure_receipt(ocr_text: str) -> dict:
             pass
 
     # --- SUMMARY ---
-    # I valori (contanti, pag_pos, …, totale) sono su una riga con 6-7 importi consecutivi.
-    # Le etichette ("Contanti", "Pag.Pos"…) sono sulla riga precedente — separata.
+    # Summary row has 6-7 Italian-format amounts on one line (label row is separate).
     for line in ocr_text.split('\n'):
-        amounts = AMOUNT_RE.findall(line.replace('€', ''))
+        amounts = re.findall(r'-?[\d\.]+,\d{2}', line.replace('€', ''))
         if len(amounts) >= 6:
             fields = ['contanti', 'pag_pos', 'cassa_auto', 'reso_cont', 'reso_auto', 'distrib', 'total_in']
             for i, field in enumerate(fields):
@@ -41,49 +49,69 @@ def parse_closure_receipt(ocr_text: str) -> dict:
             break
 
     # --- ITEMS ---
+    # ENTRATE / USCITE are intentionally excluded: they appear as modifiers in legitimate
+    # department names (ALTRE ENTRATE, ALTRE USCITE) and those rows would fail on amounts anyway.
     SKIP = {
-        'TOTALE', 'SALDO', 'DATA', 'ENTRATE', 'USCITE', 'REPARTO',
+        'TOTALE', 'SALDO', 'DATA', 'REPARTO',
         'DESCRIZIONE', 'NOTE', 'PAG', 'CONTANTI', 'DISTRIB',
         'RIEPILOGO', 'TELEFONO', 'CHIUSURA', 'CASSA',
     }
 
     for line in ocr_text.split('\n'):
-        # Normalizza: rimuovi € e tratta | come spazio
-        clean = line.replace('€', '').replace('|', ' ').strip()
+        # orig keeps € for the extended amount pattern; pipe → space for consistency
+        orig = line.replace('|', ' ')
+        clean = orig.replace('€', '').strip()
         if not clean:
             continue
 
-        # Se la riga contiene una data YYYY-MM-DD, prendi solo la parte dopo
+        # Item rows always have an ISO date; split there to isolate the name+amounts portion
         date_parts = re.split(r'\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?', clean)
-        remainder = date_parts[-1] if len(date_parts) > 1 else clean
-
-        # Elimina tutto ciò che precede la prima lettera (simboli OCR, pipe, spazi)
+        has_date = len(date_parts) > 1
+        remainder = date_parts[-1] if has_date else clean
         remainder = re.sub(r'^[^A-Za-zÀÈÉÌÒÙàèéìòù]+', '', remainder)
         if not remainder:
             continue
 
-        # Step 1: estrai il nome (lettere, spazi, punti, trattini)
+        # Step 1: extract department name from the first alphabetic run
         name_m = re.match(
             r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/]*)',
             remainder
         )
-        if not name_m:
-            continue
+        desc = re.sub(r'\s+', ' ', name_m.group(1)).strip().upper() if name_m else ''
 
-        desc = re.sub(r'\s+', ' ', name_m.group(1)).strip().upper()
-        if len(desc) < 5:           # filtra rumore OCR breve (es. "EUZU")
-            continue
+        # Fallback: if the first token is OCR noise (e.g. "euzu"), find the first word ≥ 5 letters
+        if len(desc) < 5:
+            alt = re.search(
+                r'[A-Za-zÀÈÉÌÒÙàèéìòù]{5,}(?:\s+[A-Za-zÀÈÉÌÒÙàèéìòù\.\/\-]+)*',
+                remainder
+            )
+            desc = re.sub(r'\s+', ' ', alt.group()).strip().upper() if alt else ''
+            if len(desc) < 5:
+                continue
+
         if any(kw in desc for kw in SKIP):
             continue
 
-        # Step 2: trova tutti gli importi italiani sulla riga (entrate, uscite, saldo)
-        amounts = AMOUNT_RE.findall(remainder)
+        # Step 2: extract amounts from the original line (with €) so the extended pattern works.
+        # This captures both standard "154,80" and garbled "15480€" → 154.80 forms.
+        amounts_raw = AMOUNT_RE.findall(orig)
+        amounts = [to_float(a) for a in amounts_raw]
+
         if len(amounts) < 2:
+            # If the row is clearly an item (has a date marker) but amounts are too garbled,
+            # include it with zeroes so the operator can fill in the values manually.
+            if has_date:
+                data['items'].append({
+                    'descrizione': desc,
+                    'entrate': 0.0,
+                    'uscite': 0.0,
+                    'saldo': 0.0,
+                })
             continue
 
-        entrate = to_float(amounts[0])
-        uscite  = to_float(amounts[1])
-        saldo   = to_float(amounts[2]) if len(amounts) >= 3 else round(entrate - uscite, 2)
+        entrate = amounts[0]
+        uscite  = amounts[1]
+        saldo   = amounts[2] if len(amounts) >= 3 else round(entrate - uscite, 2)
 
         data['items'].append({
             'descrizione': desc,
