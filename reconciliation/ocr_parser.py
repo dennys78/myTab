@@ -15,62 +15,73 @@ def parse_closure_receipt(ocr_text: str) -> dict:
         'items': []
     }
 
-    def to_float(s):
-        if s:
-            return float(s.strip().replace('.', '').replace(',', '.'))
-        return 0.00
+    AMOUNT_RE = re.compile(r'-?[\d\.]+,\d{2}')
 
-    # Data: "del 09/05/2026" oppure "Data: 14/05/2026"
-    date_match = re.search(r'(?:Data|del)[\s:]+(\d{2}[/-]\d{2}[/-]\d{4})', ocr_text, re.IGNORECASE)
+    def to_float(s):
+        return float(s.strip().replace('.', '').replace(',', '.'))
+
+    # --- DATA ---
+    date_match = re.search(r'(?:Data|del)\s+(\d{2}[/-]\d{2}[/-]\d{4})', ocr_text, re.IGNORECASE)
     if date_match:
         try:
-            raw = date_match.group(1).replace('-', '/')
-            data['date'] = datetime.strptime(raw, "%d/%m/%Y").date()
+            data['date'] = datetime.strptime(date_match.group(1).replace('-', '/'), "%d/%m/%Y").date()
         except ValueError:
             pass
 
-    # Campi riepilogo in fondo (seconda immagine)
-    # Es: "Contanti  3.682,80 €"
-    patterns = {
-        'contanti':   r'[Cc]ontanti\s+([\d\.]+,\d{2})',
-        'pag_pos':    r'[Pp]ag\.?\s*[Pp]os\s+([\d\.]+,\d{2})',
-        'cassa_auto': r'[Cc]assa\s+[Aa]uto\s+([\d\.]+,\d{2})',
-        'reso_cont':  r'[Rr]eso\s+[Cc]ont\.?\s+([\d\.]+,\d{2})',
-        'reso_auto':  r'[Rr]eso\s+[Aa]uto\s+([\d\.]+,\d{2})',
-        'distrib':    r'[Dd]istrib\.?\s+([\d\.]+,\d{2})',
-        'total_in':   r'TOTALE\s+([\d\.]+,\d{2})',
-    }
-    for field, pattern in patterns.items():
-        m = re.search(pattern, ocr_text, re.IGNORECASE)
-        if m:
-            data[field] = to_float(m.group(1))
-
-    # Righe reparto — formato tabella:
-    # "2026-05-09  TABACCHI   3.106,20 €   0,00 €   3.106,20 €   01"
-    # La data iniziale è opzionale (OCR potrebbe non stamparla su ogni riga).
-    SKIP = {'TOTALE', 'SALDO', 'DATA', 'ENTRATE', 'USCITE', 'REPARTO', 'DESCRIZIONE', 'NOTE', 'PAG'}
+    # --- SUMMARY ---
+    # L'OCR mette etichette e valori su righe separate.
+    # La riga dei valori ha esattamente 7 importi di fila (contanti, pag_pos, …, totale).
     for line in ocr_text.split('\n'):
-        clean = line.replace('€', '').strip()
+        amounts = AMOUNT_RE.findall(line.replace('€', ''))
+        if len(amounts) >= 6:
+            fields = ['contanti', 'pag_pos', 'cassa_auto', 'reso_cont', 'reso_auto', 'distrib', 'total_in']
+            for i, field in enumerate(fields):
+                if i < len(amounts):
+                    data[field] = to_float(amounts[i])
+            break
+
+    # --- ITEMS ---
+    SKIP = {
+        'TOTALE', 'SALDO', 'DATA', 'ENTRATE', 'USCITE', 'REPARTO',
+        'DESCRIZIONE', 'NOTE', 'PAG', 'CONTANTI', 'DISTRIB', 'RIEPILOGO',
+        'TELEFONO', 'CHIUSURA', 'CASSA',
+    }
+
+    for line in ocr_text.split('\n'):
+        # Rimuovi il simbolo € e i pipe come separatori di colonna
+        clean = line.replace('€', '').replace('|', ' ').strip()
         if not clean:
             continue
 
-        # Pattern: (data opzionale) + nome reparto + 3 importi
+        # Rimuovi spazzatura OCR iniziale: simboli, parentesi, lettere isolate
+        clean = re.sub(r'^[\[\(\{\|©=\-\s\.\,\!\@\#\$\%\^\&\*\~\`\'\"\{\}]+', '', clean)
+
+        # Rimuovi prefisso data (es. "2026-05-09" o "2026-05-09.")
+        clean = re.sub(r'^\d{4}[-/\.]\d{2}[-/\.]\d{2}\.?\s*', '', clean)
+
+        # Cerca: nome_reparto (testo) + 3 importi italiani
         m = re.search(
-            r'(?:\d{4}[-/]\d{2}[-/]\d{2}\s+)?'        # data opzionale
-            r'([A-ZÀÈÌÒÙA-Z][A-Z\sÀÈÉÌÒÙ\.\-\/]+?)'  # nome reparto (almeno maiuscolo)
-            r'\s{2,}'                                   # almeno 2 spazi (separa dal numero)
-            r'([\d\.]+,\d{2})'                         # entrate
-            r'\s+([\d\.]+,\d{2})'                      # uscite
-            r'\s+([\d\.]+,\d{2})',                      # saldo
-            clean
+            r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/0-9]*?)'
+            r'\s{2,}'
+            r'(-?[\d\.]+,\d{2})'    # entrate
+            r'[\s\€\|]+'
+            r'(-?[\d\.]+,\d{2})'    # uscite
+            r'[\s\€\|]+'
+            r'(-?[\d\.]+,\d{2})',   # saldo
+            clean,
+            re.IGNORECASE
         )
         if not m:
             continue
 
-        desc = m.group(1).strip()
+        desc = re.sub(r'\s+', ' ', m.group(1)).strip().upper()
+
+        # Scarta singolo carattere OCR spurio iniziale (es. "L" davanti a "ART.")
+        desc = re.sub(r'^[A-Z]\s+(?=[A-Z])', '', desc)
+
         if len(desc) < 3:
             continue
-        if any(kw in desc.upper() for kw in SKIP):
+        if any(kw in desc for kw in SKIP):
             continue
 
         data['items'].append({
