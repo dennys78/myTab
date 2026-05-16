@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine } from 'lucide-react';
+import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
 export default function Versamenti() {
@@ -19,6 +19,35 @@ export default function Versamenti() {
   const [saveError, setSaveError] = useState(null);
 
   const nettoAlBanco = Math.max(0, (parseFloat(importo) || 0) - (parseFloat(accantonamento) || 0));
+
+  // Editing inline
+  const [editingId, setEditingId] = useState(null);
+  const [editRow, setEditRow] = useState({});
+  const [updating, setUpdating] = useState(false);
+
+  const startEdit = (v) => {
+    setEditingId(v.id);
+    setEditRow({ date: v.date, operator: v.operator, importo_versato: v.importo_versato, accantonamento: v.accantonamento });
+  };
+  const cancelEdit = () => { setEditingId(null); setEditRow({}); };
+
+  const saveEdit = () => {
+    setUpdating(true);
+    fetch(`/api/versamenti/${editingId}/update/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: editRow.date,
+        operator: editRow.operator,
+        importo_versato: parseFloat(editRow.importo_versato) || 0,
+        accantonamento: parseFloat(editRow.accantonamento) || 0,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') { cancelEdit(); fetchData(); } })
+      .catch(() => {})
+      .finally(() => setUpdating(false));
+  };
 
   const fetchData = () => {
     setLoading(true);
@@ -211,42 +240,74 @@ export default function Versamenti() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Data', 'Operatore', 'Saldo Prec.', 'Prelevato', 'Fondo', 'Netto Banco', 'Saldo Dopo', ...(isAdmin ? [''] : [])].map(h => (
+                  {['Data', 'Operatore', 'Saldo Prec.', 'Prelevato', 'Fondo', 'Netto Banco', 'Saldo Dopo', ...(isAdmin ? ['Azioni'] : [])].map(h => (
                     <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {versamenti.map(v => {
+                  const isEditing = editingId === v.id;
                   const saldoDopo = v.saldo_precedente - v.importo_versato;
                   const netto = v.importo_versato - (v.accantonamento || 0);
+                  const tdStyle = { padding: '0.85rem 1rem', borderBottom: '1px solid var(--border)' };
+                  const inpStyle = { padding: '0.35rem 0.5rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.875rem' };
                   return (
-                    <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
-                        {new Date(v.date).toLocaleDateString('it-IT')}
+                    <tr key={v.id}>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        {isEditing
+                          ? <input type="date" value={editRow.date} onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))} style={{ ...inpStyle, width: '130px' }} />
+                          : new Date(v.date).toLocaleDateString('it-IT')}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem' }}>{v.operator}</td>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>
+                      <td style={tdStyle}>
+                        {isEditing
+                          ? <input type="text" value={editRow.operator} onChange={e => setEditRow(r => ({ ...r, operator: e.target.value }))} style={{ ...inpStyle, width: '110px' }} />
+                          : v.operator}
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>
                         € {v.saldo_precedente.toFixed(2)}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--danger)' }}>
-                        − € {v.importo_versato.toFixed(2)}
+                      <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--danger)' }}>
+                        {isEditing
+                          ? <input type="number" min="0.01" step="0.01" value={editRow.importo_versato} onChange={e => setEditRow(r => ({ ...r, importo_versato: e.target.value }))} style={{ ...inpStyle, width: '90px' }} />
+                          : `− € ${v.importo_versato.toFixed(2)}`}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem', color: v.accantonamento > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                        {v.accantonamento > 0 ? `€ ${v.accantonamento.toFixed(2)}` : '—'}
+                      <td style={{ ...tdStyle, color: v.accantonamento > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                        {isEditing
+                          ? <input type="number" min="0" step="0.01" value={editRow.accantonamento} onChange={e => setEditRow(r => ({ ...r, accantonamento: e.target.value }))} style={{ ...inpStyle, width: '90px' }} />
+                          : (v.accantonamento > 0 ? `€ ${v.accantonamento.toFixed(2)}` : '—')}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: 'var(--accent)' }}>
+                      <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--accent)' }}>
                         € {netto.toFixed(2)}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: saldoDopo >= 0 ? '#22c55e' : 'var(--danger)' }}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: saldoDopo >= 0 ? '#22c55e' : 'var(--danger)' }}>
                         € {saldoDopo.toFixed(2)}
                       </td>
                       {isAdmin && (
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <button onClick={() => handleDelete(v.id)}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}>
-                            <Trash2 size={16} />
-                          </button>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <button onClick={saveEdit} disabled={updating} title="Salva"
+                                style={{ background: 'transparent', border: 'none', color: '#22c55e', cursor: 'pointer', padding: '0.25rem' }}>
+                                {updating ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+                              </button>
+                              <button onClick={cancelEdit} title="Annulla"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <button onClick={() => startEdit(v)} title="Modifica"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <Pencil size={15} />
+                              </button>
+                              <button onClick={() => handleDelete(v.id)} title="Elimina"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       )}
                     </tr>

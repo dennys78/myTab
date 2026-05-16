@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/versamenti/',                         views.api_versamenti_list),
     path('api/versamenti/create/',                  views.api_versamenti_create),
     path('api/versamenti/<int:vers_id>/delete/',    views.api_versamenti_delete),
+    path('api/versamenti/<int:vers_id>/update/',    views.api_versamenti_update),
 
     # Fondo Cassa
     path('api/fondo-cassa/',                        views.api_fondo_cassa_list),

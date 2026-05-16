@@ -712,6 +712,54 @@ def api_versamenti_delete(request, vers_id):
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
 
 
+@csrf_exempt
+@require_admin
+def api_versamenti_update(request, vers_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        v = Versamento.objects.get(id=vers_id)
+        if 'date' in data:
+            parsed = parse_date(data['date'])
+            if not parsed:
+                return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+            v.date = parsed
+        if 'operator' in data:
+            v.operator = data['operator'].strip()
+        if 'importo_versato' in data:
+            importo = float(data['importo_versato'])
+            if importo <= 0:
+                return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+            v.importo_versato = importo
+        if 'accantonamento' in data:
+            acc = float(data['accantonamento'])
+            if acc < 0:
+                return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
+            old_acc = float(v.accantonamento)
+            v.accantonamento = acc
+            # sync linked FondoCassaMovimento
+            fondo_qs = FondoCassaMovimento.objects.filter(versamento=v)
+            if acc > 0:
+                if fondo_qs.exists():
+                    fondo_qs.update(importo=acc, date=v.date)
+                else:
+                    FondoCassaMovimento.objects.create(
+                        date=v.date,
+                        importo=acc,
+                        descrizione=f'Accantonamento da versamento del {v.date.strftime("%d/%m/%Y")} ({v.operator})',
+                        versamento=v,
+                    )
+            else:
+                fondo_qs.delete()
+        v.save()
+        return JsonResponse({'status': 'success'})
+    except Versamento.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
 # ── FONDO CASSA ───────────────────────────────────────────────────────────────
 
 def _get_fondo_cassa():
