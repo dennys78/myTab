@@ -31,6 +31,11 @@ urlpatterns = [
     path('api/versamenti/create/',                  views.api_versamenti_create),
     path('api/versamenti/<int:vers_id>/delete/',    views.api_versamenti_delete),
 
+    # Fondo Cassa
+    path('api/fondo-cassa/',                        views.api_fondo_cassa_list),
+    path('api/fondo-cassa/create/',                 views.api_fondo_cassa_create),
+    path('api/fondo-cassa/<int:mov_id>/delete/',    views.api_fondo_cassa_delete),
+
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),
     path('api/settings/',                           views.api_get_settings),

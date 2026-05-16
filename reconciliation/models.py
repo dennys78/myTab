@@ -70,6 +70,7 @@ class Versamento(models.Model):
     operator = models.CharField(max_length=100, verbose_name="Operatore")
     importo_versato = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo Versato")
     saldo_precedente = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Saldo Precedente")
+    accantonamento = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Accantonamento Fondo Cassa")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -79,6 +80,26 @@ class Versamento(models.Model):
 
     def __str__(self):
         return f"Versamento {self.date.strftime('%d/%m/%Y')} — € {self.importo_versato} ({self.operator})"
+
+
+class FondoCassaMovimento(models.Model):
+    date = models.DateField(verbose_name="Data")
+    importo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo")
+    descrizione = models.CharField(max_length=200, blank=True, verbose_name="Descrizione")
+    versamento = models.ForeignKey(
+        Versamento, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='fondo_movimenti',
+        verbose_name="Versamento di origine",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Movimento Fondo Cassa"
+        verbose_name_plural = "Movimenti Fondo Cassa"
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"Fondo {self.date.strftime('%d/%m/%Y')} € {self.importo}"
 
 
 class BankTransaction(models.Model):

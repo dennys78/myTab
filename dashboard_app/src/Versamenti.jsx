@@ -14,8 +14,11 @@ export default function Versamenti() {
   // Form
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [importo, setImporto] = useState('');
+  const [accantonamento, setAccantonamento] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+
+  const nettoAlBanco = Math.max(0, (parseFloat(importo) || 0) - (parseFloat(accantonamento) || 0));
 
   const fetchData = () => {
     setLoading(true);
@@ -48,12 +51,14 @@ export default function Versamenti() {
         date,
         operator: user?.username || '',
         importo_versato: imp,
+        accantonamento: parseFloat(accantonamento) || 0,
       }),
     })
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
           setImporto('');
+          setAccantonamento('');
           setDate(new Date().toISOString().split('T')[0]);
           fetchData();
         } else {
@@ -134,11 +139,31 @@ export default function Versamenti() {
 
             {/* Importo */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Importo Versato (€)</label>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Importo Prelevato (€)</label>
               <input type="number" min="0.01" step="0.01" value={importo}
                 onChange={e => setImporto(e.target.value)}
                 placeholder="0.00"
                 style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
+            </div>
+
+            {/* Accantonamento */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Accantonamento Fondo (€)</label>
+              <input type="number" min="0" step="0.01" value={accantonamento}
+                onChange={e => setAccantonamento(e.target.value)}
+                placeholder="0.00"
+                style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
+            </div>
+
+            {/* Netto al banco (dinamico) */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Netto al Banco</label>
+              <div style={{
+                ...inp, display: 'flex', alignItems: 'center',
+                fontWeight: 700, color: nettoAlBanco > 0 ? 'var(--accent)' : 'var(--text-muted)',
+              }}>
+                € {nettoAlBanco.toFixed(2)}
+              </div>
             </div>
 
             {/* Saldo precedente (calcolato) */}
@@ -186,7 +211,7 @@ export default function Versamenti() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Data', 'Operatore', 'Saldo Prec.', 'Importo Versato', 'Saldo Dopo', ...(isAdmin ? [''] : [])].map(h => (
+                  {['Data', 'Operatore', 'Saldo Prec.', 'Prelevato', 'Fondo', 'Netto Banco', 'Saldo Dopo', ...(isAdmin ? [''] : [])].map(h => (
                     <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -194,6 +219,7 @@ export default function Versamenti() {
               <tbody>
                 {versamenti.map(v => {
                   const saldoDopo = v.saldo_precedente - v.importo_versato;
+                  const netto = v.importo_versato - (v.accantonamento || 0);
                   return (
                     <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.85rem 1rem', whiteSpace: 'nowrap' }}>
@@ -203,8 +229,14 @@ export default function Versamenti() {
                       <td style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>
                         € {v.saldo_precedente.toFixed(2)}
                       </td>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--accent)' }}>
+                      <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--danger)' }}>
                         − € {v.importo_versato.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem', color: v.accantonamento > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                        {v.accantonamento > 0 ? `€ ${v.accantonamento.toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: 'var(--accent)' }}>
+                        € {netto.toFixed(2)}
                       </td>
                       <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: saldoDopo >= 0 ? '#22c55e' : 'var(--danger)' }}>
                         € {saldoDopo.toFixed(2)}

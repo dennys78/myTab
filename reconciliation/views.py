@@ -9,7 +9,7 @@ from django.db import transaction
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from difflib import get_close_matches
-from .models import CashClosure, CashClosureItem, Department, AppSetting, Versamento
+from .models import CashClosure, CashClosureItem, Department, AppSetting, Versamento, FondoCassaMovimento
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
@@ -657,6 +657,7 @@ def api_versamenti_list(request):
             'date': v.date.isoformat(),
             'operator': v.operator,
             'importo_versato': float(v.importo_versato),
+            'accantonamento': float(v.accantonamento),
             'saldo_precedente': float(v.saldo_precedente),
         } for v in items],
     })
@@ -674,15 +675,26 @@ def api_versamenti_create(request):
         if not parsed_date:
             return JsonResponse({'status': 'error', 'error': 'Data non valida'})
         importo = float(data.get('importo_versato', 0))
+        accantonamento = float(data.get('accantonamento', 0))
         if importo <= 0:
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+        if accantonamento < 0 or accantonamento > importo:
+            return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
         saldo_prec = _get_saldo_cassa()
         v = Versamento.objects.create(
             date=parsed_date,
             operator=data.get('operator', ''),
             importo_versato=importo,
+            accantonamento=accantonamento,
             saldo_precedente=saldo_prec,
         )
+        if accantonamento > 0:
+            FondoCassaMovimento.objects.create(
+                date=parsed_date,
+                importo=accantonamento,
+                descrizione=f'Accantonamento da versamento del {parsed_date.strftime("%d/%m/%Y")} ({data.get("operator", "")})',
+                versamento=v,
+            )
         return JsonResponse({'status': 'success', 'id': v.id, 'saldo_precedente': saldo_prec})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
@@ -697,4 +709,66 @@ def api_versamenti_delete(request, vers_id):
         Versamento.objects.get(id=vers_id).delete()
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+
+
+# ── FONDO CASSA ───────────────────────────────────────────────────────────────
+
+def _get_fondo_cassa():
+    from django.db.models import Sum
+    total = FondoCassaMovimento.objects.aggregate(s=Sum('importo'))['s'] or 0
+    return round(float(total), 2)
+
+
+@csrf_exempt
+@require_auth
+def api_fondo_cassa_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    movimenti = FondoCassaMovimento.objects.select_related('versamento').all()
+    return JsonResponse({
+        'status': 'success',
+        'totale': _get_fondo_cassa(),
+        'data': [{
+            'id': m.id,
+            'date': m.date.isoformat(),
+            'importo': float(m.importo),
+            'descrizione': m.descrizione,
+            'versamento_id': m.versamento_id,
+        } for m in movimenti],
+    })
+
+
+@csrf_exempt
+@require_admin
+def api_fondo_cassa_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        parsed_date = parse_date(data.get('date', ''))
+        if not parsed_date:
+            return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+        importo = float(data.get('importo', 0))
+        if importo == 0:
+            return JsonResponse({'status': 'error', 'error': 'Importo non può essere zero'})
+        m = FondoCassaMovimento.objects.create(
+            date=parsed_date,
+            importo=importo,
+            descrizione=data.get('descrizione', '').strip(),
+        )
+        return JsonResponse({'status': 'success', 'id': m.id})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_admin
+def api_fondo_cassa_delete(request, mov_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        FondoCassaMovimento.objects.get(id=mov_id).delete()
+        return JsonResponse({'status': 'success'})
+    except FondoCassaMovimento.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)

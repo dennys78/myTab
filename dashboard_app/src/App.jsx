@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import Login from './Login';
 import AcquisisciChiusure from './AcquisisciChiusure';
@@ -8,6 +8,7 @@ import RepartiManager from './RepartiManager';
 import Impostazioni from './Impostazioni';
 import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
+import FondoCassa from './FondoCassa';
 import './index.css';
 
 function AppShell() {
@@ -15,6 +16,7 @@ function AppShell() {
 
   const [closures, setClosures] = useState([]);
   const [versamenti, setVersamenti] = useState([]);
+  const [fondoCassa, setFondoCassa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
@@ -44,7 +46,14 @@ function AppShell() {
       .catch(() => {});
   };
 
-  useEffect(() => { fetchClosures(); fetchVersamenti(); }, []);
+  const fetchFondoCassa = () => {
+    fetch('/api/fondo-cassa/')
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') setFondoCassa(d.totale); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { fetchClosures(); fetchVersamenti(); fetchFondoCassa(); }, []);
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
@@ -141,6 +150,10 @@ function AppShell() {
             <Wallet size={20} /><span>Versamenti</span>
           </div>
 
+          <div className={`nav-item ${currentView === 'fondo-cassa' ? 'active' : ''}`} onClick={() => navigate('fondo-cassa')}>
+            <PiggyBank size={20} /><span>Fondo Cassa</span>
+          </div>
+
           {isAdmin && (
             <>
               <div className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`} onClick={() => navigate('reparti')}>
@@ -189,6 +202,8 @@ function AppShell() {
           <GestioneUtenti />
         ) : currentView === 'versamenti' ? (
           <Versamenti />
+        ) : currentView === 'fondo-cassa' ? (
+          <FondoCassa />
         ) : (
           <>
             <h1>Panoramica Chiusure</h1>
@@ -201,6 +216,10 @@ function AppShell() {
               <div className="stat-card">
                 <div className="stat-title">Contanti in Cassa</div>
                 <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-title">Fondo Cassa</div>
+                <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
               </div>
               <div className="stat-card">
                 <div className="stat-title">Chiusure Ricevute</div>
