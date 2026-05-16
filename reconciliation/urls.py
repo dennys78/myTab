@@ -12,4 +12,6 @@ urlpatterns = [
     path('api/departments/create/', views.api_create_department),
     path('api/departments/update/<int:dept_id>/', views.api_update_department),
     path('api/departments/delete/<int:dept_id>/', views.api_delete_department),
+
+    path('api/closures/extract-ai/', views.api_extract_closure_ai),
 ]

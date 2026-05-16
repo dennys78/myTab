@@ -1,4 +1,6 @@
 import json
+import base64
+import os
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
@@ -288,3 +290,134 @@ def api_delete_department(request, dept_id):
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+# ── ACQUISIZIONE IA (Claude claude-haiku-4-5) ─────────────────────────────────────────
+
+AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
+Analizza questa immagine di un riepilogo di chiusura cassa ed estrai i dati.
+
+Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessun testo aggiuntivo) con questa struttura esatta:
+
+{
+  "date": "YYYY-MM-DD",
+  "summary": {
+    "contanti": 0.00,
+    "pag_pos": 0.00,
+    "cassa_auto": 0.00,
+    "reso_cont": 0.00,
+    "reso_auto": 0.00,
+    "distrib": 0.00,
+    "totale": 0.00
+  },
+  "items": [
+    {"descrizione": "NOME REPARTO", "entrate": 0.00, "uscite": 0.00, "saldo": 0.00}
+  ]
+}
+
+Regole:
+- Data in formato YYYY-MM-DD
+- Tutti gli importi sono numeri float (non stringhe)
+- saldo = entrate - uscite (può essere negativo)
+- Nomi reparto in MAIUSCOLO
+- Includi TUTTI i singoli reparti visibili; escludi righe di totale/subtotale di sezione
+- Mappa le colonne del summary: contanti→Contanti, pag_pos→Pag.Pos, cassa_auto→Cassa Auto,
+  reso_cont→Reso Cont., reso_auto→Reso Auto, distrib→Distrib., totale→TOTALE
+- Se un valore non è leggibile usa 0.00"""
+
+
+@csrf_exempt
+def api_extract_closure_ai(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if not api_key:
+        return JsonResponse({'error': 'ANTHROPIC_API_KEY non configurata sul server.'}, status=500)
+
+    if not request.FILES:
+        return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
+
+    try:
+        import anthropic
+
+        # Costruisce il contenuto del messaggio con tutte le immagini allegate
+        content = []
+        for file_key in request.FILES:
+            f = request.FILES[file_key]
+            mime = f.content_type or 'image/jpeg'
+            b64 = base64.standard_b64encode(f.read()).decode('utf-8')
+            content.append({
+                'type': 'image',
+                'source': {'type': 'base64', 'media_type': mime, 'data': b64},
+            })
+        content.append({'type': 'text', 'text': AI_PROMPT})
+
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=2048,
+            messages=[{'role': 'user', 'content': content}],
+        )
+
+        raw_json = response.content[0].text.strip()
+        # Rimuove eventuale wrapper markdown che il modello potrebbe aggiungere
+        if raw_json.startswith('```'):
+            raw_json = raw_json.split('```')[1]
+            if raw_json.startswith('json'):
+                raw_json = raw_json[4:]
+        parsed = json.loads(raw_json)
+
+        # Normalizza e calcola saldo come entrate - uscite
+        items = []
+        for item in parsed.get('items', []):
+            entrate = float(item.get('entrate', 0))
+            uscite = float(item.get('uscite', 0))
+            items.append({
+                'descrizione': str(item.get('descrizione', '')).strip().upper(),
+                'entrate': entrate,
+                'uscite': uscite,
+                'saldo': round(entrate - uscite, 2),
+            })
+
+        summary = parsed.get('summary', {})
+
+        # Fuzzy match + dedup contro archivio reparti
+        known = list(Department.objects.values_list('name', flat=True))
+        if known:
+            for item in items:
+                matches = get_close_matches(item['descrizione'], known, n=1, cutoff=0.6)
+                if matches:
+                    item['descrizione'] = matches[0]
+
+        seen: dict = {}
+        for item in items:
+            name = item['descrizione']
+            if name not in seen:
+                seen[name] = item
+            elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
+                seen[name] = item
+        items = list(seen.values())
+
+        return JsonResponse({
+            'status': 'success',
+            'data': {
+                'date': parsed.get('date', ''),
+                'operator': 'IA Claude',
+                'summary': {
+                    'contanti':   float(summary.get('contanti', 0)),
+                    'pag_pos':    float(summary.get('pag_pos', 0)),
+                    'cassa_auto': float(summary.get('cassa_auto', 0)),
+                    'reso_cont':  float(summary.get('reso_cont', 0)),
+                    'reso_auto':  float(summary.get('reso_auto', 0)),
+                    'distrib':    float(summary.get('distrib', 0)),
+                    'totale':     float(summary.get('totale', 0)),
+                },
+                'items': items,
+            }
+        })
+
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Risposta IA non in formato JSON valido: {e}'}, status=500)
+    except Exception as e:
+        return JsonResponse({'error': f'Errore acquisizione IA: {e}'}, status=500)

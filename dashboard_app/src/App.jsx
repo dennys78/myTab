@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Camera, Tag } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Camera, Tag, Sparkles } from 'lucide-react';
 import AcquisisciChiusure from './AcquisisciChiusure';
+import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
 import './index.css';
 
@@ -157,6 +158,13 @@ export default function App() {
             <span>Acquisisci Chiusure</span>
           </div>
           <div
+            className={`nav-item ${currentView === 'acquisisci-ai' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('acquisisci-ai'); setIsMobileMenuOpen(false); }}
+          >
+            <Sparkles size={20} />
+            <span>Acquisisci con IA</span>
+          </div>
+          <div
             className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`}
             onClick={() => { setCurrentView('reparti'); setIsMobileMenuOpen(false); }}
           >
@@ -186,6 +194,8 @@ export default function App() {
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
+        ) : currentView === 'acquisisci-ai' ? (
+          <AcquisisciChiusureAI onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
         ) : currentView === 'reparti' ? (
           <RepartiManager />
         ) : (
