@@ -102,6 +102,22 @@ export default function AcquisisciChiusure({ onBack }) {
     }));
   };
 
+  const handleManualEntry = () => {
+    setPreviewData({
+      date: new Date().toISOString().split('T')[0],
+      summary: {
+        contanti: 0,
+        pag_pos: 0,
+        cassa_auto: 0,
+        reso_cont: 0,
+        reso_auto: 0,
+        distrib: 0,
+        totale: 0,
+      },
+      items: []
+    });
+  };
+
   const handleAcquire = () => {
     setSaving(true);
     setError(null);
@@ -367,17 +383,17 @@ export default function AcquisisciChiusure({ onBack }) {
         </div>
       )}
 
-      <button 
+      <button
         onClick={handleExtract}
         disabled={files.length === 0 || loading}
-        style={{ 
-          width: '100%', 
-          padding: '1rem', 
-          background: files.length > 0 ? 'var(--accent)' : 'var(--bg-card)', 
-          color: files.length > 0 ? 'white' : 'var(--text-muted)', 
-          border: 'none', 
-          borderRadius: '8px', 
-          fontSize: '1rem', 
+        style={{
+          width: '100%',
+          padding: '1rem',
+          background: files.length > 0 ? 'var(--accent)' : 'var(--bg-card)',
+          color: files.length > 0 ? 'white' : 'var(--text-muted)',
+          border: 'none',
+          borderRadius: '8px',
+          fontSize: '1rem',
           fontWeight: 'bold',
           cursor: files.length > 0 && !loading ? 'pointer' : 'not-allowed',
           display: 'flex',
@@ -388,6 +404,33 @@ export default function AcquisisciChiusure({ onBack }) {
       >
         {loading && <Loader2 size={20} className="spin" />}
         {loading ? 'Estrazione in corso...' : 'Elabora e Mostra Anteprima'}
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '1.5rem 0' }}>
+        <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>oppure</span>
+        <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+      </div>
+
+      <button
+        onClick={handleManualEntry}
+        style={{
+          width: '100%',
+          padding: '1rem',
+          background: 'transparent',
+          color: 'var(--text-main)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+          fontSize: '1rem',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}
+      >
+        <Plus size={20} />
+        Inserimento Manuale
       </button>
     </div>
   );
