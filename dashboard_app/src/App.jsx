@@ -1,73 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2 } from 'lucide-react';
+import { useAuth } from './AuthContext';
+import Login from './Login';
 import AcquisisciChiusure from './AcquisisciChiusure';
 import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
 import Impostazioni from './Impostazioni';
+import GestioneUtenti from './GestioneUtenti';
 import './index.css';
 
-export default function App() {
+function AppShell() {
+  const { user, logout } = useAuth();
+
   const [closures, setClosures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
-  // Edit state
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Navigation state
-  const [currentView, setCurrentView] = useState('dashboard');
+  const isAdmin = user?.role === 'amministratore';
 
-  // Mobile Menu state
+  // Gli utenti normali entrano direttamente nella pagina di acquisizione
+  const [currentView, setCurrentView] = useState(isAdmin ? 'dashboard' : 'acquisisci-ai');
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const fetchClosures = () => {
+    if (!isAdmin) return;
     fetch('/api/closures/list/')
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') {
-          setClosures(data.data);
-        }
+        if (data.status === 'success') setClosures(data.data);
         setLoading(false);
       })
-      .catch(err => {
-        console.error("Error fetching closures:", err);
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
   };
 
-  useEffect(() => {
-    fetchClosures();
-  }, []);
+  useEffect(() => { fetchClosures(); }, []);
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totalContanti = closures.reduce((acc, c) => acc + c.summary.contanti, 0);
 
-  const toggleRow = (id) => {
-    if (editingId) return;
-    setExpandedId(expandedId === id ? null : id);
-  };
+  const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
   const handleEditClick = (closure) => {
     setEditingId(closure.id);
-    setEditFormData({
-      ...closure.summary,
-      items: JSON.parse(JSON.stringify(closure.items))
-    });
+    setEditFormData({ ...closure.summary, items: JSON.parse(JSON.stringify(closure.items)) });
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditFormData({});
-  };
+  const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditFormData(prev => ({
-      ...prev,
-      [name]: parseFloat(value) || 0
-    }));
+    setEditFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
   };
 
   const handleItemInputChange = (itemId, field, value) => {
@@ -88,99 +75,82 @@ export default function App() {
     })
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') {
-          fetchClosures();
-          setEditingId(null);
-        } else {
-          alert("Errore durante il salvataggio: " + data.error);
-        }
+        if (data.status === 'success') { fetchClosures(); setEditingId(null); }
+        else alert('Errore durante il salvataggio: ' + data.error);
       })
-      .catch(err => {
-        console.error("Errore salvataggio:", err);
-        alert("Errore di rete durante il salvataggio.");
-      })
+      .catch(() => alert('Errore di rete durante il salvataggio.'))
       .finally(() => setSaving(false));
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Sei sicuro di voler eliminare questa chiusura? L'operazione è irreversibile.")) {
-      fetch(`/api/closures/delete/${id}/`, { method: 'DELETE' })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success') {
-            fetchClosures();
-            if (expandedId === id) setExpandedId(null);
-          } else {
-            alert("Errore durante l'eliminazione: " + data.error);
-          }
-        })
-        .catch(err => {
-          console.error("Errore eliminazione:", err);
-          alert("Errore di rete durante l'eliminazione.");
-        });
-    }
+    if (!window.confirm("Sei sicuro di voler eliminare questa chiusura? L'operazione è irreversibile.")) return;
+    fetch(`/api/closures/delete/${id}/`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') { fetchClosures(); if (expandedId === id) setExpandedId(null); }
+        else alert("Errore durante l'eliminazione: " + data.error);
+      })
+      .catch(() => alert("Errore di rete durante l'eliminazione."));
   };
+
+  const navigate = (view) => { setCurrentView(view); setIsMobileMenuOpen(false); };
 
   return (
     <div className="app-container">
-      {/* Mobile Sidebar Overlay */}
-      <div
-        className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`}
-        onClick={() => setIsMobileMenuOpen(false)}
-      ></div>
+      <div className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`} onClick={() => setIsMobileMenuOpen(false)} />
 
-      {/* Sidebar */}
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Cigarette size={24} color="var(--accent)" />
           myTab
         </div>
+
         <nav className="nav-links">
-          <div
-            className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
-            onClick={() => { setCurrentView('dashboard'); setIsMobileMenuOpen(false); }}
-          >
-            <LayoutDashboard size={20} />
-            <span>Dashboard</span>
-          </div>
-          <div className="nav-item">
-            <Receipt size={20} />
-            <span>Chiusure Cassa</span>
+          {isAdmin && (
+            <>
+              <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>
+                <LayoutDashboard size={20} /><span>Dashboard</span>
+              </div>
+              <div className="nav-item">
+                <Receipt size={20} /><span>Chiusure Cassa</span>
+              </div>
+            </>
+          )}
+
+          <div className={`nav-item ${currentView === 'acquisisci-ai' ? 'active' : ''}`} onClick={() => navigate('acquisisci-ai')}>
+            <Sparkles size={20} /><span>Acquisisci con IA</span>
           </div>
 
-          <div
-            className={`nav-item ${currentView === 'acquisisci-ai' ? 'active' : ''}`}
-            onClick={() => { setCurrentView('acquisisci-ai'); setIsMobileMenuOpen(false); }}
-          >
-            <Sparkles size={20} />
-            <span>Acquisisci con IA</span>
-          </div>
-          <div
-            className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`}
-            onClick={() => { setCurrentView('reparti'); setIsMobileMenuOpen(false); }}
-          >
-            <Tag size={20} />
-            <span>Reparti</span>
-          </div>
-
-          <div
-            className={`nav-item ${currentView === 'impostazioni' ? 'active' : ''}`}
-            onClick={() => { setCurrentView('impostazioni'); setIsMobileMenuOpen(false); }}
-            style={{ marginTop: 'auto' }}
-          >
-            <Settings size={20} />
-            <span>Impostazioni</span>
-          </div>
+          {isAdmin && (
+            <>
+              <div className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`} onClick={() => navigate('reparti')}>
+                <Tag size={20} /><span>Reparti</span>
+              </div>
+              <div className={`nav-item ${currentView === 'utenti' ? 'active' : ''}`} onClick={() => navigate('utenti')}>
+                <Users size={20} /><span>Utenti</span>
+              </div>
+              <div className={`nav-item ${currentView === 'impostazioni' ? 'active' : ''}`} onClick={() => navigate('impostazioni')} style={{ marginTop: 'auto' }}>
+                <Settings size={20} /><span>Impostazioni</span>
+              </div>
+            </>
+          )}
         </nav>
+
+        {/* Footer sidebar: utente loggato + logout */}
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', marginTop: isAdmin ? '0' : 'auto' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+            Connesso come <strong style={{ color: 'var(--text-main)' }}>{user?.username}</strong>
+          </div>
+          <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%', padding: '0.5rem 0.6rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+            <LogOut size={15} /> Esci
+          </button>
+        </div>
       </aside>
 
-      {/* Main Content */}
       <main className="main-content">
-        {/* Mobile Header */}
         <div className="mobile-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)' }}>
-            <Cigarette size={24} />
-            myTab
+            <Cigarette size={24} />myTab
           </div>
           <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
             <Menu size={24} />
@@ -188,18 +158,19 @@ export default function App() {
         </div>
 
         {currentView === 'acquisisci' ? (
-          <AcquisisciChiusure onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
+          <AcquisisciChiusure onBack={() => { navigate('dashboard'); fetchClosures(); }} />
         ) : currentView === 'acquisisci-ai' ? (
-          <AcquisisciChiusureAI onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
+          <AcquisisciChiusureAI onBack={() => { navigate(isAdmin ? 'dashboard' : 'acquisisci-ai'); fetchClosures(); }} />
         ) : currentView === 'reparti' ? (
           <RepartiManager />
         ) : currentView === 'impostazioni' ? (
           <Impostazioni />
+        ) : currentView === 'utenti' ? (
+          <GestioneUtenti />
         ) : (
           <>
             <h1>Panoramica Chiusure</h1>
 
-            {/* Stats */}
             <div className="stats-grid">
               <div className="stat-card">
                 <div className="stat-title">Totale Generale (Mese)</div>
@@ -215,16 +186,11 @@ export default function App() {
               </div>
             </div>
 
-            {/* Table */}
             <div className="table-container">
               {loading ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Caricamento dati in corso...
-                </div>
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento dati in corso...</div>
               ) : closures.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Nessuna chiusura presente.
-                </div>
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessuna chiusura presente.</div>
               ) : (
                 <div className="table-responsive-wrapper">
                   <table>
@@ -250,15 +216,10 @@ export default function App() {
                             <td>{closure.operator}</td>
                             <td>€ {closure.summary.contanti.toFixed(2)}</td>
                             <td>€ {closure.summary.pag_pos.toFixed(2)}</td>
-                            <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>
-                              € {closure.summary.totale.toFixed(2)}
-                            </td>
+                            <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
                             <td>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }}
-                                title="Elimina"
-                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                              >
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} title="Elimina"
+                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                                 <Trash2 size={16} color="var(--danger)" />
                               </button>
                             </td>
@@ -268,28 +229,30 @@ export default function App() {
                             <tr>
                               <td colSpan="7" style={{ padding: 0, borderBottom: 'none' }}>
                                 <div className="expanded-content">
-                                  {/* Summary Edit Section */}
                                   <div className="summary-section" style={{ marginBottom: '2rem', padding: '1rem', background: 'var(--bg-dark)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                       <h2 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <Calculator size={16} color="var(--accent)" />
-                                        Riepilogo Totali
+                                        <Calculator size={16} color="var(--accent)" /> Riepilogo Totali
                                       </h2>
                                       {editingId === closure.id ? (
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                          <button onClick={() => handleSaveEdit(closure.id)} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                          <button onClick={() => handleSaveEdit(closure.id)} disabled={saving}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                                             <Save size={14} /> {saving ? 'Salvataggio...' : 'Salva'}
                                           </button>
-                                          <button onClick={handleCancelEdit} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}>
+                                          <button onClick={handleCancelEdit} disabled={saving}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}>
                                             <X size={14} /> Annulla
                                           </button>
                                         </div>
                                       ) : (
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                          <button onClick={(e) => { e.stopPropagation(); handleEditClick(closure); }} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                          <button onClick={(e) => { e.stopPropagation(); handleEditClick(closure); }}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                                             <Edit2 size={14} /> Modifica
                                           </button>
-                                          <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                          <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                                             <Trash2 size={14} /> Elimina
                                           </button>
                                         </div>
@@ -302,14 +265,9 @@ export default function App() {
                                             {key.replace('_', ' ')}
                                           </div>
                                           {editingId === closure.id ? (
-                                            <input
-                                              type="number"
-                                              name={key}
-                                              value={editFormData[key] === 0 ? '' : editFormData[key]}
-                                              onChange={handleInputChange}
+                                            <input type="number" name={key} value={editFormData[key] === 0 ? '' : editFormData[key]} onChange={handleInputChange}
                                               style={{ width: '100%', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }}
-                                              placeholder={value}
-                                            />
+                                              placeholder={value} />
                                           ) : (
                                             <div style={{ fontWeight: '600' }}>€ {value.toFixed(2)}</div>
                                           )}
@@ -319,16 +277,12 @@ export default function App() {
                                   </div>
 
                                   <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <Euro size={16} color="var(--accent)" />
-                                    Dettaglio Reparti
+                                    <Euro size={16} color="var(--accent)" /> Dettaglio Reparti
                                   </h2>
                                   <table className="inner-table">
                                     <thead>
                                       <tr>
-                                        <th>Descrizione</th>
-                                        <th>Entrate</th>
-                                        <th>Uscite</th>
-                                        <th>Saldo</th>
+                                        <th>Descrizione</th><th>Entrate</th><th>Uscite</th><th>Saldo</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -336,26 +290,10 @@ export default function App() {
                                         const editItem = editingId === closure.id ? editFormData.items.find(i => i.id === item.id) : item;
                                         return (
                                           <tr key={item.id} style={{ cursor: 'default' }}>
-                                            <td>
-                                              {editingId === closure.id ? (
-                                                <input type="text" value={editItem?.descrizione || ''} onChange={(e) => handleItemInputChange(item.id, 'descrizione', e.target.value)} style={{ width: '100%', minWidth: '120px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                                              ) : item.descrizione}
-                                            </td>
-                                            <td>
-                                              {editingId === closure.id ? (
-                                                <input type="number" value={editItem?.entrate === 0 ? '' : editItem?.entrate} onChange={(e) => handleItemInputChange(item.id, 'entrate', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                                              ) : <span style={{ color: item.entrate > 0 ? 'var(--success)' : 'inherit' }}>€ {item.entrate.toFixed(2)}</span>}
-                                            </td>
-                                            <td>
-                                              {editingId === closure.id ? (
-                                                <input type="number" value={editItem?.uscite === 0 ? '' : editItem?.uscite} onChange={(e) => handleItemInputChange(item.id, 'uscite', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                                              ) : <span style={{ color: item.uscite > 0 ? 'var(--danger)' : 'inherit' }}>€ {item.uscite.toFixed(2)}</span>}
-                                            </td>
-                                            <td>
-                                              {editingId === closure.id ? (
-                                                <input type="number" value={editItem?.saldo === 0 ? '' : editItem?.saldo} onChange={(e) => handleItemInputChange(item.id, 'saldo', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} />
-                                              ) : <span>€ {item.saldo.toFixed(2)}</span>}
-                                            </td>
+                                            <td>{editingId === closure.id ? <input type="text" value={editItem?.descrizione || ''} onChange={(e) => handleItemInputChange(item.id, 'descrizione', e.target.value)} style={{ width: '100%', minWidth: '120px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : item.descrizione}</td>
+                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.entrate === 0 ? '' : editItem?.entrate} onChange={(e) => handleItemInputChange(item.id, 'entrate', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.entrate > 0 ? 'var(--success)' : 'inherit' }}>€ {item.entrate.toFixed(2)}</span>}</td>
+                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.uscite === 0 ? '' : editItem?.uscite} onChange={(e) => handleItemInputChange(item.id, 'uscite', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.uscite > 0 ? 'var(--danger)' : 'inherit' }}>€ {item.uscite.toFixed(2)}</span>}</td>
+                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.saldo === 0 ? '' : editItem?.saldo} onChange={(e) => handleItemInputChange(item.id, 'saldo', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span>€ {item.saldo.toFixed(2)}</span>}</td>
                                           </tr>
                                         );
                                       }) : (
@@ -380,3 +318,20 @@ export default function App() {
     </div>
   );
 }
+
+export default function App() {
+  const { user } = useAuth();
+
+  if (user === undefined) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Loader2 size={36} className="spin" color="var(--accent)" />
+      </div>
+    );
+  }
+
+  if (user === null) return <Login />;
+
+  return <AppShell />;
+}
+

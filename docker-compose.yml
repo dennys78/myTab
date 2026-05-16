@@ -19,6 +19,7 @@ services:
       - "8000"
     command: >
       sh -c "python manage.py migrate &&
+             python manage.py ensure_admin &&
              gunicorn --bind 0.0.0.0:8000 --timeout 120 cash_manager.wsgi:application"
 
   frontend:

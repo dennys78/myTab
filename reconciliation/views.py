@@ -1,15 +1,142 @@
 import json
 import base64
 import os
+from functools import wraps
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.db import transaction
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.contrib.auth.models import User
 from difflib import get_close_matches
 from .models import CashClosure, CashClosureItem, Department, AppSetting
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
+
+
+# ── AUTH HELPERS ─────────────────────────────────────────────────────────────
+
+def _is_admin(user):
+    return user.is_staff or user.is_superuser
+
+def _user_info(user):
+    return {
+        'id': user.id,
+        'username': user.username,
+        'role': 'amministratore' if _is_admin(user) else 'utente',
+    }
+
+def require_auth(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+def require_admin(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+        if not _is_admin(request.user):
+            return JsonResponse({'status': 'error', 'error': 'Accesso negato'}, status=403)
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+
+# ── AUTH VIEWS ───────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def api_login(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
+    try:
+        data = json.loads(request.body)
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            return JsonResponse({'status': 'error', 'error': 'Username o password errati'}, status=401)
+        auth_login(request, user)
+        return JsonResponse({'status': 'success', 'data': _user_info(user)})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+@csrf_exempt
+def api_logout(request):
+    auth_logout(request)
+    return JsonResponse({'status': 'success'})
+
+def api_me(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+    return JsonResponse({'status': 'success', 'data': _user_info(request.user)})
+
+
+# ── GESTIONE UTENTI (solo amministratori) ────────────────────────────────────
+
+@csrf_exempt
+@require_admin
+def api_users_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    users = User.objects.all().order_by('username')
+    return JsonResponse({'status': 'success', 'data': [_user_info(u) for u in users]})
+
+@csrf_exempt
+@require_admin
+def api_user_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        role = data.get('role', 'utente')
+        if not username or not password:
+            return JsonResponse({'status': 'error', 'error': 'Username e password obbligatori'})
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'status': 'error', 'error': 'Username già in uso'})
+        user = User(username=username, is_staff=(role == 'amministratore'))
+        user.set_password(password)
+        user.save()
+        return JsonResponse({'status': 'success', 'data': _user_info(user)})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_admin
+def api_user_delete(request, user_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'status': 'error'}, status=405)
+    if user_id == request.user.id:
+        return JsonResponse({'status': 'error', 'error': 'Non puoi eliminare te stesso'})
+    try:
+        User.objects.get(id=user_id).delete()
+        return JsonResponse({'status': 'success'})
+    except User.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
+
+@csrf_exempt
+@require_admin
+def api_user_change_password(request, user_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        password = data.get('password', '').strip()
+        if not password:
+            return JsonResponse({'status': 'error', 'error': 'Password obbligatoria'})
+        user = User.objects.get(id=user_id)
+        user.set_password(password)
+        user.save()
+        return JsonResponse({'status': 'success'})
+    except User.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
 
 def _preprocess(img):
@@ -40,6 +167,7 @@ def _resolve_dept(name: str, known: list) -> str | None:
 
 
 @csrf_exempt
+@require_auth
 def api_insert_closure(request):
     if request.method == 'POST':
         try:
@@ -105,6 +233,7 @@ def api_insert_closure(request):
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
 @csrf_exempt
+@require_admin
 def api_extract_closure(request):
     if request.method == 'POST':
         if not request.FILES:
@@ -161,6 +290,7 @@ def api_extract_closure(request):
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
 @csrf_exempt
+@require_admin
 def api_list_closures(request):
     if request.method == 'GET':
         closures = CashClosure.objects.all().prefetch_related('items')
@@ -196,6 +326,7 @@ def api_list_closures(request):
         
     return JsonResponse({'error': 'Metodo non consentito. Usa GET.'}, status=405)
 @csrf_exempt
+@require_admin
 def api_update_closure(request, closure_id):
     if request.method in ['POST', 'PUT']:
         try:
@@ -240,6 +371,7 @@ def api_update_closure(request, closure_id):
     return JsonResponse({'error': 'Metodo non consentito. Usa PUT o POST.'}, status=405)
 
 @csrf_exempt
+@require_admin
 def api_delete_closure(request, closure_id):
     if request.method == 'DELETE':
         try:
@@ -257,6 +389,7 @@ def api_delete_closure(request, closure_id):
 # ── REPARTI ──────────────────────────────────────────────────────────────────
 
 @csrf_exempt
+@require_admin
 def api_list_departments(request):
     if request.method == 'GET':
         data = [{'id': d.id, 'name': d.name} for d in Department.objects.all()]
@@ -265,6 +398,7 @@ def api_list_departments(request):
 
 
 @csrf_exempt
+@require_admin
 def api_create_department(request):
     if request.method == 'POST':
         try:
@@ -280,6 +414,7 @@ def api_create_department(request):
 
 
 @csrf_exempt
+@require_admin
 def api_update_department(request, dept_id):
     if request.method in ['POST', 'PUT']:
         try:
@@ -298,6 +433,7 @@ def api_update_department(request, dept_id):
 
 
 @csrf_exempt
+@require_admin
 def api_delete_department(request, dept_id):
     if request.method == 'DELETE':
         try:
@@ -323,6 +459,7 @@ def _get_groq_key():
 
 
 @csrf_exempt
+@require_admin
 def api_get_settings(request):
     if request.method == 'GET':
         return JsonResponse({
@@ -333,6 +470,7 @@ def api_get_settings(request):
 
 
 @csrf_exempt
+@require_admin
 def api_save_settings(request):
     if request.method == 'POST':
         try:
@@ -384,6 +522,7 @@ Regole:
 
 
 @csrf_exempt
+@require_auth
 def api_extract_closure_ai(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
