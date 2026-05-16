@@ -52,9 +52,16 @@ function AppShell() {
 
   const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
 
+  const calcDifferenza = (s) =>
+    Math.round(((s.totale || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0) - (s.pag_pos || 0)) * 100) / 100;
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+    setEditFormData(prev => {
+      const updated = { ...prev, [name]: parseFloat(value) || 0 };
+      if (name !== 'totale_cassetto') updated.differenza = calcDifferenza(updated);
+      return updated;
+    });
   };
 
   const handleItemInputChange = (itemId, field, value) => {
@@ -259,20 +266,29 @@ function AppShell() {
                                       )}
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-                                      {Object.entries(closure.summary).map(([key, value]) => (
-                                        <div key={key}>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'capitalize', marginBottom: '0.25rem' }}>
-                                            {key.replace('_', ' ')}
+                                      {Object.entries(closure.summary).map(([key, value]) => {
+                                        const label = key.replace(/_/g, ' ');
+                                        const editVal = editingId === closure.id ? (editFormData[key] ?? value) : value;
+                                        const isDiff = key === 'differenza';
+                                        return (
+                                          <div key={key}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'capitalize', marginBottom: '0.25rem' }}>
+                                              {label}
+                                            </div>
+                                            {isDiff ? (
+                                              <div style={{ fontWeight: '700', color: editVal > 0 ? 'var(--success)' : editVal < 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                                {editVal >= 0 ? '+' : ''}€ {Number(editVal).toFixed(2)}
+                                              </div>
+                                            ) : editingId === closure.id ? (
+                                              <input type="number" name={key} value={editFormData[key] === 0 ? '' : editFormData[key]} onChange={handleInputChange}
+                                                style={{ width: '100%', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }}
+                                                placeholder={value} />
+                                            ) : (
+                                              <div style={{ fontWeight: '600' }}>€ {value.toFixed(2)}</div>
+                                            )}
                                           </div>
-                                          {editingId === closure.id ? (
-                                            <input type="number" name={key} value={editFormData[key] === 0 ? '' : editFormData[key]} onChange={handleInputChange}
-                                              style={{ width: '100%', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }}
-                                              placeholder={value} />
-                                          ) : (
-                                            <div style={{ fontWeight: '600' }}>€ {value.toFixed(2)}</div>
-                                          )}
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   </div>
 

@@ -196,7 +196,9 @@ def api_insert_closure(request):
                     reso_cont=float(summary.get('reso_cont', 0.0)),
                     reso_auto=float(summary.get('reso_auto', 0.0)),
                     distrib=float(summary.get('distrib', 0.0)),
-                    totale_generale=float(summary.get('totale', 0.0))
+                    totale_generale=float(summary.get('totale', 0.0)),
+                    totale_cassetto=float(summary.get('totale_cassetto', 0.0)),
+                    differenza=float(summary.get('differenza', 0.0)),
                 )
 
                 # Auto-popola archivio reparti e inserisce le righe
@@ -317,7 +319,9 @@ def api_list_closures(request):
                     'reso_cont': float(c.reso_cont),
                     'reso_auto': float(c.reso_auto),
                     'distrib': float(c.distrib),
-                    'totale': float(c.totale_generale)
+                    'totale': float(c.totale_generale),
+                    'totale_cassetto': float(c.totale_cassetto),
+                    'differenza': float(c.differenza),
                 },
                 'items': items
             })
@@ -341,6 +345,8 @@ def api_update_closure(request, closure_id):
             if 'reso_auto' in data: closure.reso_auto = float(data['reso_auto'])
             if 'distrib' in data: closure.distrib = float(data['distrib'])
             if 'totale' in data: closure.totale_generale = float(data['totale'])
+            if 'totale_cassetto' in data: closure.totale_cassetto = float(data['totale_cassetto'])
+            if 'differenza' in data: closure.differenza = float(data['differenza'])
             
             closure.save()
             
@@ -593,19 +599,28 @@ def api_extract_closure_ai(request):
                 seen[name] = item
         items = list(seen.values())
 
+        totale   = float(summary.get('totale', 0))
+        pag_pos  = float(summary.get('pag_pos', 0))
+        distrib  = float(summary.get('distrib', 0))
+        reso_auto = float(summary.get('reso_auto', 0))
+        reso_cont = float(summary.get('reso_cont', 0))
+        differenza = round(totale - distrib - reso_auto - reso_cont - pag_pos, 2)
+
         return JsonResponse({
             'status': 'success',
             'data': {
                 'date': parsed.get('date', ''),
                 'operator': 'IA Groq',
                 'summary': {
-                    'contanti':   float(summary.get('contanti', 0)),
-                    'pag_pos':    float(summary.get('pag_pos', 0)),
-                    'cassa_auto': float(summary.get('cassa_auto', 0)),
-                    'reso_cont':  float(summary.get('reso_cont', 0)),
-                    'reso_auto':  float(summary.get('reso_auto', 0)),
-                    'distrib':    float(summary.get('distrib', 0)),
-                    'totale':     float(summary.get('totale', 0)),
+                    'contanti':        float(summary.get('contanti', 0)),
+                    'pag_pos':         pag_pos,
+                    'cassa_auto':      float(summary.get('cassa_auto', 0)),
+                    'reso_cont':       reso_cont,
+                    'reso_auto':       reso_auto,
+                    'distrib':         distrib,
+                    'totale':          totale,
+                    'totale_cassetto': 0.0,
+                    'differenza':      differenza,
                 },
                 'items': items,
             }

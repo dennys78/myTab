@@ -13,6 +13,8 @@ class CashClosure(models.Model):
     reso_auto = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Reso Auto")
     distrib = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Distrib.")
     totale_generale = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="TOTALE")
+    totale_cassetto = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Totale Cassetto")
+    differenza = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Differenza")
     
     image_ref = models.ImageField(upload_to='closures/%Y/%m/', null=True, blank=True, verbose_name="Immagine di Riferimento")
     created_at = models.DateTimeField(auto_now_add=True)

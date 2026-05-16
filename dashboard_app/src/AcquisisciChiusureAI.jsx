@@ -82,9 +82,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
     }));
   };
 
+  const calcDifferenza = (s) =>
+    Math.round(((s.totale || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0) - (s.pag_pos || 0)) * 100) / 100;
+
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
-    setPreviewData(prev => ({ ...prev, summary: { ...prev.summary, [name]: parseFloat(value) || 0 } }));
+    setPreviewData(prev => {
+      const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
+      if (name !== 'totale_cassetto') updated.differenza = calcDifferenza(updated);
+      return { ...prev, summary: updated };
+    });
   };
 
   const addItem = () => setPreviewData(prev => ({
@@ -159,17 +166,37 @@ export default function AcquisisciChiusureAI({ onBack }) {
               style={{ ...inp(), width: isMobile ? '100%' : '200px' }} />
           </div>
           <div className="acq-summary-grid">
-            {Object.keys(previewData.summary).map(key => (
-              <div key={key}>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
-                  {key.replace('_', ' ')}
-                </label>
-                <input type="number" name={key}
-                  value={previewData.summary[key] === 0 ? '' : previewData.summary[key]}
-                  onChange={handleSummaryChange} placeholder="0.00"
-                  style={{ ...inp(), width: '100%' }} />
-              </div>
-            ))}
+            {Object.keys(previewData.summary).map(key => {
+              const val = previewData.summary[key];
+              const label = key.replace(/_/g, ' ');
+              if (key === 'differenza') {
+                return (
+                  <div key={key}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
+                      {label}
+                    </label>
+                    <div style={{
+                      padding: '0.5rem 0.6rem', borderRadius: '6px', fontWeight: 700, fontSize: '1rem',
+                      border: '1px solid var(--border)', background: 'var(--bg-dark)',
+                      color: val > 0 ? '#22c55e' : val < 0 ? 'var(--danger)' : 'var(--text-muted)',
+                    }}>
+                      {val >= 0 ? '+' : ''}{val.toFixed(2)}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={key}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
+                    {label}
+                  </label>
+                  <input type="number" name={key}
+                    value={val === 0 ? '' : val}
+                    onChange={handleSummaryChange} placeholder="0.00"
+                    style={{ ...inp(), width: '100%' }} />
+                </div>
+              );
+            })}
           </div>
         </div>
 
