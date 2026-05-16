@@ -48,12 +48,22 @@ def api_insert_closure(request):
                     distrib=float(summary.get('distrib', 0.0)),
                     totale_generale=float(summary.get('totale', 0.0))
                 )
-                
-                # Inserimento Items (Righe/Reparti)
+
+                # Auto-popola archivio reparti e inserisce le righe
+                known_depts = list(Department.objects.values_list('name', flat=True))
                 for item in items:
+                    dept_name = item.get('descrizione', '').strip()
+                    if dept_name and dept_name != 'Reparto Sconosciuto':
+                        matches = get_close_matches(dept_name, known_depts, n=1, cutoff=0.6)
+                        if matches:
+                            dept_name = matches[0]
+                        else:
+                            Department.objects.get_or_create(name=dept_name)
+                            known_depts.append(dept_name)
+
                     CashClosureItem.objects.create(
                         closure=closure,
-                        department_name=item.get('descrizione', 'Reparto Sconosciuto'),
+                        department_name=dept_name or 'Reparto Sconosciuto',
                         incomes=float(item.get('entrate', 0.0)),
                         expenses=float(item.get('uscite', 0.0)),
                         balance=float(item.get('saldo', 0.0))

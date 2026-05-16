@@ -78,7 +78,7 @@ export default function RepartiManager() {
     <div style={{ maxWidth: '700px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Gestione Reparti</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-        I nomi qui presenti vengono usati durante l'acquisizione OCR per correggere automaticamente i nomi letti dall'immagine.
+        I reparti vengono aggiunti automaticamente ad ogni acquisizione. Usa questa pagina solo per correggere nomi errati o rimuovere voci non valide.
       </p>
 
       {error && (
