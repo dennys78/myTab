@@ -4,6 +4,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.db import transaction
 from .models import CashClosure, CashClosureItem
+from .ocr_parser import parse_closure_receipt
+import pytesseract
+from PIL import Image
+import io
 
 @csrf_exempt
 def api_insert_closure(request):
@@ -58,6 +62,51 @@ def api_insert_closure(request):
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
             
+    return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
+
+@csrf_exempt
+def api_extract_closure(request):
+    if request.method == 'POST':
+        if not request.FILES:
+            return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
+            
+        try:
+            full_text = ""
+            # Cicla sui file (fino a 2 di solito)
+            for file_key in request.FILES:
+                image_file = request.FILES[file_key]
+                img = Image.open(image_file)
+                # Estrae il testo
+                text = pytesseract.image_to_string(img, lang='ita')
+                full_text += text + "\n"
+                
+            # Parsiamo il testo estratto
+            parsed_data = parse_closure_receipt(full_text)
+            
+            # Formatizziamo la data
+            date_str = parsed_data['date'].isoformat() if parsed_data['date'] else ""
+            
+            # Costruiamo la risposta
+            response_data = {
+                'date': date_str,
+                'operator': 'Sistema Esterno',
+                'summary': {
+                    'totale': parsed_data['total_in'], # Assumiamo totale incassi come totale generale temporaneo
+                    'contanti': 0.0,
+                    'pag_pos': 0.0,
+                    'cassa_auto': 0.0,
+                    'reso_cont': 0.0,
+                    'reso_auto': 0.0,
+                    'distrib': 0.0
+                },
+                'items': parsed_data['items']
+            }
+            
+            return JsonResponse({'status': 'success', 'data': response_data})
+            
+        except Exception as e:
+            return JsonResponse({'error': f"Errore elaborazione immagine: {str(e)}"}, status=500)
+
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
 @csrf_exempt

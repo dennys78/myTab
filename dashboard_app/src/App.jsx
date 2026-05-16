@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Wrench, Camera } from 'lucide-react';
+import AcquisisciChiusure from './AcquisisciChiusure';
 import './index.css';
 
 export default function App() {
@@ -11,6 +12,9 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [saving, setSaving] = useState(false);
+  
+  // Navigation state
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' or 'acquisisci'
   
   // Mobile Menu state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -135,7 +139,10 @@ export default function App() {
           myTab
         </div>
         <nav className="nav-links">
-          <div className="nav-item active">
+          <div 
+            className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('dashboard'); setIsMobileMenuOpen(false); }}
+          >
             <LayoutDashboard size={20} />
             <span>Dashboard</span>
           </div>
@@ -143,7 +150,19 @@ export default function App() {
             <Receipt size={20} />
             <span>Chiusure Cassa</span>
           </div>
-          <div className="nav-item">
+          
+          <div style={{ marginTop: '1rem', marginBottom: '0.5rem', paddingLeft: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>
+            Utility
+          </div>
+          <div 
+            className={`nav-item ${currentView === 'acquisisci' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('acquisisci'); setIsMobileMenuOpen(false); }}
+          >
+            <Camera size={20} />
+            <span>Acquisisci Chiusure</span>
+          </div>
+
+          <div className="nav-item" style={{ marginTop: 'auto' }}>
             <Settings size={20} />
             <span>Impostazioni</span>
           </div>
@@ -163,10 +182,14 @@ export default function App() {
           </button>
         </div>
 
-        <h1>Panoramica Chiusure</h1>
-        
-        {/* Stats */}
-        <div className="stats-grid">
+        {currentView === 'acquisisci' ? (
+          <AcquisisciChiusure onBack={() => { setCurrentView('dashboard'); fetchClosures(); }} />
+        ) : (
+          <>
+            <h1>Panoramica Chiusure</h1>
+            
+            {/* Stats */}
+            <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-title">Totale Generale (Mese)</div>
             <div className="stat-value">€ {totalIncassato.toFixed(2)}</div>
@@ -375,6 +398,8 @@ export default function App() {
             </table>
             </div>
           )}
+          </>
+        )}
         </div>
       </main>
     </div>
