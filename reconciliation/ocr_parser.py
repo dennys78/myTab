@@ -62,33 +62,34 @@ def parse_closure_receipt(ocr_text: str) -> dict:
         if not remainder:
             continue
 
-        # Cerca: nome_reparto + 3 importi italiani (separati da qualunque spazio/simbolo)
-        m = re.search(
-            r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/]*?)'
-            r'\s+'
-            r'(-?[\d\.]+,\d{2})'   # entrate
-            r'[\s\€\|]+'
-            r'(-?[\d\.]+,\d{2})'   # uscite
-            r'[\s\€\|]+'
-            r'(-?[\d\.]+,\d{2})',  # saldo
-            remainder,
-            re.IGNORECASE
+        # Step 1: estrai il nome (lettere, spazi, punti, trattini)
+        name_m = re.match(
+            r'^([A-Za-zÀÈÉÌÒÙàèéìòù][A-Za-zÀÈÉÌÒÙàèéìòù\s\.\-\/]*)',
+            remainder
         )
-        if not m:
+        if not name_m:
             continue
 
-        desc = re.sub(r'\s+', ' ', m.group(1)).strip().upper()
-
-        if len(desc) < 3:
+        desc = re.sub(r'\s+', ' ', name_m.group(1)).strip().upper()
+        if len(desc) < 5:           # filtra rumore OCR breve (es. "EUZU")
             continue
         if any(kw in desc for kw in SKIP):
             continue
 
+        # Step 2: trova tutti gli importi italiani sulla riga (entrate, uscite, saldo)
+        amounts = AMOUNT_RE.findall(remainder)
+        if len(amounts) < 2:
+            continue
+
+        entrate = to_float(amounts[0])
+        uscite  = to_float(amounts[1])
+        saldo   = to_float(amounts[2]) if len(amounts) >= 3 else round(entrate - uscite, 2)
+
         data['items'].append({
             'descrizione': desc,
-            'entrate': to_float(m.group(2)),
-            'uscite':  to_float(m.group(3)),
-            'saldo':   to_float(m.group(4)),
+            'entrate': entrate,
+            'uscite':  uscite,
+            'saldo':   saldo,
         })
 
     return data
