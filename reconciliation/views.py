@@ -19,6 +19,26 @@ def _preprocess(img):
     return img
 
 
+def _resolve_dept(name: str, known: list) -> str | None:
+    """Canonical department name for `name` from the known list.
+
+    Priority:
+    1. Exact match
+    2. A known dept is a prefix of `name` (≥5 chars) — handles
+       'LOTTOMATICA(LOTTO + 10&LOTTO)' → 'LOTTOMATICA'
+    3. Fuzzy match with cutoff 0.6
+    """
+    if not known or not name:
+        return None
+    if name in known:
+        return name
+    for k in known:
+        if len(k) >= 5 and name.startswith(k):
+            return k
+    matches = get_close_matches(name, known, n=1, cutoff=0.6)
+    return matches[0] if matches else None
+
+
 @csrf_exempt
 def api_insert_closure(request):
     if request.method == 'POST':
@@ -56,9 +76,9 @@ def api_insert_closure(request):
                 for item in items:
                     dept_name = item.get('descrizione', '').strip()
                     if dept_name and dept_name != 'Reparto Sconosciuto':
-                        matches = get_close_matches(dept_name, known_depts, n=1, cutoff=0.6)
-                        if matches:
-                            dept_name = matches[0]
+                        resolved = _resolve_dept(dept_name, known_depts)
+                        if resolved:
+                            dept_name = resolved
                         else:
                             Department.objects.get_or_create(name=dept_name)
                             known_depts.append(dept_name)
@@ -100,16 +120,14 @@ def api_extract_closure(request):
             parsed_data = parse_closure_receipt(full_text)
             date_str = parsed_data['date'].isoformat() if parsed_data['date'] else ""
 
-            # Fuzzy match nomi reparti contro l'archivio dei reparti noti
+            # Risolve nomi reparti contro archivio (exact → prefix → fuzzy)
             known = list(Department.objects.values_list('name', flat=True))
-            if known:
-                for item in parsed_data['items']:
-                    matches = get_close_matches(item['descrizione'], known, n=1, cutoff=0.6)
-                    if matches:
-                        item['descrizione'] = matches[0]
+            for item in parsed_data['items']:
+                resolved = _resolve_dept(item['descrizione'], known)
+                if resolved:
+                    item['descrizione'] = resolved
 
-            # Secondo dedup post-fuzzy: due letture OCR diverse dello stesso reparto
-            # possono convergere sullo stesso nome canonico dopo il match.
+            # Dedup post-resolve: nomi diversi convergono sullo stesso canonico
             seen: dict = {}
             for item in parsed_data['items']:
                 name = item['descrizione']
@@ -420,13 +438,12 @@ def api_extract_closure_ai(request):
 
         summary = parsed.get('summary', {})
 
-        # Fuzzy match + dedup contro archivio reparti
+        # Risolve nomi reparti contro archivio (exact → prefix → fuzzy)
         known = list(Department.objects.values_list('name', flat=True))
-        if known:
-            for item in items:
-                matches = get_close_matches(item['descrizione'], known, n=1, cutoff=0.6)
-                if matches:
-                    item['descrizione'] = matches[0]
+        for item in items:
+            resolved = _resolve_dept(item['descrizione'], known)
+            if resolved:
+                item['descrizione'] = resolved
 
         seen: dict = {}
         for item in items:
