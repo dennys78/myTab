@@ -116,7 +116,7 @@ export default function Versamenti() {
   };
 
   return (
-    <div style={{ maxWidth: '750px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '1050px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Versamenti</h1>
       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
         Registra i versamenti di contanti effettuati in banca o in cassa.
@@ -237,11 +237,11 @@ export default function Versamenti() {
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun versamento registrato.</div>
         ) : (
           <div className="table-responsive-wrapper">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="vers-table">
               <thead>
                 <tr>
                   {['Data', 'Operatore', 'Saldo Prec.', 'Prelevato', 'Fondo', 'Netto Banco', 'Saldo Dopo', ...(isAdmin ? ['Azioni'] : [])].map(h => (
-                    <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                    <th key={h}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -250,8 +250,8 @@ export default function Versamenti() {
                   const isEditing = editingId === v.id;
                   const saldoDopo = v.saldo_precedente - v.importo_versato;
                   const netto = v.importo_versato - (v.accantonamento || 0);
-                  const tdStyle = { padding: '0.85rem 1rem', borderBottom: '1px solid var(--border)' };
-                  const inpStyle = { padding: '0.35rem 0.5rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.875rem' };
+                  const tdStyle = {};
+                  const inpStyle = { padding: '0.3rem 0.4rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.85rem' };
                   return (
                     <tr key={v.id}>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
