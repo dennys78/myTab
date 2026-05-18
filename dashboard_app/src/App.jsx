@@ -229,7 +229,15 @@ function AppShell() {
       <div className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`} onClick={() => setIsMobileMenuOpen(false)} />
 
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
-        <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div
+          className="sidebar-header"
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('dashboard')}
+          onKeyDown={(e) => e.key === 'Enter' && navigate('dashboard')}
+          title="Torna alla Dashboard"
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+        >
           <Cigarette size={24} color="var(--accent)" />
           myTab
         </div>
@@ -286,7 +294,14 @@ function AppShell() {
 
       <main className="main-content">
         <div className="mobile-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)' }}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate('dashboard')}
+            onKeyDown={(e) => e.key === 'Enter' && navigate('dashboard')}
+            title="Torna alla Dashboard"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)', cursor: 'pointer' }}
+          >
             <Cigarette size={24} />myTab
           </div>
           <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
