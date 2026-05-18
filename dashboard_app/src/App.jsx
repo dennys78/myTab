@@ -318,15 +318,15 @@ function AppShell() {
                   <div className="stat-title">Totale Generale (Mese)</div>
                   <div className="stat-value">€ {totalIncassato.toFixed(2)}</div>
                 </div>
-                <div className="stat-card">
+                <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('versamenti')} onKeyDown={(e) => e.key === 'Enter' && navigate('versamenti')}>
                   <div className="stat-title">Contanti in Cassa</div>
                   <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
                 </div>
-                <div className="stat-card">
+                <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('fondo-cassa')} onKeyDown={(e) => e.key === 'Enter' && navigate('fondo-cassa')}>
                   <div className="stat-title">Fondo Cassa</div>
                   <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
                 </div>
-                <div className="stat-card">
+                <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('chiusure')} onKeyDown={(e) => e.key === 'Enter' && navigate('chiusure')}>
                   <div className="stat-title">Chiusure Ricevute</div>
                   <div className="stat-value">{closures.length}</div>
                 </div>
