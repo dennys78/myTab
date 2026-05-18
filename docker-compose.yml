@@ -1,7 +1,6 @@
-version: '3.8'
-
 services:
   backend:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
@@ -30,6 +29,7 @@ services:
              gunicorn --bind 0.0.0.0:8000 --timeout 120 cash_manager.wsgi:application"
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./dashboard_app
       dockerfile: Dockerfile
