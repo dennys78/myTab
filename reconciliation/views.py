@@ -741,7 +741,7 @@ def api_restart_telegram_bot(request):
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
 
 AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
-Analizza questa immagine di un riepilogo di chiusura cassa ed estrai i dati.
+Analizza queste immagini di un riepilogo di chiusura cassa ed estrai i dati.
 
 Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessun testo aggiuntivo) con questa struttura esatta:
 
@@ -762,14 +762,20 @@ Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessu
 }
 
 Regole:
-- Data in formato YYYY-MM-DD
-- Tutti gli importi sono numeri float (non stringhe)
-- saldo = entrate - uscite (può essere negativo)
-- Nomi reparto in MAIUSCOLO
-- Includi TUTTI i singoli reparti visibili; escludi righe di totale/subtotale di sezione
+- Data in formato YYYY-MM-DD.
+- Tutti gli importi sono numeri float (non stringhe).
+- saldo = entrate - uscite (può essere negativo).
+- Nomi reparto in MAIUSCOLO.
+- Le immagini possono essere parti diverse dello stesso foglio: unisci le righe visibili senza duplicarle.
+- Includi in "items" OGNI riga della tabella reparti che abbia una descrizione e almeno un importo numerico
+  in Entrate, Uscite o Saldo Cassa.
+- NON usare la colonna "Reparto" come filtro: il codice reparto può mancare. Righe come
+  "VECCHIA GESTIONE GESTORI DI GIOCHI E SERVIZI" e "SISAL" vanno incluse se hanno importi.
+- Includi anche righe con uscite e saldo negativo, ad esempio "ALTRE USCITE".
+- Escludi solo intestazioni, righe vuote, note, piè pagina e il riepilogo finale con Contanti/Pag.Pos/Cassa Auto/Resi/Distrib./TOTALE.
 - Mappa le colonne del summary: contanti→Contanti, pag_pos→Pag.Pos, cassa_auto→Cassa Auto,
-  reso_cont→Reso Cont., reso_auto→Reso Auto, distrib→Distrib., totale→TOTALE
-- Se un valore non è leggibile usa 0.00"""
+  reso_cont→Reso Cont., reso_auto→Reso Auto, distrib→Distrib., totale→TOTALE.
+- Se un valore non è leggibile usa 0.00."""
 
 
 def _json_from_ai_text(raw_json):
