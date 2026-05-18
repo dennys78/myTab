@@ -413,8 +413,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
           <h2 style={{ margin: '0 0 0.75rem', fontSize: '1rem' }}>Bozze ricevute da Telegram</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {drafts.map(draft => (
-              <div key={draft.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', flexWrap: 'wrap' }}>
-                <div>
+              <div key={draft.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px' }}>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>
                     {draft.operator || 'Telegram'} · {draft.photo_count} foto
                   </div>
@@ -422,7 +422,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
                     Totale scassettato € {Number(draft.totale_scassettato).toFixed(2)} · {new Date(draft.created_at).toLocaleString('it-IT')}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', whiteSpace: 'nowrap' }}>
                   <button
                     onClick={() => loadDraft(draft.id)}
                     disabled={loadingDraftId === draft.id || deletingDraftId === draft.id}
