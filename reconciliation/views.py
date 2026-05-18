@@ -414,6 +414,10 @@ def api_extract_closure(request):
                 'items': parsed_data['items'],
                 'raw_text': full_text,
                 'draft_id': draft.id,
+                'images': [{
+                    'id': image.id,
+                    'url': f'/api/acquisition-draft-images/{image.id}/view/',
+                } for image in draft.images.all()],
             }
 
             return JsonResponse({'status': 'success', 'data': response_data})
@@ -583,6 +587,15 @@ def api_closure_image_delete(request, image_id):
     image.image.delete(save=False)
     image.delete()
     return JsonResponse({'status': 'success'})
+
+
+@require_auth
+def api_acquisition_draft_image_view(request, image_id):
+    try:
+        image = AcquisitionDraftImage.objects.get(id=image_id, draft__status='pending')
+    except AcquisitionDraftImage.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Immagine bozza non trovata'}, status=404)
+    return FileResponse(image.image.open('rb'))
 
 
 # ── REPARTI ──────────────────────────────────────────────────────────────────
@@ -1121,6 +1134,10 @@ def api_extract_closure_ai(request):
         parsed, operator = _extract_ai_payload(images)
         data = _parse_ai_closure_payload(parsed, operator=operator)
         data['draft_id'] = draft.id
+        data['images'] = [{
+            'id': image.id,
+            'url': f'/api/acquisition-draft-images/{image.id}/view/',
+        } for image in draft.images.all()]
         return JsonResponse({
             'status': 'success',
             'provider': _get_ai_provider(),
@@ -1182,12 +1199,18 @@ def api_acquisition_draft_extract(request, draft_id):
         return JsonResponse({
             'status': 'success',
             'provider': _get_ai_provider(),
-            'data': _parse_ai_closure_payload(
-                parsed,
-                totale_scassettato=draft.totale_scassettato,
-                draft_id=draft.id,
-                operator=operator,
-            ),
+            'data': {
+                **_parse_ai_closure_payload(
+                    parsed,
+                    totale_scassettato=draft.totale_scassettato,
+                    draft_id=draft.id,
+                    operator=operator,
+                ),
+                'images': [{
+                    'id': image.id,
+                    'url': f'/api/acquisition-draft-images/{image.id}/view/',
+                } for image in draft.images.all()],
+            },
         })
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)

@@ -210,6 +210,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
     const differenza = previewData.summary.differenza ?? 0;
     const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + calcItemSaldo(item), 0);
+    const previewImages = previewData.images?.length
+      ? previewData.images
+      : previews.map((url, index) => ({ id: `local_${index}`, url }));
 
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
@@ -296,6 +299,28 @@ export default function AcquisisciChiusureAI({ onBack }) {
             </div>
           </div>
         </div>
+
+        {previewImages.length > 0 && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
+            <h2 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+              <Images size={18} color="var(--accent)" /> Foto importazione
+            </h2>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.9rem' }}>
+              {previewImages.map((image, index) => (
+                <a key={image.id} href={image.url} target="_blank" rel="noreferrer" style={{ display: 'block', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', background: 'var(--bg-dark)', textDecoration: 'none' }}>
+                  <img
+                    src={image.url}
+                    alt={`Foto importazione ${index + 1}`}
+                    style={{ width: '100%', height: isMobile ? '180px' : '150px', objectFit: 'cover', display: 'block' }}
+                  />
+                  <div style={{ padding: '0.55rem 0.7rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    Foto {index + 1}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
