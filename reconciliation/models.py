@@ -42,6 +42,21 @@ class CashClosureItem(models.Model):
     def __str__(self):
         return f"{self.department_name} (Saldo: € {self.balance})"
 
+
+class CashClosureImage(models.Model):
+    closure = models.ForeignKey(CashClosure, related_name='images', on_delete=models.CASCADE, verbose_name="Chiusura Cassa")
+    image = models.ImageField(upload_to='closures/%Y/%m/', verbose_name="Foto Incasso")
+    source = models.CharField(max_length=30, blank=True, verbose_name="Origine")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Foto Incasso"
+        verbose_name_plural = "Foto Incasso"
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Foto chiusura {self.closure_id}"
+
 class Department(models.Model):
     name = models.CharField(max_length=150, unique=True, verbose_name="Nome Reparto")
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2 } from 'lucide-react';
 import { apiFetch } from './api';
 
 export default function Impostazioni() {
@@ -26,6 +26,10 @@ export default function Impostazioni() {
   const [fondoCassa, setFondoCassa] = useState('');
   const [savingBalances, setSavingBalances] = useState(false);
   const [balancesSaved, setBalancesSaved] = useState(false);
+  const [imagePurgeScope, setImagePurgeScope] = useState('month');
+  const [imagePurgeMonth, setImagePurgeMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [purgingImages, setPurgingImages] = useState(false);
+  const [imagePurgeResult, setImagePurgeResult] = useState(null);
 
   useEffect(() => {
     apiFetch('/api/settings/')
@@ -172,6 +176,31 @@ export default function Impostazioni() {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSavingBalances(false));
+  };
+
+  const handlePurgeImages = () => {
+    const label = imagePurgeScope === 'all' ? 'tutte le immagini archiviate' : `le immagini del mese ${imagePurgeMonth}`;
+    if (!window.confirm(`Eliminare ${label}? L'operazione non è reversibile.`)) return;
+    setPurgingImages(true);
+    setImagePurgeResult(null);
+    setError(null);
+
+    apiFetch('/api/settings/images/purge/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: imagePurgeScope, month: imagePurgeMonth }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setImagePurgeResult(d.data);
+          setTimeout(() => setImagePurgeResult(null), 8000);
+        } else {
+          setError(d.error || 'Errore durante eliminazione immagini.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setPurgingImages(false));
   };
 
   const inputStyle = {
@@ -387,6 +416,47 @@ export default function Impostazioni() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Trash2 size={20} color="var(--danger)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Archivio Immagini Incassi</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+          Elimina immagini archiviate su disco. I dati contabili restano salvati, ma le foto associate non saranno più disponibili.
+        </p>
+
+        {imagePurgeResult && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Eliminate {imagePurgeResult.total_deleted} immagini.
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Ambito</label>
+            <select value={imagePurgeScope} onChange={e => setImagePurgeScope(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }}>
+              <option value="month">Un mese specifico</option>
+              <option value="all">Tutte le immagini</option>
+            </select>
+          </div>
+          {imagePurgeScope === 'month' && (
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Mese</label>
+              <input type="month" value={imagePurgeMonth} onChange={e => setImagePurgeMonth(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }} />
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handlePurgeImages}
+          disabled={purgingImages || (imagePurgeScope === 'month' && !imagePurgeMonth)}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+        >
+          {purgingImages ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+          Elimina immagini
+        </button>
       </div>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>

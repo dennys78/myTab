@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -153,6 +153,30 @@ function AppShell() {
       .catch(() => alert("Errore di rete durante l'eliminazione."));
   };
 
+  const handleUploadClosureImages = (closureId, fileList) => {
+    if (!fileList?.length) return;
+    const fd = new FormData();
+    Array.from(fileList).forEach((file, index) => fd.append(`file${index}`, file));
+    apiFetch(`/api/closures/${closureId}/images/upload/`, { method: 'POST', body: fd })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') refreshDashboardData();
+        else alert("Errore caricamento immagini: " + data.error);
+      })
+      .catch(() => alert("Errore di rete durante il caricamento immagini."));
+  };
+
+  const handleDeleteClosureImage = (imageId) => {
+    if (!window.confirm("Eliminare questa immagine dall'incasso?")) return;
+    apiFetch(`/api/closure-images/${imageId}/delete/`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') refreshDashboardData();
+        else alert("Errore eliminazione immagine: " + data.error);
+      })
+      .catch(() => alert("Errore di rete durante l'eliminazione immagine."));
+  };
+
   const navigate = (view) => {
     setCurrentView(view);
     setIsMobileMenuOpen(false);
@@ -277,6 +301,7 @@ function AppShell() {
                     <thead>
                       <tr>
                         <th></th>
+                        <th>Foto</th>
                         <th>Data</th>
                         <th>Operatore</th>
                         <th>Contanti</th>
@@ -291,6 +316,9 @@ function AppShell() {
                           <tr onClick={() => toggleRow(closure.id)} className={expandedId === closure.id ? 'expanded-row' : ''}>
                             <td style={{ width: '40px' }}>
                               {expandedId === closure.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            </td>
+                            <td title={closure.image_count > 0 ? `${closure.image_count} immagini associate` : 'Nessuna immagine associata'}>
+                              <ImageIcon size={17} color={closure.image_count > 0 ? 'var(--success)' : 'var(--text-subtle)'} />
                             </td>
                             <td>{closure.date}</td>
                             <td>
@@ -314,7 +342,7 @@ function AppShell() {
 
                           {expandedId === closure.id && (
                             <tr>
-                              <td colSpan="7" style={{ padding: 0, borderBottom: 'none' }}>
+                              <td colSpan="8" style={{ padding: 0, borderBottom: 'none' }}>
                                 <div className="expanded-content">
                                   <div className="summary-section" style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -370,6 +398,43 @@ function AppShell() {
                                         );
                                       })}
                                     </div>
+                                  </div>
+
+                                  <div style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                                      <h2 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <ImageIcon size={16} color="var(--accent)" /> Immagini Incasso
+                                      </h2>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.75rem', background: 'rgba(79,141,247,0.12)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700 }}>
+                                        <Upload size={15} /> Aggiungi foto
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          onChange={(e) => { handleUploadClosureImages(closure.id, e.target.files); e.target.value = ''; }}
+                                          style={{ display: 'none' }}
+                                        />
+                                      </label>
+                                    </div>
+                                    {closure.images?.length > 0 ? (
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
+                                        {closure.images.map(image => (
+                                          <div key={image.id} style={{ border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden', background: 'var(--bg-dark)' }}>
+                                            <a href={image.url} target="_blank" rel="noreferrer">
+                                              <img src={image.url} alt="Foto incasso" style={{ width: '100%', height: '110px', objectFit: 'cover', display: 'block' }} />
+                                            </a>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.55rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                              <span>{image.source || 'foto'}</span>
+                                              <button onClick={() => handleDeleteClosureImage(image.id)} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.15rem' }}>
+                                                <Trash2 size={14} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Nessuna immagine associata a questo incasso.</div>
+                                    )}
                                   </div>
 
                                   <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

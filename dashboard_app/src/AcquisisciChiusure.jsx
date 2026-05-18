@@ -162,7 +162,8 @@ export default function AcquisisciChiusure({ onBack }) {
       date: previewData.date,
       operator: 'Web Dashboard',
       summary: previewData.summary,
-      items: cleanItems
+      items: cleanItems,
+      draft_id: previewData.draft_id,
     };
 
     apiFetch('/api/closures/insert/', {

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import base64
+import io
 import os
 import re
 import urllib.parse
 import urllib.request
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
+from django.core.files.base import ContentFile
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.dateparse import parse_date
 from django.utils import timezone
@@ -18,7 +20,9 @@ from django.contrib.auth.models import User
 from difflib import get_close_matches
 from .models import (
     AcquisitionDraft,
+    AcquisitionDraftImage,
     CashClosure,
+    CashClosureImage,
     CashClosureItem,
     Department,
     AppSetting,
@@ -245,6 +249,37 @@ def _department_for_import(raw_name, known_depts, create_missing=False):
     return dept_name
 
 
+def _copy_draft_images_to_closure(draft, closure):
+    for index, draft_image in enumerate(draft.images.all(), start=1):
+        try:
+            with draft_image.image.open('rb') as img:
+                image_bytes = img.read()
+        except FileNotFoundError:
+            continue
+        name = os.path.basename(draft_image.image.name) or f'draft_{draft.id}_{index}.jpg'
+        CashClosureImage.objects.create(
+            closure=closure,
+            source=draft.source,
+            image=ContentFile(image_bytes, name=name),
+        )
+        draft_image.image.delete(save=False)
+        draft_image.delete()
+
+
+def _create_upload_draft(request, source='web'):
+    draft = AcquisitionDraft.objects.create(
+        source=source,
+        operator=request.user.username,
+    )
+    for index, file_key in enumerate(request.FILES, start=1):
+        uploaded = request.FILES[file_key]
+        AcquisitionDraftImage.objects.create(
+            draft=draft,
+            image=ContentFile(uploaded.read(), name=f'{source}_{request.user.id}_{draft.id}_{index}_{uploaded.name}'),
+        )
+    return draft
+
+
 @require_auth
 def api_insert_closure(request):
     if request.method == 'POST':
@@ -267,7 +302,7 @@ def api_insert_closure(request):
                 draft = None
                 draft_id = data.get('draft_id')
                 if draft_id:
-                    draft = AcquisitionDraft.objects.filter(id=draft_id, status='pending').first()
+                    draft = AcquisitionDraft.objects.prefetch_related('images').filter(id=draft_id, status='pending').first()
 
                 # Inserimento Master
                 closure = CashClosure.objects.create(
@@ -303,6 +338,7 @@ def api_insert_closure(request):
                     )
 
                 if draft:
+                    _copy_draft_images_to_closure(draft, closure)
                     AcquisitionDraft.objects.filter(id=draft.id, status='pending').update(
                         status='completed',
                         completed_at=timezone.now(),
@@ -329,8 +365,15 @@ def api_extract_closure(request):
             
         try:
             full_text = ""
+            draft = AcquisitionDraft.objects.create(source='web', operator=request.user.username)
             for file_key in request.FILES:
-                img = Image.open(request.FILES[file_key])
+                uploaded = request.FILES[file_key]
+                file_bytes = uploaded.read()
+                AcquisitionDraftImage.objects.create(
+                    draft=draft,
+                    image=ContentFile(file_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}_{uploaded.name}'),
+                )
+                img = Image.open(io.BytesIO(file_bytes))
                 img = _preprocess(img)
                 full_text += pytesseract.image_to_string(img, lang='ita', config='--psm 6') + "\n"
 
@@ -370,6 +413,7 @@ def api_extract_closure(request):
                 },
                 'items': parsed_data['items'],
                 'raw_text': full_text,
+                'draft_id': draft.id,
             }
 
             return JsonResponse({'status': 'success', 'data': response_data})
@@ -382,7 +426,7 @@ def api_extract_closure(request):
 @require_admin
 def api_list_closures(request):
     if request.method == 'GET':
-        closures = CashClosure.objects.all().prefetch_related('items')
+        closures = CashClosure.objects.all().prefetch_related('items', 'images')
         data = []
         for c in closures:
             items = []
@@ -400,6 +444,13 @@ def api_list_closures(request):
                 'date': c.date.isoformat(),
                 'operator': c.operator,
                 'submitted_by': c.submitted_by,
+                'image_count': c.images.count(),
+                'images': [{
+                    'id': image.id,
+                    'url': f'/api/closure-images/{image.id}/view/',
+                    'source': image.source,
+                    'created_at': image.created_at.isoformat(),
+                } for image in c.images.all()],
                 'summary': {
                     'contanti': float(c.contanti),
                     'pag_pos': float(c.pag_pos),
@@ -472,6 +523,8 @@ def api_delete_closure(request, closure_id):
     if request.method == 'DELETE':
         try:
             closure = CashClosure.objects.get(id=closure_id)
+            for image in closure.images.all():
+                image.image.delete(save=False)
             closure.delete()
             return JsonResponse({'status': 'success', 'message': 'Chiusura eliminata correttamente.'})
         except CashClosure.DoesNotExist:
@@ -480,6 +533,56 @@ def api_delete_closure(request, closure_id):
             return JsonResponse({'error': str(e)}, status=500)
             
     return JsonResponse({'error': 'Metodo non consentito. Usa DELETE.'}, status=405)
+
+
+@require_auth
+def api_closure_image_view(request, image_id):
+    try:
+        image = CashClosureImage.objects.get(id=image_id)
+    except CashClosureImage.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Immagine non trovata'}, status=404)
+    return FileResponse(image.image.open('rb'))
+
+
+@require_auth
+def api_closure_images_upload(request, closure_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        closure = CashClosure.objects.get(id=closure_id)
+    except CashClosure.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Chiusura non trovata'}, status=404)
+    if not request.FILES:
+        return JsonResponse({'status': 'error', 'error': 'Nessuna immagine fornita'}, status=400)
+
+    created = []
+    for file_key in request.FILES:
+        uploaded = request.FILES[file_key]
+        img = CashClosureImage.objects.create(
+            closure=closure,
+            source='manuale',
+            image=uploaded,
+        )
+        created.append({
+            'id': img.id,
+            'url': f'/api/closure-images/{img.id}/view/',
+            'source': img.source,
+            'created_at': img.created_at.isoformat(),
+        })
+    return JsonResponse({'status': 'success', 'data': created})
+
+
+@require_auth
+def api_closure_image_delete(request, image_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        image = CashClosureImage.objects.get(id=image_id)
+    except CashClosureImage.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Immagine non trovata'}, status=404)
+    image.image.delete(save=False)
+    image.delete()
+    return JsonResponse({'status': 'success'})
 
 
 # ── REPARTI ──────────────────────────────────────────────────────────────────
@@ -630,6 +733,15 @@ def _send_telegram_message(token, chat_id, text):
         return response.status == 200
 
 
+def _delete_image_objects(images):
+    count = 0
+    for image in list(images):
+        image.image.delete(save=False)
+        image.delete()
+        count += 1
+    return count
+
+
 @require_admin
 def api_get_settings(request):
     if request.method == 'GET':
@@ -758,6 +870,48 @@ def api_restart_telegram_bot(request):
             'message': 'Richiesta di riavvio bot registrata.',
         },
     })
+
+
+@require_admin
+def api_purge_images(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+    try:
+        data = json.loads(request.body or '{}')
+        scope = data.get('scope', 'month')
+        month = data.get('month', '')
+
+        closure_images = CashClosureImage.objects.all()
+        draft_images = AcquisitionDraftImage.objects.all()
+
+        if scope == 'month':
+            if not re.fullmatch(r'\d{4}-\d{2}', month):
+                return JsonResponse({'status': 'error', 'error': 'Mese non valido. Usa YYYY-MM.'}, status=400)
+            year, month_num = [int(part) for part in month.split('-')]
+            closure_images = closure_images.filter(created_at__year=year, created_at__month=month_num)
+            draft_images = draft_images.filter(created_at__year=year, created_at__month=month_num)
+        elif scope != 'all':
+            return JsonResponse({'status': 'error', 'error': 'Ambito eliminazione non valido.'}, status=400)
+
+        closure_count = _delete_image_objects(closure_images)
+        draft_ids = list(draft_images.values_list('draft_id', flat=True).distinct())
+        draft_count = _delete_image_objects(draft_images)
+        if draft_ids:
+            AcquisitionDraft.objects.filter(id__in=draft_ids, status='pending').update(
+                status='cancelled',
+                completed_at=timezone.now(),
+            )
+
+        return JsonResponse({
+            'status': 'success',
+            'data': {
+                'closure_images_deleted': closure_count,
+                'draft_images_deleted': draft_count,
+                'total_deleted': closure_count + draft_count,
+            },
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
 
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
@@ -952,17 +1106,25 @@ def api_extract_closure_ai(request):
 
     try:
         images = []
+        draft = AcquisitionDraft.objects.create(source='web', operator=request.user.username)
         for file_key in request.FILES:
             f = request.FILES[file_key]
             mime = f.content_type or 'image/jpeg'
-            b64 = base64.standard_b64encode(f.read()).decode('utf-8')
+            file_bytes = f.read()
+            AcquisitionDraftImage.objects.create(
+                draft=draft,
+                image=ContentFile(file_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}_{f.name}'),
+            )
+            b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             images.append({'mime': mime, 'b64': b64})
 
         parsed, operator = _extract_ai_payload(images)
+        data = _parse_ai_closure_payload(parsed, operator=operator)
+        data['draft_id'] = draft.id
         return JsonResponse({
             'status': 'success',
             'provider': _get_ai_provider(),
-            'data': _parse_ai_closure_payload(parsed, operator=operator),
+            'data': data,
         })
 
     except json.JSONDecodeError as e:
@@ -977,7 +1139,7 @@ def api_extract_closure_ai(request):
 def api_acquisition_drafts_list(request):
     if request.method != 'GET':
         return JsonResponse({'status': 'error'}, status=405)
-    drafts = AcquisitionDraft.objects.filter(status='pending').prefetch_related('images')[:20]
+    drafts = AcquisitionDraft.objects.filter(status='pending', source='telegram').prefetch_related('images')[:20]
     return JsonResponse({
         'status': 'success',
         'data': [{

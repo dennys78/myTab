@@ -20,6 +20,9 @@ urlpatterns = [
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),
     path('api/closures/delete/<int:closure_id>/',   views.api_delete_closure),
+    path('api/closures/<int:closure_id>/images/upload/', views.api_closure_images_upload),
+    path('api/closure-images/<int:image_id>/view/', views.api_closure_image_view),
+    path('api/closure-images/<int:image_id>/delete/', views.api_closure_image_delete),
     path('api/acquisition-drafts/',                 views.api_acquisition_drafts_list),
     path('api/acquisition-drafts/<int:draft_id>/extract-ai/', views.api_acquisition_draft_extract),
     path('api/acquisition-drafts/<int:draft_id>/cancel/', views.api_acquisition_draft_cancel),
@@ -48,4 +51,5 @@ urlpatterns = [
     path('api/settings/save/',                      views.api_save_settings),
     path('api/settings/telegram/reset-sessions/',   views.api_reset_telegram_sessions),
     path('api/settings/telegram/restart-bot/',      views.api_restart_telegram_bot),
+    path('api/settings/images/purge/',              views.api_purge_images),
 ]
