@@ -4,6 +4,7 @@ from django.utils import timezone
 class CashClosure(models.Model):
     date = models.DateField(default=timezone.now, verbose_name="Data Chiusura")
     operator = models.CharField(max_length=100, verbose_name="Operatore")
+    submitted_by = models.CharField(max_length=100, blank=True, verbose_name="Inviato da")
     
     # Summary Fields
     contanti = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Contanti")

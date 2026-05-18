@@ -229,7 +229,7 @@ def api_insert_closure(request):
             data = json.loads(request.body)
             
             date_str = data.get('date')
-            operator = data.get('operator', 'Sistema Esterno')
+            operator = request.user.username
             summary = data.get('summary', {})
             items = data.get('items', [])
             
@@ -241,10 +241,16 @@ def api_insert_closure(request):
                 return JsonResponse({'error': 'Formato data non valido, usa YYYY-MM-DD'}, status=400)
 
             with transaction.atomic():
+                draft = None
+                draft_id = data.get('draft_id')
+                if draft_id:
+                    draft = AcquisitionDraft.objects.filter(id=draft_id, status='pending').first()
+
                 # Inserimento Master
                 closure = CashClosure.objects.create(
                     date=parsed_date,
                     operator=operator,
+                    submitted_by=draft.operator if draft else '',
                     contanti=_money(summary.get('contanti')),
                     pag_pos=_money(summary.get('pag_pos')),
                     cassa_auto=_money(summary.get('cassa_auto')),
@@ -276,9 +282,8 @@ def api_insert_closure(request):
                         balance=_money(item.get('saldo'))
                     )
 
-                draft_id = data.get('draft_id')
-                if draft_id:
-                    AcquisitionDraft.objects.filter(id=draft_id, status='pending').update(
+                if draft:
+                    AcquisitionDraft.objects.filter(id=draft.id, status='pending').update(
                         status='completed',
                         completed_at=timezone.now(),
                     )
@@ -372,6 +377,7 @@ def api_list_closures(request):
                 'id': c.id,
                 'date': c.date.isoformat(),
                 'operator': c.operator,
+                'submitted_by': c.submitted_by,
                 'summary': {
                     'contanti': float(c.contanti),
                     'pag_pos': float(c.pag_pos),

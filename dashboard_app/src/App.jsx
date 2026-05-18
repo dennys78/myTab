@@ -293,7 +293,14 @@ function AppShell() {
                               {expandedId === closure.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </td>
                             <td>{closure.date}</td>
-                            <td>{closure.operator}</td>
+                            <td>
+                              <div>{closure.operator}</div>
+                              {closure.submitted_by && closure.submitted_by !== closure.operator && (
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '0.15rem' }}>
+                                  File inviati da {closure.submitted_by}
+                                </div>
+                              )}
+                            </td>
                             <td>€ {closure.summary.contanti.toFixed(2)}</td>
                             <td>€ {closure.summary.pag_pos.toFixed(2)}</td>
                             <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
