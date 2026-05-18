@@ -30,6 +30,27 @@ services:
              python manage.py ensure_admin &&
              gunicorn --bind 0.0.0.0:8000 --timeout 120 cash_manager.wsgi:application"
 
+  telegram_bot:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - sqlite_data:/app/db_data
+    environment:
+      - DJANGO_SETTINGS_MODULE=cash_manager.settings
+      - DOCKER_ENV=1
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-false}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,serverapp.asuscomm.com}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://serverapp.asuscomm.com:8080}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
+      - CSRF_COOKIE_SECURE=${CSRF_COOKIE_SECURE:-false}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      - backend
+    command: python bot.py
+
   frontend:
     restart: unless-stopped
     build:

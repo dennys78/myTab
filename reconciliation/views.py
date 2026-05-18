@@ -672,6 +672,26 @@ def api_reset_telegram_sessions(request):
     })
 
 
+@require_admin
+def api_restart_telegram_bot(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+    restart_at = timezone.now().isoformat()
+    AppSetting.objects.update_or_create(
+        key='telegram_bot_restart_requested_at',
+        defaults={'value': restart_at},
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'data': {
+            'restart_requested_at': restart_at,
+            'message': 'Richiesta di riavvio bot registrata.',
+        },
+    })
+
+
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
 
 AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.

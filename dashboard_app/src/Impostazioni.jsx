@@ -13,6 +13,8 @@ export default function Impostazioni() {
   const [telegramSaved, setTelegramSaved] = useState(false);
   const [resettingTelegram, setResettingTelegram] = useState(false);
   const [telegramResetResult, setTelegramResetResult] = useState(null);
+  const [restartingTelegramBot, setRestartingTelegramBot] = useState(false);
+  const [telegramBotRestarted, setTelegramBotRestarted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -108,6 +110,29 @@ export default function Impostazioni() {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setResettingTelegram(false));
+  };
+
+  const handleRestartTelegramBot = () => {
+    setRestartingTelegramBot(true);
+    setTelegramBotRestarted(false);
+    setError(null);
+
+    apiFetch('/api/settings/telegram/restart-bot/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setTelegramBotRestarted(true);
+          setTimeout(() => setTelegramBotRestarted(false), 6000);
+        } else {
+          setError(d.error || 'Errore durante il riavvio del bot Telegram.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setRestartingTelegramBot(false));
   };
 
   const handleSaveBalances = () => {
@@ -257,6 +282,11 @@ export default function Impostazioni() {
             <CheckCircle size={15} /> Token Telegram salvato correttamente.
           </div>
         )}
+        {telegramBotRestarted && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Riavvio bot richiesto. Il servizio Docker ripartirà con il token aggiornato.
+          </div>
+        )}
 
         <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
           {telegramConfigured ? 'Inserisci un nuovo token per sostituire quello esistente' : 'Token bot Telegram'}
@@ -285,6 +315,25 @@ export default function Impostazioni() {
             {savingTelegram ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
             Salva
           </button>
+        </div>
+
+        <div style={{ marginTop: '1rem', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', background: 'rgba(8,17,31,0.35)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: '0.2rem' }}>Riavvia bot Telegram</div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: 0 }}>
+                Usa questo comando dopo aver sostituito il token. Il bot Docker si riavvia e legge la nuova configurazione.
+              </p>
+            </div>
+            <button
+              onClick={handleRestartTelegramBot}
+              disabled={restartingTelegramBot || !telegramConfigured}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.65rem 1rem', background: telegramConfigured ? 'rgba(79,141,247,0.14)' : 'var(--bg-dark)', color: telegramConfigured ? 'var(--accent)' : 'var(--text-muted)', border: `1px solid ${telegramConfigured ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '10px', cursor: telegramConfigured ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: '0.88rem' }}
+            >
+              {restartingTelegramBot ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
+              Riavvia bot
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import asyncio
+import time
 
 import django
 from asgiref.sync import sync_to_async
@@ -52,6 +54,13 @@ def _get_telegram_token():
 def _get_reset_marker_sync():
     try:
         return AppSetting.objects.get(key='telegram_reset_sessions_at').value
+    except AppSetting.DoesNotExist:
+        return ''
+
+
+def _get_restart_marker_sync():
+    try:
+        return AppSetting.objects.get(key='telegram_bot_restart_requested_at').value
     except AppSetting.DoesNotExist:
         return ''
 
@@ -108,6 +117,23 @@ def _save_draft_sync(operator, chat_id, photos, totale_scassettato):
             image=ContentFile(photo_bytes, name=f'telegram_{chat_id}_{draft.id}_{index}.jpg'),
         )
     return draft.id
+
+
+async def _watch_restart_requests(app):
+    initial_token = app.bot_data.get('telegram_token')
+    initial_restart_marker = app.bot_data.get('restart_marker', '')
+
+    while True:
+        await asyncio.sleep(10)
+        token = await sync_to_async(_get_telegram_token)()
+        restart_marker = await sync_to_async(_get_restart_marker_sync)()
+        if (token and token != initial_token) or (restart_marker and restart_marker != initial_restart_marker):
+            print("Riavvio bot Telegram richiesto.")
+            os._exit(0)
+
+
+async def _post_init(app):
+    app.create_task(_watch_restart_requests(app))
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,18 +206,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-    token = _get_telegram_token()
-    if not token:
-        raise RuntimeError('Token Telegram non configurato in TELEGRAM_BOT_TOKEN o in Impostazioni.')
+    while True:
+        token = _get_telegram_token()
+        if not token:
+            print("Token Telegram non configurato. Nuovo controllo tra 30 secondi.")
+            time.sleep(30)
+            continue
 
-    app = ApplicationBuilder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("annulla", cancel))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+        app = ApplicationBuilder().token(token).post_init(_post_init).build()
+        app.bot_data['telegram_token'] = token
+        app.bot_data['restart_marker'] = _get_restart_marker_sync()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("annulla", cancel))
+        app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    print("Telegram bot myTab avviato.")
-    app.run_polling()
+        print("Telegram bot myTab avviato.")
+        app.run_polling()
 
 
 if __name__ == '__main__':
