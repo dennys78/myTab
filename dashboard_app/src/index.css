@@ -512,24 +512,25 @@ tbody tr:hover {
   }
   
   .expanded-content {
-    padding: 0.85rem;
+    padding: 0.65rem;
   }
 
   .summary-section {
-    margin-bottom: 1rem !important;
-    padding: 1rem !important;
+    margin-bottom: 0.75rem !important;
+    padding: 0.75rem !important;
   }
 
   .expanded-content > div {
-    padding: 0.9rem !important;
-    margin-bottom: 1rem !important;
-    border-radius: 12px !important;
+    padding: 0.75rem !important;
+    margin-bottom: 0.75rem !important;
+    border-radius: 10px !important;
   }
 
   .expanded-content .summary-section > div:first-child {
     align-items: flex-start !important;
-    gap: 0.8rem;
+    gap: 0.6rem;
     flex-direction: column;
+    margin-bottom: 0.65rem !important;
   }
 
   .expanded-content .summary-section > div:first-child > div {
@@ -540,33 +541,43 @@ tbody tr:hover {
 
   .expanded-content .summary-section > div:nth-child(2) {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 0.75rem !important;
+    gap: 0.55rem !important;
   }
 
   .expanded-content .summary-section > div:nth-child(2) > div {
     min-width: 0;
-    padding: 0.65rem;
-    border-radius: 10px;
+    padding: 0.48rem;
+    border-radius: 8px;
     background: rgba(8, 17, 31, 0.38);
     border: 1px solid var(--border);
   }
 
+  .expanded-content .summary-section > div:nth-child(2) > div > div:first-child {
+    font-size: 0.67rem !important;
+    margin-bottom: 0.18rem !important;
+  }
+
   .expanded-content .summary-section input {
+    min-height: 38px;
+    padding: 0.35rem 0.45rem !important;
     width: 100% !important;
   }
 
   .expanded-content .inner-table {
-    min-width: 560px;
+    margin-top: 0.65rem;
+    min-width: 520px;
   }
 
   .expanded-content .inner-table th,
   .expanded-content .inner-table td {
-    padding: 0.52rem 0.48rem;
-    font-size: 0.82rem;
+    padding: 0.38rem 0.34rem;
+    font-size: 0.78rem;
   }
 
   .expanded-content .inner-table input {
     min-width: 0 !important;
+    min-height: 38px;
+    padding: 0.32rem 0.4rem !important;
     width: 100% !important;
     font-size: 16px !important;
   }
@@ -609,19 +620,19 @@ tbody tr:hover {
   }
 
   .expanded-content {
-    padding: 0.65rem;
+    padding: 0.5rem;
   }
 
   .expanded-content > div {
-    padding: 0.75rem !important;
+    padding: 0.6rem !important;
   }
 
   .expanded-content .summary-section > div:nth-child(2) {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   .expanded-content .inner-table {
-    min-width: 610px;
+    min-width: 560px;
   }
 }
 
@@ -682,6 +693,68 @@ tbody tr:hover {
 
   .nav-item {
     padding: 0.6rem 0.8rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .sidebar,
+  .sidebar-overlay,
+  .menu-button {
+    display: none !important;
+  }
+
+  .app-container {
+    display: block;
+  }
+
+  .mobile-header {
+    display: flex;
+    justify-content: center;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: calc(0.5rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.5rem max(1rem, env(safe-area-inset-left));
+    margin: 0 calc(-1 * max(1rem, env(safe-area-inset-right))) 0.6rem calc(-1 * max(1rem, env(safe-area-inset-left)));
+  }
+
+  .main-content {
+    width: 100%;
+    padding: 0.6rem max(0.85rem, env(safe-area-inset-right)) calc(0.8rem + env(safe-area-inset-bottom)) max(0.85rem, env(safe-area-inset-left));
+  }
+
+  .expanded-content {
+    padding: 0.55rem;
+  }
+
+  .expanded-content > div {
+    padding: 0.75rem !important;
+    margin-bottom: 0.7rem !important;
+  }
+
+  .expanded-content .summary-section > div:first-child {
+    flex-direction: row;
+    align-items: center !important;
+  }
+
+  .expanded-content .summary-section > div:first-child > div {
+    width: auto;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .expanded-content .summary-section > div:nth-child(2) {
+    grid-template-columns: repeat(4, minmax(105px, 1fr)) !important;
+    gap: 0.5rem !important;
+  }
+
+  .expanded-content .inner-table {
+    min-width: 680px;
+  }
+
+  .expanded-content .inner-table th,
+  .expanded-content .inner-table td {
+    padding: 0.34rem 0.32rem;
+    font-size: 0.76rem;
   }
 }
 

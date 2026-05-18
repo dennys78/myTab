@@ -69,6 +69,20 @@ function AppShell() {
 
   useEffect(() => { refreshDashboardData(); }, [refreshDashboardData]);
 
+  useEffect(() => {
+    const closeMenuOnLandscape = () => {
+      const isLandscapePhone = window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches;
+      if (isLandscapePhone) setIsMobileMenuOpen(false);
+    };
+    closeMenuOnLandscape();
+    window.addEventListener('resize', closeMenuOnLandscape);
+    window.addEventListener('orientationchange', closeMenuOnLandscape);
+    return () => {
+      window.removeEventListener('resize', closeMenuOnLandscape);
+      window.removeEventListener('orientationchange', closeMenuOnLandscape);
+    };
+  }, []);
+
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
   const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
