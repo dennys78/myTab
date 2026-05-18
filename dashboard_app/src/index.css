@@ -230,21 +230,21 @@ h2 {
   cursor: pointer;
 }
 
+.stat-card-shortcut:hover,
+.stat-card-shortcut:active {
+  border-color: rgba(79, 141, 247, 0.72);
+  box-shadow: 0 0 0 3px rgba(79, 141, 247, 0.16), 0 18px 42px rgba(79, 141, 247, 0.16);
+}
+
+.stat-card-shortcut:active {
+  transform: translateY(0);
+}
+
 .stat-card-shortcut:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-}
-
-.stat-card-shortcut::after {
-  content: 'Apri';
-  display: inline-flex;
-  margin-top: 0.75rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: #dbeafe;
-  font-size: 0.72rem;
-  font-weight: 700;
+  border-color: rgba(79, 141, 247, 0.72);
+  box-shadow: 0 0 0 3px rgba(79, 141, 247, 0.18), 0 18px 42px rgba(79, 141, 247, 0.18);
 }
 
 .stat-title {
