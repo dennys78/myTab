@@ -25,6 +25,7 @@ function AppShell() {
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [saving, setSaving] = useState(false);
+  const [closuresFilter, setClosuresFilter] = useState('week');
 
   const isAdmin = user?.role === 'amministratore';
 
@@ -72,6 +73,32 @@ function AppShell() {
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
   const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
+
+  const isSameOrAfter = (date, start) => date.getTime() >= start.getTime();
+  const currentMonthStart = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  };
+  const currentWeekStart = () => {
+    const now = new Date();
+    const day = now.getDay() || 7;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  };
+  const threeMonthsStart = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  };
+  const filteredClosures = closures.filter(closure => {
+    if (closuresFilter === 'all') return true;
+    const date = new Date(`${closure.date}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return true;
+    if (closuresFilter === 'week') return isSameOrAfter(date, currentWeekStart());
+    if (closuresFilter === 'month') return isSameOrAfter(date, currentMonthStart());
+    if (closuresFilter === 'three') return isSameOrAfter(date, threeMonthsStart());
+    return true;
+  });
 
   const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
@@ -180,7 +207,7 @@ function AppShell() {
   const navigate = (view) => {
     setCurrentView(view);
     setIsMobileMenuOpen(false);
-    if (view === 'dashboard') refreshDashboardData();
+    if (view === 'dashboard' || view === 'chiusure') refreshDashboardData();
   };
 
   return (
@@ -199,7 +226,7 @@ function AppShell() {
               <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>
                 <LayoutDashboard size={20} /><span>Dashboard</span>
               </div>
-              <div className="nav-item">
+              <div className={`nav-item ${currentView === 'chiusure' ? 'active' : ''}`} onClick={() => navigate('chiusure')}>
                 <Receipt size={20} /><span>Chiusure Cassa</span>
               </div>
             </>
@@ -269,31 +296,54 @@ function AppShell() {
           <FondoCassa />
         ) : (
           <>
-            <h1>Panoramica Chiusure</h1>
+            <h1>{currentView === 'chiusure' ? 'Chiusure Cassa' : 'Panoramica'}</h1>
 
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-title">Totale Generale (Mese)</div>
-                <div className="stat-value">€ {totalIncassato.toFixed(2)}</div>
+            {currentView === 'dashboard' && (
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-title">Totale Generale (Mese)</div>
+                  <div className="stat-value">€ {totalIncassato.toFixed(2)}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Contanti in Cassa</div>
+                  <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Fondo Cassa</div>
+                  <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Chiusure Ricevute</div>
+                  <div className="stat-value">{closures.length}</div>
+                </div>
               </div>
-              <div className="stat-card">
-                <div className="stat-title">Contanti in Cassa</div>
-                <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-title">Fondo Cassa</div>
-                <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-title">Chiusure Ricevute</div>
-                <div className="stat-value">{closures.length}</div>
-              </div>
-            </div>
+            )}
 
-            <div className="table-container">
+            {currentView === 'chiusure' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
+                    Consulta e modifica le chiusure cassa registrate.
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>Periodo</label>
+                    <select
+                      value={closuresFilter}
+                      onChange={(e) => setClosuresFilter(e.target.value)}
+                      style={{ padding: '0.55rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '9px', fontSize: '0.9rem' }}
+                    >
+                      <option value="week">Settimana corrente</option>
+                      <option value="month">Mese corrente</option>
+                      <option value="three">Tre mesi</option>
+                      <option value="all">Tutti</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="table-container">
               {loading ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento dati in corso...</div>
-              ) : closures.length === 0 ? (
+              ) : filteredClosures.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessuna chiusura presente.</div>
               ) : (
                 <div className="table-responsive-wrapper">
@@ -311,7 +361,7 @@ function AppShell() {
                       </tr>
                     </thead>
                     <tbody>
-                      {closures.map(closure => (
+                      {filteredClosures.map(closure => (
                         <React.Fragment key={closure.id}>
                           <tr onClick={() => toggleRow(closure.id)} className={expandedId === closure.id ? 'expanded-row' : ''}>
                             <td style={{ width: '40px' }}>
@@ -483,7 +533,9 @@ function AppShell() {
                   </table>
                 </div>
               )}
-            </div>
+                </div>
+              </>
+            )}
           </>
         )}
       </main>
