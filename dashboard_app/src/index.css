@@ -371,6 +371,10 @@ tbody tr:hover {
   background: rgba(8, 17, 31, 0.5);
 }
 
+.mobile-closure-col {
+  display: none;
+}
+
 /* Media Queries for Mobile Responsiveness */
 @media (max-width: 768px) {
   body {
@@ -460,8 +464,45 @@ tbody tr:hover {
     text-align: right;
   }
 
-  .table-responsive-wrapper:has(table:not(.acq-items-table):not(.vers-table)) table {
+  .table-responsive-wrapper:has(table:not(.acq-items-table):not(.vers-table):not(.closures-table)) table {
     min-width: 720px;
+  }
+
+  .closures-table {
+    min-width: 0;
+  }
+
+  .closures-table th,
+  .closures-table td {
+    padding: 0.65rem 0.55rem;
+    white-space: nowrap;
+  }
+
+  .closures-table th {
+    font-size: 0.66rem;
+    letter-spacing: 0.035em;
+  }
+
+  .closures-table td {
+    font-size: 0.82rem;
+  }
+
+  .closures-table .desktop-closure-col {
+    display: none;
+  }
+
+  .closures-table .mobile-closure-col {
+    display: table-cell;
+  }
+
+  .closures-table .mobile-diff-positive {
+    color: var(--success);
+    font-weight: 700;
+  }
+
+  .closures-table .mobile-diff-negative {
+    color: var(--danger);
+    font-weight: 700;
   }
 
   th, td {

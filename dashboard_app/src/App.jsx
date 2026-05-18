@@ -347,17 +347,19 @@ function AppShell() {
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessuna chiusura presente.</div>
               ) : (
                 <div className="table-responsive-wrapper">
-                  <table>
+                  <table className="closures-table">
                     <thead>
                       <tr>
                         <th></th>
-                        <th>Foto</th>
+                        <th className="desktop-closure-col">Foto</th>
                         <th>Data</th>
-                        <th>Operatore</th>
-                        <th>Contanti</th>
-                        <th>Pag. POS</th>
-                        <th>Totale Generale</th>
-                        <th>Azioni</th>
+                        <th className="desktop-closure-col">Operatore</th>
+                        <th className="desktop-closure-col">Contanti</th>
+                        <th className="desktop-closure-col">Pag. POS</th>
+                        <th className="desktop-closure-col">Totale Generale</th>
+                        <th className="mobile-closure-col">Totale cassetto</th>
+                        <th className="mobile-closure-col">Differenza</th>
+                        <th className="desktop-closure-col">Azioni</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -367,11 +369,11 @@ function AppShell() {
                             <td style={{ width: '40px' }}>
                               {expandedId === closure.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </td>
-                            <td title={closure.image_count > 0 ? `${closure.image_count} immagini associate` : 'Nessuna immagine associata'}>
+                            <td className="desktop-closure-col" title={closure.image_count > 0 ? `${closure.image_count} immagini associate` : 'Nessuna immagine associata'}>
                               <ImageIcon size={17} color={closure.image_count > 0 ? 'var(--success)' : 'var(--text-subtle)'} />
                             </td>
                             <td>{closure.date}</td>
-                            <td>
+                            <td className="desktop-closure-col">
                               <div>{closure.operator}</div>
                               {closure.submitted_by && closure.submitted_by !== closure.operator && (
                                 <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '0.15rem' }}>
@@ -379,10 +381,14 @@ function AppShell() {
                                 </div>
                               )}
                             </td>
-                            <td>€ {closure.summary.contanti.toFixed(2)}</td>
-                            <td>€ {closure.summary.pag_pos.toFixed(2)}</td>
-                            <td style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
-                            <td>
+                            <td className="desktop-closure-col">€ {closure.summary.contanti.toFixed(2)}</td>
+                            <td className="desktop-closure-col">€ {closure.summary.pag_pos.toFixed(2)}</td>
+                            <td className="desktop-closure-col" style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
+                            <td className="mobile-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closure.summary.totale_cassetto.toFixed(2)}</td>
+                            <td className={`mobile-closure-col ${closure.summary.differenza > 0 ? 'mobile-diff-positive' : closure.summary.differenza < 0 ? 'mobile-diff-negative' : ''}`}>
+                              {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
+                            </td>
+                            <td className="desktop-closure-col">
                               <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} title="Elimina"
                                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                                 <Trash2 size={16} color="var(--danger)" />
