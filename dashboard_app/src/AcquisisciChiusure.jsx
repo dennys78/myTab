@@ -87,6 +87,8 @@ export default function AcquisisciChiusure({ onBack }) {
     }));
   };
 
+  const calcItemSaldo = (item) => Math.round(((Number(item.entrate) || 0) - Math.abs(Number(item.uscite) || 0)) * 100) / 100;
+
   const handleItemChange = (id, field, value) => {
     setPreviewData(prev => ({
       ...prev,
@@ -96,8 +98,9 @@ export default function AcquisisciChiusure({ onBack }) {
           ...item,
           [field]: field === 'descrizione' ? value : (parseFloat(value) || 0),
         };
+        if (field === 'uscite') updated.uscite = Math.abs(updated.uscite);
         if (field === 'entrate' || field === 'uscite') {
-          updated.saldo = Math.round((updated.entrate - updated.uscite) * 100) / 100;
+          updated.saldo = calcItemSaldo(updated);
         }
         return updated;
       })
@@ -151,7 +154,7 @@ export default function AcquisisciChiusure({ onBack }) {
     
     // Remove temporary IDs
     const cleanItems = previewData.items.map(item => {
-      const cleanItem = { ...item };
+      const cleanItem = { ...item, uscite: Math.abs(Number(item.uscite) || 0), saldo: calcItemSaldo(item) };
       delete cleanItem.id;
       return cleanItem;
     });
@@ -193,7 +196,7 @@ export default function AcquisisciChiusure({ onBack }) {
     );
     const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
     const differenza = previewData.summary.differenza ?? 0;
-    const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + (Number(item.saldo) || 0), 0);
+    const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + calcItemSaldo(item), 0);
 
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
@@ -365,9 +368,9 @@ export default function AcquisisciChiusure({ onBack }) {
                         width: '100px',
                         padding: '0.5rem',
                         fontWeight: '600',
-                        color: item.saldo > 0 ? 'var(--success, #22c55e)' : item.saldo < 0 ? 'var(--danger)' : 'var(--text-muted)',
+                        color: calcItemSaldo(item) > 0 ? 'var(--success, #22c55e)' : calcItemSaldo(item) < 0 ? 'var(--danger)' : 'var(--text-muted)',
                       }}>
-                        {item.saldo.toFixed(2)}
+                        {calcItemSaldo(item).toFixed(2)}
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>

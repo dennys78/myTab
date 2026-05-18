@@ -278,8 +278,8 @@ def api_insert_closure(request):
                         closure=closure,
                         department_name=dept_name or 'Reparto Sconosciuto',
                         incomes=_money(item.get('entrate')),
-                        expenses=_money(item.get('uscite')),
-                        balance=_money(item.get('saldo'))
+                        expenses=abs(_money(item.get('uscite'))),
+                        balance=_money(_money(item.get('entrate')) - abs(_money(item.get('uscite'))))
                     )
 
                 if draft:
@@ -764,6 +764,7 @@ Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessu
 Regole:
 - Data in formato YYYY-MM-DD.
 - Tutti gli importi sono numeri float (non stringhe).
+- "entrate" e "uscite" devono essere sempre importi positivi o 0. Non mettere mai il segno meno nella colonna "uscite".
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
 - Le immagini possono essere parti diverse dello stesso foglio: unisci le righe visibili senza duplicarle.
@@ -795,7 +796,7 @@ def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, op
     items = []
     for item in parsed.get('items', []):
         entrate = _money(item.get('entrate'))
-        uscite = _money(item.get('uscite'))
+        uscite = abs(_money(item.get('uscite')))
         items.append({
             'descrizione': str(item.get('descrizione', '')).strip().upper(),
             'entrate': float(entrate),
