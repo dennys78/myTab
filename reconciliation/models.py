@@ -71,6 +71,7 @@ class Versamento(models.Model):
     importo_versato = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo Versato")
     saldo_precedente = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Saldo Precedente")
     accantonamento = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Accantonamento Fondo Cassa")
+    note = models.TextField(blank=True, verbose_name="Note")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -100,6 +101,40 @@ class FondoCassaMovimento(models.Model):
 
     def __str__(self):
         return f"Fondo {self.date.strftime('%d/%m/%Y')} € {self.importo}"
+
+
+class AcquisitionDraft(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Da verificare'),
+        ('completed', 'Registrata'),
+        ('cancelled', 'Annullata'),
+    ]
+
+    source = models.CharField(max_length=30, default='telegram', verbose_name="Origine")
+    operator = models.CharField(max_length=100, blank=True, verbose_name="Operatore")
+    telegram_chat_id = models.CharField(max_length=64, blank=True, verbose_name="Chat Telegram")
+    totale_scassettato = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Totale Scassettato")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Stato")
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Bozza Acquisizione"
+        verbose_name_plural = "Bozze Acquisizione"
+
+    def __str__(self):
+        return f"Bozza {self.source} {self.created_at:%d/%m/%Y %H:%M}"
+
+
+class AcquisitionDraftImage(models.Model):
+    draft = models.ForeignKey(AcquisitionDraft, related_name='images', on_delete=models.CASCADE)
+    image = models.ImageField(upload_to='drafts/%Y/%m/', verbose_name="Foto")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Foto Bozza"
+        verbose_name_plural = "Foto Bozza"
 
 
 class BankTransaction(models.Model):

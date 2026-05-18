@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Cigarette, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 export default function Login() {
   const { login } = useAuth();
@@ -15,7 +16,7 @@ export default function Login() {
     if (!username.trim() || !password.trim()) return;
     setLoading(true);
     setError(null);
-    fetch('/api/auth/login/', {
+    apiFetch('/api/auth/login/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: username.trim(), password }),

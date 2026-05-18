@@ -1,13 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-
-const AuthContext = createContext(null);
+import { useState, useEffect } from 'react';
+import { apiFetch } from './api';
+import { AuthContext } from './auth';
 
 export function AuthProvider({ children }) {
   // undefined = caricamento in corso, null = non autenticato, object = utente
   const [user, setUser] = useState(undefined);
 
   useEffect(() => {
-    fetch('/api/auth/me/')
+    apiFetch('/api/auth/me/')
       .then(r => r.json())
       .then(d => setUser(d.status === 'success' ? d.data : null))
       .catch(() => setUser(null));
@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
   const login = (userData) => setUser(userData);
 
   const logout = () => {
-    fetch('/api/auth/logout/', { method: 'POST' }).catch(() => {});
+    apiFetch('/api/auth/logout/', { method: 'POST' }).catch(() => {});
     setUser(null);
   };
 
@@ -25,8 +25,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  return useContext(AuthContext);
 }

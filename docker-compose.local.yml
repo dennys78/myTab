@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.local
+    environment:
+      - DJANGO_SETTINGS_MODULE=cash_manager.settings
+      - DOCKER_ENV=1
+    volumes:
+      - sqlite_local_data:/app/db_data
+    expose:
+      - "8000"
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py ensure_admin &&
+             gunicorn --bind 0.0.0.0:8000 --timeout 120 cash_manager.wsgi:application"
+
+  frontend:
+    build:
+      context: ./dashboard_app
+      dockerfile: Dockerfile
+    ports:
+      - "18080:80"
+    depends_on:
+      - backend
+
+volumes:
+  sqlite_local_data:

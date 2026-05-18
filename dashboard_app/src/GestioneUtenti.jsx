@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, KeyRound, Loader2, Shield, User } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 export default function GestioneUtenti() {
   const { user: me } = useAuth();
@@ -20,9 +21,9 @@ export default function GestioneUtenti() {
   const [changePwdValue, setChangePwdValue] = useState('');
   const [changingPwd, setChangingPwd] = useState(false);
 
-  const fetchUsers = () => {
-    setLoading(true);
-    fetch('/api/users/')
+  const fetchUsers = useCallback((showLoading = true) => {
+    if (showLoading) setLoading(true);
+    apiFetch('/api/users/')
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') setUsers(d.data);
@@ -30,16 +31,19 @@ export default function GestioneUtenti() {
       })
       .catch(() => setError('Errore di rete'))
       .finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => fetchUsers(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchUsers]);
 
   const handleCreate = (e) => {
     e.preventDefault();
     if (!newUsername.trim() || !newPassword.trim()) return;
     setCreating(true);
     setCreateError(null);
-    fetch('/api/users/create/', {
+    apiFetch('/api/users/create/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: newUsername.trim(), password: newPassword, role: newRole }),
@@ -59,7 +63,7 @@ export default function GestioneUtenti() {
 
   const handleDelete = (id, username) => {
     if (!window.confirm(`Eliminare l'utente "${username}"?`)) return;
-    fetch(`/api/users/${id}/delete/`, { method: 'DELETE' })
+    apiFetch(`/api/users/${id}/delete/`, { method: 'DELETE' })
       .then(r => r.json())
       .then(d => { if (d.status === 'success') fetchUsers(); })
       .catch(() => {});
@@ -68,7 +72,7 @@ export default function GestioneUtenti() {
   const handleChangePassword = (id) => {
     if (!changePwdValue.trim()) return;
     setChangingPwd(true);
-    fetch(`/api/users/${id}/change-password/`, {
+    apiFetch(`/api/users/${id}/change-password/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: changePwdValue }),

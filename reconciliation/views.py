@@ -1,18 +1,48 @@
+from __future__ import annotations
+
 import json
 import base64
 import os
+import urllib.parse
+import urllib.request
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.dateparse import parse_date
+from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from difflib import get_close_matches
-from .models import CashClosure, CashClosureItem, Department, AppSetting, Versamento, FondoCassaMovimento
+from .models import (
+    AcquisitionDraft,
+    CashClosure,
+    CashClosureItem,
+    Department,
+    AppSetting,
+    Versamento,
+    FondoCassaMovimento,
+)
 from .ocr_parser import parse_closure_receipt
 import pytesseract
 from PIL import Image, ImageEnhance
+
+
+MONEY_ZERO = Decimal('0.00')
+
+
+def _money(value, default=MONEY_ZERO):
+    if value in (None, ''):
+        return default
+    try:
+        return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError(f'Importo non valido: {value}')
+
+
+def _money_number(value):
+    return float(_money(value))
 
 
 # ── AUTH HELPERS ─────────────────────────────────────────────────────────────
@@ -48,7 +78,6 @@ def require_admin(view_func):
 
 # ── AUTH VIEWS ───────────────────────────────────────────────────────────────
 
-@csrf_exempt
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
@@ -64,11 +93,11 @@ def api_login(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
-@csrf_exempt
 def api_logout(request):
     auth_logout(request)
     return JsonResponse({'status': 'success'})
 
+@ensure_csrf_cookie
 def api_me(request):
     if not request.user.is_authenticated:
         return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
@@ -77,7 +106,6 @@ def api_me(request):
 
 # ── GESTIONE UTENTI (solo amministratori) ────────────────────────────────────
 
-@csrf_exempt
 @require_admin
 def api_users_list(request):
     if request.method != 'GET':
@@ -85,7 +113,6 @@ def api_users_list(request):
     users = User.objects.all().order_by('username')
     return JsonResponse({'status': 'success', 'data': [_user_info(u) for u in users]})
 
-@csrf_exempt
 @require_admin
 def api_user_create(request):
     if request.method != 'POST':
@@ -106,7 +133,6 @@ def api_user_create(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
-@csrf_exempt
 @require_admin
 def api_user_delete(request, user_id):
     if request.method != 'DELETE':
@@ -119,7 +145,6 @@ def api_user_delete(request, user_id):
     except User.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
 
-@csrf_exempt
 @require_admin
 def api_user_change_password(request, user_id):
     if request.method != 'POST':
@@ -166,7 +191,6 @@ def _resolve_dept(name: str, known: list) -> str | None:
     return matches[0] if matches else None
 
 
-@csrf_exempt
 @require_auth
 def api_insert_closure(request):
     if request.method == 'POST':
@@ -190,15 +214,15 @@ def api_insert_closure(request):
                 closure = CashClosure.objects.create(
                     date=parsed_date,
                     operator=operator,
-                    contanti=float(summary.get('contanti', 0.0)),
-                    pag_pos=float(summary.get('pag_pos', 0.0)),
-                    cassa_auto=float(summary.get('cassa_auto', 0.0)),
-                    reso_cont=float(summary.get('reso_cont', 0.0)),
-                    reso_auto=float(summary.get('reso_auto', 0.0)),
-                    distrib=float(summary.get('distrib', 0.0)),
-                    totale_generale=float(summary.get('totale', 0.0)),
-                    totale_cassetto=float(summary.get('totale_cassetto', 0.0)),
-                    differenza=float(summary.get('differenza', 0.0)),
+                    contanti=_money(summary.get('contanti')),
+                    pag_pos=_money(summary.get('pag_pos')),
+                    cassa_auto=_money(summary.get('cassa_auto')),
+                    reso_cont=_money(summary.get('reso_cont')),
+                    reso_auto=_money(summary.get('reso_auto')),
+                    distrib=_money(summary.get('distrib')),
+                    totale_generale=_money(summary.get('totale')),
+                    totale_cassetto=_money(summary.get('totale_cassetto')),
+                    differenza=_money(summary.get('differenza')),
                 )
 
                 # Auto-popola archivio reparti e inserisce le righe
@@ -216,9 +240,16 @@ def api_insert_closure(request):
                     CashClosureItem.objects.create(
                         closure=closure,
                         department_name=dept_name or 'Reparto Sconosciuto',
-                        incomes=float(item.get('entrate', 0.0)),
-                        expenses=float(item.get('uscite', 0.0)),
-                        balance=float(item.get('saldo', 0.0))
+                        incomes=_money(item.get('entrate')),
+                        expenses=_money(item.get('uscite')),
+                        balance=_money(item.get('saldo'))
+                    )
+
+                draft_id = data.get('draft_id')
+                if draft_id:
+                    AcquisitionDraft.objects.filter(id=draft_id, status='pending').update(
+                        status='completed',
+                        completed_at=timezone.now(),
                     )
             
             return JsonResponse({
@@ -234,7 +265,6 @@ def api_insert_closure(request):
             
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
-@csrf_exempt
 @require_admin
 def api_extract_closure(request):
     if request.method == 'POST':
@@ -291,7 +321,6 @@ def api_extract_closure(request):
 
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
-@csrf_exempt
 @require_admin
 def api_list_closures(request):
     if request.method == 'GET':
@@ -329,7 +358,6 @@ def api_list_closures(request):
         return JsonResponse({'status': 'success', 'data': data})
         
     return JsonResponse({'error': 'Metodo non consentito. Usa GET.'}, status=405)
-@csrf_exempt
 @require_admin
 def api_update_closure(request, closure_id):
     if request.method in ['POST', 'PUT']:
@@ -338,17 +366,21 @@ def api_update_closure(request, closure_id):
             data = json.loads(request.body)
             
             # Aggiorna solo se presenti nel payload
-            if 'contanti' in data: closure.contanti = float(data['contanti'])
-            if 'pag_pos' in data: closure.pag_pos = float(data['pag_pos'])
-            if 'cassa_auto' in data: closure.cassa_auto = float(data['cassa_auto'])
-            if 'reso_cont' in data: closure.reso_cont = float(data['reso_cont'])
-            if 'reso_auto' in data: closure.reso_auto = float(data['reso_auto'])
-            if 'distrib' in data: closure.distrib = float(data['distrib'])
-            if 'totale' in data: closure.totale_generale = float(data['totale'])
-            if 'totale_cassetto' in data: closure.totale_cassetto = float(data['totale_cassetto'])
-            if 'differenza' in data: closure.differenza = float(data['differenza'])
+            if 'contanti' in data: closure.contanti = _money(data['contanti'])
+            if 'pag_pos' in data: closure.pag_pos = _money(data['pag_pos'])
+            if 'cassa_auto' in data: closure.cassa_auto = _money(data['cassa_auto'])
+            if 'reso_cont' in data: closure.reso_cont = _money(data['reso_cont'])
+            if 'reso_auto' in data: closure.reso_auto = _money(data['reso_auto'])
+            if 'distrib' in data: closure.distrib = _money(data['distrib'])
+            if 'totale' in data: closure.totale_generale = _money(data['totale'])
+            if 'totale_cassetto' in data: closure.totale_cassetto = _money(data['totale_cassetto'])
+            if 'differenza' in data: closure.differenza = _money(data['differenza'])
             
             closure.save()
+
+            deleted_item_ids = data.get('deleted_item_ids', [])
+            if deleted_item_ids:
+                CashClosureItem.objects.filter(id__in=deleted_item_ids, closure=closure).delete()
             
             # Aggiorna gli items se presenti
             items_data = data.get('items', [])
@@ -357,9 +389,9 @@ def api_update_closure(request, closure_id):
                 if item_id:
                     try:
                         item = CashClosureItem.objects.get(id=item_id, closure=closure)
-                        if 'entrate' in item_data: item.incomes = float(item_data['entrate'])
-                        if 'uscite' in item_data: item.expenses = float(item_data['uscite'])
-                        if 'saldo' in item_data: item.balance = float(item_data['saldo'])
+                        if 'entrate' in item_data: item.incomes = _money(item_data['entrate'])
+                        if 'uscite' in item_data: item.expenses = _money(item_data['uscite'])
+                        if 'saldo' in item_data: item.balance = _money(item_data['saldo'])
                         if 'descrizione' in item_data: item.department_name = str(item_data['descrizione'])
                         item.save()
                     except CashClosureItem.DoesNotExist:
@@ -376,7 +408,6 @@ def api_update_closure(request, closure_id):
             
     return JsonResponse({'error': 'Metodo non consentito. Usa PUT o POST.'}, status=405)
 
-@csrf_exempt
 @require_admin
 def api_delete_closure(request, closure_id):
     if request.method == 'DELETE':
@@ -394,7 +425,6 @@ def api_delete_closure(request, closure_id):
 
 # ── REPARTI ──────────────────────────────────────────────────────────────────
 
-@csrf_exempt
 @require_admin
 def api_list_departments(request):
     if request.method == 'GET':
@@ -403,7 +433,6 @@ def api_list_departments(request):
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
-@csrf_exempt
 @require_admin
 def api_create_department(request):
     if request.method == 'POST':
@@ -419,7 +448,6 @@ def api_create_department(request):
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
-@csrf_exempt
 @require_admin
 def api_update_department(request, dept_id):
     if request.method in ['POST', 'PUT']:
@@ -438,7 +466,6 @@ def api_update_department(request, dept_id):
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
-@csrf_exempt
 @require_admin
 def api_delete_department(request, dept_id):
     if request.method == 'DELETE':
@@ -464,18 +491,73 @@ def _get_groq_key():
     return key
 
 
-@csrf_exempt
+def _get_telegram_token():
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    if not token:
+        try:
+            token = AppSetting.objects.get(key='telegram_bot_token').value.strip()
+        except AppSetting.DoesNotExist:
+            pass
+    return token
+
+
+def _get_setting_money(key):
+    try:
+        return _money(AppSetting.objects.get(key=key).value)
+    except AppSetting.DoesNotExist:
+        return MONEY_ZERO
+
+
+def _set_setting_money(key, value):
+    AppSetting.objects.update_or_create(
+        key=key,
+        defaults={'value': str(_money(value))},
+    )
+
+
+def _get_telegram_chat_ids():
+    chat_ids = set(
+        AcquisitionDraft.objects
+        .exclude(telegram_chat_id='')
+        .values_list('telegram_chat_id', flat=True)
+    )
+    try:
+        raw = AppSetting.objects.get(key='telegram_chat_ids').value
+        chat_ids.update(str(chat_id) for chat_id in json.loads(raw))
+    except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
+        pass
+    return sorted(str(chat_id) for chat_id in chat_ids if str(chat_id).strip())
+
+
+def _send_telegram_message(token, chat_id, text):
+    data = urllib.parse.urlencode({
+        'chat_id': chat_id,
+        'text': text,
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        f'https://api.telegram.org/bot{token}/sendMessage',
+        data=data,
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=8) as response:
+        return response.status == 200
+
+
 @require_admin
 def api_get_settings(request):
     if request.method == 'GET':
         return JsonResponse({
             'status': 'success',
-            'data': {'groq_key_configured': bool(_get_groq_key())},
+            'data': {
+                'groq_key_configured': bool(_get_groq_key()),
+                'telegram_token_configured': bool(_get_telegram_token()),
+                'saldo_cassa': float(_get_saldo_cassa()),
+                'fondo_cassa': float(_get_fondo_cassa()),
+            },
         })
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
 
-@csrf_exempt
 @require_admin
 def api_save_settings(request):
     if request.method == 'POST':
@@ -487,10 +569,76 @@ def api_save_settings(request):
                     key='groq_api_key',
                     defaults={'value': key},
                 )
-            return JsonResponse({'status': 'success'})
+
+            telegram_token = data.get('telegram_bot_token', '').strip()
+            if telegram_token:
+                AppSetting.objects.update_or_create(
+                    key='telegram_bot_token',
+                    defaults={'value': telegram_token},
+                )
+
+            if 'saldo_cassa' in data:
+                target_saldo = _money(data['saldo_cassa'])
+                _set_setting_money('saldo_cassa_adjustment', target_saldo - _get_saldo_cassa_base())
+
+            if 'fondo_cassa' in data:
+                target_fondo = _money(data['fondo_cassa'])
+                delta = target_fondo - _get_fondo_cassa()
+                if delta != MONEY_ZERO:
+                    FondoCassaMovimento.objects.create(
+                        date=timezone.localdate(),
+                        importo=delta,
+                        descrizione='Rettifica manuale da Impostazioni',
+                    )
+
+            return JsonResponse({
+                'status': 'success',
+                'data': {
+                    'saldo_cassa': float(_get_saldo_cassa()),
+                    'fondo_cassa': float(_get_fondo_cassa()),
+                },
+            })
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+
+@require_admin
+def api_reset_telegram_sessions(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+
+    reset_at = timezone.now().isoformat()
+    AppSetting.objects.update_or_create(
+        key='telegram_reset_sessions_at',
+        defaults={'value': reset_at},
+    )
+
+    token = _get_telegram_token()
+    chat_ids = _get_telegram_chat_ids()
+    sent = 0
+    failed = 0
+    if token:
+        message = (
+            "myTab: eventuali sessioni Telegram rimaste in sospeso sono state azzerate.\n\n"
+            "Puoi inviare nuove foto per creare una nuova bozza."
+        )
+        for chat_id in chat_ids:
+            try:
+                if _send_telegram_message(token, chat_id, message):
+                    sent += 1
+            except Exception:
+                failed += 1
+
+    return JsonResponse({
+        'status': 'success',
+        'data': {
+            'reset_at': reset_at,
+            'telegram_messages_sent': sent,
+            'telegram_messages_failed': failed,
+            'known_chats': len(chat_ids),
+        },
+    })
 
 
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
@@ -527,7 +675,6 @@ Regole:
 - Se un valore non è leggibile usa 0.00"""
 
 
-@csrf_exempt
 @require_auth
 def api_extract_closure_ai(request):
     if request.method != 'POST':
@@ -572,13 +719,13 @@ def api_extract_closure_ai(request):
 
         items = []
         for item in parsed.get('items', []):
-            entrate = float(item.get('entrate', 0))
-            uscite = float(item.get('uscite', 0))
+            entrate = _money(item.get('entrate'))
+            uscite = _money(item.get('uscite'))
             items.append({
                 'descrizione': str(item.get('descrizione', '')).strip().upper(),
-                'entrate': entrate,
-                'uscite': uscite,
-                'saldo': round(entrate - uscite, 2),
+                'entrate': float(entrate),
+                'uscite': float(uscite),
+                'saldo': float(_money(entrate - uscite)),
             })
 
         summary = parsed.get('summary', {})
@@ -599,11 +746,11 @@ def api_extract_closure_ai(request):
                 seen[name] = item
         items = list(seen.values())
 
-        totale    = float(summary.get('totale', 0))
-        pag_pos   = float(summary.get('pag_pos', 0))
-        distrib   = float(summary.get('distrib', 0))
-        reso_auto = float(summary.get('reso_auto', 0))
-        reso_cont = float(summary.get('reso_cont', 0))
+        totale    = _money(summary.get('totale'))
+        pag_pos   = _money(summary.get('pag_pos'))
+        distrib   = _money(summary.get('distrib'))
+        reso_auto = _money(summary.get('reso_auto'))
+        reso_cont = _money(summary.get('reso_cont'))
         # differenza = cassetto fisico − importo atteso; al momento dell'estrazione cassetto = 0
         differenza = 0.0
 
@@ -613,13 +760,13 @@ def api_extract_closure_ai(request):
                 'date': parsed.get('date', ''),
                 'operator': 'IA Groq',
                 'summary': {
-                    'contanti':        float(summary.get('contanti', 0)),
-                    'pag_pos':         pag_pos,
-                    'cassa_auto':      float(summary.get('cassa_auto', 0)),
-                    'reso_cont':       reso_cont,
-                    'reso_auto':       reso_auto,
-                    'distrib':         distrib,
-                    'totale':          totale,
+                    'contanti':        _money_number(summary.get('contanti')),
+                    'pag_pos':         float(pag_pos),
+                    'cassa_auto':      _money_number(summary.get('cassa_auto')),
+                    'reso_cont':       float(reso_cont),
+                    'reso_auto':       float(reso_auto),
+                    'distrib':         float(distrib),
+                    'totale':          float(totale),
                     'totale_cassetto': 0.0,
                     'differenza':      differenza,
                 },
@@ -633,17 +780,133 @@ def api_extract_closure_ai(request):
         return JsonResponse({'error': f'Errore acquisizione IA: {e}'}, status=500)
 
 
+# ── BOZZE ACQUISIZIONE TELEGRAM ──────────────────────────────────────────────
+
+@require_auth
+def api_acquisition_drafts_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    drafts = AcquisitionDraft.objects.filter(status='pending').prefetch_related('images')[:20]
+    return JsonResponse({
+        'status': 'success',
+        'data': [{
+            'id': d.id,
+            'source': d.source,
+            'operator': d.operator,
+            'totale_scassettato': float(d.totale_scassettato),
+            'photo_count': d.images.count(),
+            'created_at': d.created_at.isoformat(),
+        } for d in drafts],
+    })
+
+
+@require_auth
+def api_acquisition_draft_extract(request, draft_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, status='pending')
+    except AcquisitionDraft.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
+
+    api_key = _get_groq_key()
+    if not api_key:
+        return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata'}, status=500)
+
+    try:
+        from openai import OpenAI
+
+        content = []
+        for draft_image in draft.images.all():
+            with draft_image.image.open('rb') as img:
+                b64 = base64.standard_b64encode(img.read()).decode('utf-8')
+            content.append({
+                'type': 'image_url',
+                'image_url': {'url': f'data:image/jpeg;base64,{b64}'},
+            })
+        if not content:
+            return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
+
+        content.append({'type': 'text', 'text': AI_PROMPT})
+        client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
+        response = client.chat.completions.create(
+            model='meta-llama/llama-4-scout-17b-16e-instruct',
+            max_tokens=2048,
+            response_format={'type': 'json_object'},
+            messages=[{'role': 'user', 'content': content}],
+        )
+
+        raw_json = response.choices[0].message.content.strip()
+        if raw_json.startswith('```'):
+            raw_json = raw_json.split('```')[1]
+            if raw_json.startswith('json'):
+                raw_json = raw_json[4:]
+        parsed = json.loads(raw_json)
+
+        items = []
+        for item in parsed.get('items', []):
+            entrate = _money(item.get('entrate'))
+            uscite = _money(item.get('uscite'))
+            items.append({
+                'descrizione': str(item.get('descrizione', '')).strip().upper(),
+                'entrate': float(entrate),
+                'uscite': float(uscite),
+                'saldo': float(_money(entrate - uscite)),
+            })
+
+        known = list(Department.objects.values_list('name', flat=True))
+        for item in items:
+            resolved = _resolve_dept(item['descrizione'], known)
+            if resolved:
+                item['descrizione'] = resolved
+
+        summary = parsed.get('summary', {})
+        totale = _money(summary.get('totale'))
+        pag_pos = _money(summary.get('pag_pos'))
+        distrib = _money(summary.get('distrib'))
+        reso_auto = _money(summary.get('reso_auto'))
+        reso_cont = _money(summary.get('reso_cont'))
+        totale_scassettato = _money(draft.totale_scassettato)
+        atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+
+        return JsonResponse({
+            'status': 'success',
+            'data': {
+                'draft_id': draft.id,
+                'date': parsed.get('date', ''),
+                'operator': draft.operator or 'Telegram',
+                'summary': {
+                    'contanti': _money_number(summary.get('contanti')),
+                    'pag_pos': float(pag_pos),
+                    'cassa_auto': _money_number(summary.get('cassa_auto')),
+                    'reso_cont': float(reso_cont),
+                    'reso_auto': float(reso_auto),
+                    'distrib': float(distrib),
+                    'totale': float(totale),
+                    'totale_cassetto': float(totale_scassettato),
+                    'differenza': float(_money(totale_scassettato - atteso)),
+                },
+                'items': items,
+            },
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)
+
+
 # ── VERSAMENTI ────────────────────────────────────────────────────────────────
 
-def _get_saldo_cassa():
+def _get_saldo_cassa_base():
     from django.db.models import Sum
     tc   = CashClosure.objects.aggregate(s=Sum('totale_cassetto'))['s'] or 0
     diff = CashClosure.objects.aggregate(s=Sum('differenza'))['s'] or 0
     vers = Versamento.objects.aggregate(s=Sum('importo_versato'))['s'] or 0
-    return round(float(tc) + float(diff) - float(vers), 2)
+    return _money(tc) + _money(diff) - _money(vers)
 
 
-@csrf_exempt
+def _get_saldo_cassa():
+    return _get_saldo_cassa_base() + _get_setting_money('saldo_cassa_adjustment')
+
+
 @require_auth
 def api_versamenti_list(request):
     if request.method != 'GET':
@@ -651,7 +914,7 @@ def api_versamenti_list(request):
     items = Versamento.objects.all()
     return JsonResponse({
         'status': 'success',
-        'saldo_cassa': _get_saldo_cassa(),
+        'saldo_cassa': float(_get_saldo_cassa()),
         'data': [{
             'id': v.id,
             'date': v.date.isoformat(),
@@ -659,11 +922,11 @@ def api_versamenti_list(request):
             'importo_versato': float(v.importo_versato),
             'accantonamento': float(v.accantonamento),
             'saldo_precedente': float(v.saldo_precedente),
+            'note': v.note,
         } for v in items],
     })
 
 
-@csrf_exempt
 @require_auth
 def api_versamenti_create(request):
     if request.method != 'POST':
@@ -674,8 +937,8 @@ def api_versamenti_create(request):
         parsed_date = parse_date(date_str)
         if not parsed_date:
             return JsonResponse({'status': 'error', 'error': 'Data non valida'})
-        importo = float(data.get('importo_versato', 0))
-        accantonamento = float(data.get('accantonamento', 0))
+        importo = _money(data.get('importo_versato'))
+        accantonamento = _money(data.get('accantonamento'))
         if importo <= 0:
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
         if accantonamento < 0 or accantonamento > importo:
@@ -687,6 +950,7 @@ def api_versamenti_create(request):
             importo_versato=importo,
             accantonamento=accantonamento,
             saldo_precedente=saldo_prec,
+            note=data.get('note', '').strip(),
         )
         if accantonamento > 0:
             FondoCassaMovimento.objects.create(
@@ -695,24 +959,24 @@ def api_versamenti_create(request):
                 descrizione=f'Accantonamento da versamento del {parsed_date.strftime("%d/%m/%Y")} ({data.get("operator", "")})',
                 versamento=v,
             )
-        return JsonResponse({'status': 'success', 'id': v.id, 'saldo_precedente': saldo_prec})
+        return JsonResponse({'status': 'success', 'id': v.id, 'saldo_precedente': float(saldo_prec)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_admin
 def api_versamenti_delete(request, vers_id):
     if request.method != 'DELETE':
         return JsonResponse({'status': 'error'}, status=405)
     try:
-        Versamento.objects.get(id=vers_id).delete()
+        versamento = Versamento.objects.get(id=vers_id)
+        FondoCassaMovimento.objects.filter(versamento=versamento).delete()
+        versamento.delete()
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
 
 
-@csrf_exempt
 @require_admin
 def api_versamenti_update(request, vers_id):
     if request.method != 'POST':
@@ -728,30 +992,33 @@ def api_versamenti_update(request, vers_id):
         if 'operator' in data:
             v.operator = data['operator'].strip()
         if 'importo_versato' in data:
-            importo = float(data['importo_versato'])
+            importo = _money(data['importo_versato'])
             if importo <= 0:
                 return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
             v.importo_versato = importo
         if 'accantonamento' in data:
-            acc = float(data['accantonamento'])
+            acc = _money(data['accantonamento'])
             if acc < 0:
                 return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
-            old_acc = float(v.accantonamento)
             v.accantonamento = acc
-            # sync linked FondoCassaMovimento
-            fondo_qs = FondoCassaMovimento.objects.filter(versamento=v)
-            if acc > 0:
-                if fondo_qs.exists():
-                    fondo_qs.update(importo=acc, date=v.date)
-                else:
-                    FondoCassaMovimento.objects.create(
-                        date=v.date,
-                        importo=acc,
-                        descrizione=f'Accantonamento da versamento del {v.date.strftime("%d/%m/%Y")} ({v.operator})',
-                        versamento=v,
-                    )
+        if 'note' in data:
+            v.note = data['note'].strip()
+        if v.accantonamento > v.importo_versato:
+            return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
+        fondo_qs = FondoCassaMovimento.objects.filter(versamento=v)
+        if v.accantonamento > 0:
+            descrizione = f'Accantonamento da versamento del {v.date.strftime("%d/%m/%Y")} ({v.operator})'
+            if fondo_qs.exists():
+                fondo_qs.update(importo=v.accantonamento, date=v.date, descrizione=descrizione)
             else:
-                fondo_qs.delete()
+                FondoCassaMovimento.objects.create(
+                    date=v.date,
+                    importo=v.accantonamento,
+                    descrizione=descrizione,
+                    versamento=v,
+                )
+        else:
+            fondo_qs.delete()
         v.save()
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
@@ -765,10 +1032,9 @@ def api_versamenti_update(request, vers_id):
 def _get_fondo_cassa():
     from django.db.models import Sum
     total = FondoCassaMovimento.objects.aggregate(s=Sum('importo'))['s'] or 0
-    return round(float(total), 2)
+    return _money(total)
 
 
-@csrf_exempt
 @require_auth
 def api_fondo_cassa_list(request):
     if request.method != 'GET':
@@ -776,7 +1042,7 @@ def api_fondo_cassa_list(request):
     movimenti = FondoCassaMovimento.objects.select_related('versamento').all()
     return JsonResponse({
         'status': 'success',
-        'totale': _get_fondo_cassa(),
+        'totale': float(_get_fondo_cassa()),
         'data': [{
             'id': m.id,
             'date': m.date.isoformat(),
@@ -787,7 +1053,6 @@ def api_fondo_cassa_list(request):
     })
 
 
-@csrf_exempt
 @require_admin
 def api_fondo_cassa_create(request):
     if request.method != 'POST':
@@ -797,7 +1062,7 @@ def api_fondo_cassa_create(request):
         parsed_date = parse_date(data.get('date', ''))
         if not parsed_date:
             return JsonResponse({'status': 'error', 'error': 'Data non valida'})
-        importo = float(data.get('importo', 0))
+        importo = _money(data.get('importo'))
         if importo == 0:
             return JsonResponse({'status': 'error', 'error': 'Importo non può essere zero'})
         m = FondoCassaMovimento.objects.create(
@@ -810,7 +1075,6 @@ def api_fondo_cassa_create(request):
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_admin
 def api_fondo_cassa_delete(request, mov_id):
     if request.method != 'DELETE':
@@ -822,7 +1086,6 @@ def api_fondo_cassa_delete(request, mov_id):
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
 
 
-@csrf_exempt
 @require_admin
 def api_fondo_cassa_update(request, mov_id):
     if request.method != 'POST':
@@ -836,7 +1099,7 @@ def api_fondo_cassa_update(request, mov_id):
                 return JsonResponse({'status': 'error', 'error': 'Data non valida'})
             m.date = parsed
         if 'importo' in data:
-            m.importo = float(data['importo'])
+            m.importo = _money(data['importo'])
         if 'descrizione' in data:
             m.descrizione = data['descrizione'].strip()
         m.save()

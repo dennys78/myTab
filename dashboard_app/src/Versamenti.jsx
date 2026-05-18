@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 export default function Versamenti() {
   const { user } = useAuth();
@@ -15,10 +16,9 @@ export default function Versamenti() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [importo, setImporto] = useState('');
   const [accantonamento, setAccantonamento] = useState('');
+  const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
-
-  const nettoAlBanco = Math.max(0, (parseFloat(importo) || 0) - (parseFloat(accantonamento) || 0));
 
   // Editing inline
   const [editingId, setEditingId] = useState(null);
@@ -27,20 +27,20 @@ export default function Versamenti() {
 
   const startEdit = (v) => {
     setEditingId(v.id);
-    setEditRow({ date: v.date, operator: v.operator, importo_versato: v.importo_versato, accantonamento: v.accantonamento });
+    setEditRow({ date: v.date, importo_versato: v.importo_versato, accantonamento: v.accantonamento, note: v.note || '' });
   };
   const cancelEdit = () => { setEditingId(null); setEditRow({}); };
 
   const saveEdit = () => {
     setUpdating(true);
-    fetch(`/api/versamenti/${editingId}/update/`, {
+    apiFetch(`/api/versamenti/${editingId}/update/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: editRow.date,
-        operator: editRow.operator,
         importo_versato: parseFloat(editRow.importo_versato) || 0,
         accantonamento: parseFloat(editRow.accantonamento) || 0,
+        note: editRow.note || '',
       }),
     })
       .then(r => r.json())
@@ -51,7 +51,7 @@ export default function Versamenti() {
 
   const fetchData = () => {
     setLoading(true);
-    fetch('/api/versamenti/')
+    apiFetch('/api/versamenti/')
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
@@ -73,7 +73,7 @@ export default function Versamenti() {
     if (!imp || imp <= 0) { setSaveError('Inserisci un importo valido'); return; }
     setSaving(true);
     setSaveError(null);
-    fetch('/api/versamenti/create/', {
+    apiFetch('/api/versamenti/create/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -81,6 +81,7 @@ export default function Versamenti() {
         operator: user?.username || '',
         importo_versato: imp,
         accantonamento: parseFloat(accantonamento) || 0,
+        note,
       }),
     })
       .then(r => r.json())
@@ -88,6 +89,7 @@ export default function Versamenti() {
         if (d.status === 'success') {
           setImporto('');
           setAccantonamento('');
+          setNote('');
           setDate(new Date().toISOString().split('T')[0]);
           fetchData();
         } else {
@@ -100,23 +102,23 @@ export default function Versamenti() {
 
   const handleDelete = (id) => {
     if (!window.confirm('Eliminare questo versamento?')) return;
-    fetch(`/api/versamenti/${id}/delete/`, { method: 'DELETE' })
+    apiFetch(`/api/versamenti/${id}/delete/`, { method: 'DELETE' })
       .then(r => r.json())
       .then(d => { if (d.status === 'success') fetchData(); })
       .catch(() => {});
   };
 
   const inp = {
-    padding: '0.65rem 0.75rem',
-    background: 'var(--bg-dark)',
+    padding: '0.7rem 0.8rem',
+    background: 'var(--bg-elevated)',
     border: '1px solid var(--border)',
     color: 'white',
-    borderRadius: '8px',
+    borderRadius: '10px',
     fontSize: '0.95rem',
   };
 
   return (
-    <div style={{ maxWidth: '1050px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '1120px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Versamenti</h1>
       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
         Registra i versamenti di contanti effettuati in banca o in cassa.
@@ -124,7 +126,7 @@ export default function Versamenti() {
 
       {/* Saldo attuale */}
       <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px',
+        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px',
         padding: '1.25rem 1.5rem', marginBottom: '1.5rem',
         display: 'flex', alignItems: 'center', gap: '1rem',
       }}>
@@ -140,7 +142,7 @@ export default function Versamenti() {
       </div>
 
       {/* Form nuovo versamento */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <h2 style={{ margin: '0 0 1.25rem', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <ArrowDownToLine size={18} color="var(--accent)" /> Nuovo Versamento
         </h2>
@@ -152,23 +154,19 @@ export default function Versamenti() {
         )}
 
         <form onSubmit={handleSave}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '-0.5rem', marginBottom: '1rem' }}>
+            Compila solo i campi operativi: l'operatore viene registrato automaticamente in base all'utente connesso.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', marginBottom: '1rem', alignItems: 'end' }}>
             {/* Data */}
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Data</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
             </div>
 
-            {/* Operatore (read-only) */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Operatore</label>
-              <input type="text" value={user?.username || ''} readOnly
-                style={{ ...inp, width: '100%', boxSizing: 'border-box', opacity: 0.6, cursor: 'default' }} />
-            </div>
-
             {/* Importo */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Importo Prelevato (€)</label>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-main)', marginBottom: '0.35rem', fontWeight: 700 }}>Totale versato (€)</label>
               <input type="number" min="0.01" step="0.01" value={importo}
                 onChange={e => setImporto(e.target.value)}
                 placeholder="0.00"
@@ -183,38 +181,26 @@ export default function Versamenti() {
                 placeholder="0.00"
                 style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
             </div>
+          </div>
 
-            {/* Netto al banco (dinamico) */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Netto al Banco</label>
-              <div style={{
-                ...inp, display: 'flex', alignItems: 'center',
-                fontWeight: 700, color: nettoAlBanco > 0 ? 'var(--accent)' : 'var(--text-muted)',
-              }}>
-                € {nettoAlBanco.toFixed(2)}
-              </div>
-            </div>
-
-            {/* Saldo precedente (calcolato) */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Saldo Precedente</label>
-              <div style={{
-                ...inp, display: 'flex', alignItems: 'center',
-                fontWeight: 700, opacity: 0.75,
-                color: saldoCassa >= 0 ? '#22c55e' : 'var(--danger)',
-              }}>
-                {saldoCassa === null ? '—' : `€ ${saldoCassa.toFixed(2)}`}
-              </div>
-            </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Note</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Aggiungi eventuali note sul versamento..."
+              rows={3}
+              style={{ ...inp, width: '100%', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.45 }}
+            />
           </div>
 
           <button type="submit" disabled={saving || !importo}
             style={{
               display: 'flex', alignItems: 'center', gap: '0.4rem',
-              padding: '0.7rem 1.4rem',
+                padding: '0.75rem 1.4rem',
               background: importo ? 'var(--accent)' : 'var(--bg-dark)',
               color: importo ? 'white' : 'var(--text-muted)',
-              border: 'none', borderRadius: '8px', cursor: importo ? 'pointer' : 'not-allowed',
+                border: 'none', borderRadius: '10px', cursor: importo ? 'pointer' : 'not-allowed',
               fontWeight: 600, fontSize: '0.95rem',
             }}>
             {saving ? <Loader2 size={17} className="spin" /> : <Plus size={17} />}
@@ -224,7 +210,7 @@ export default function Versamenti() {
       </div>
 
       {/* Storico versamenti */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
         <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
           <h2 style={{ margin: 0, fontSize: '1rem' }}>Storico Versamenti</h2>
         </div>
@@ -240,7 +226,7 @@ export default function Versamenti() {
             <table className="vers-table">
               <thead>
                 <tr>
-                  {['Data', 'Operatore', 'Saldo Prec.', 'Prelevato', 'Fondo', 'Netto Banco', 'Saldo Dopo', ...(isAdmin ? ['Azioni'] : [])].map(h => (
+                  {['Data', 'Operatore', 'Totale versato', 'Fondo', 'Note', ...(isAdmin ? ['Azioni'] : [])].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -248,8 +234,6 @@ export default function Versamenti() {
               <tbody>
                 {versamenti.map(v => {
                   const isEditing = editingId === v.id;
-                  const saldoDopo = v.saldo_precedente - v.importo_versato;
-                  const netto = v.importo_versato - (v.accantonamento || 0);
                   const tdStyle = {};
                   const inpStyle = { padding: '0.3rem 0.4rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.85rem' };
                   return (
@@ -260,28 +244,22 @@ export default function Versamenti() {
                           : new Date(v.date).toLocaleDateString('it-IT')}
                       </td>
                       <td style={tdStyle}>
-                        {isEditing
-                          ? <input type="text" value={editRow.operator} onChange={e => setEditRow(r => ({ ...r, operator: e.target.value }))} style={{ ...inpStyle, width: '110px' }} />
-                          : v.operator}
-                      </td>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>
-                        € {v.saldo_precedente.toFixed(2)}
+                        {v.operator}
                       </td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--danger)' }}>
                         {isEditing
                           ? <input type="number" min="0.01" step="0.01" value={editRow.importo_versato} onChange={e => setEditRow(r => ({ ...r, importo_versato: e.target.value }))} style={{ ...inpStyle, width: '90px' }} />
-                          : `− € ${v.importo_versato.toFixed(2)}`}
+                          : `€ ${v.importo_versato.toFixed(2)}`}
                       </td>
                       <td style={{ ...tdStyle, color: v.accantonamento > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
                         {isEditing
                           ? <input type="number" min="0" step="0.01" value={editRow.accantonamento} onChange={e => setEditRow(r => ({ ...r, accantonamento: e.target.value }))} style={{ ...inpStyle, width: '90px' }} />
                           : (v.accantonamento > 0 ? `€ ${v.accantonamento.toFixed(2)}` : '—')}
                       </td>
-                      <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--accent)' }}>
-                        € {netto.toFixed(2)}
-                      </td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: saldoDopo >= 0 ? '#22c55e' : 'var(--danger)' }}>
-                        € {saldoDopo.toFixed(2)}
+                      <td style={{ ...tdStyle, minWidth: '180px', color: 'var(--text-muted)' }}>
+                        {isEditing
+                          ? <textarea value={editRow.note} onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))} rows={2} style={{ ...inpStyle, width: '100%', minWidth: '180px', resize: 'vertical', fontFamily: 'inherit' }} />
+                          : (v.note || '—')}
                       </td>
                       {isAdmin && (
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>

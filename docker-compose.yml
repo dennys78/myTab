@@ -10,7 +10,14 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=cash_manager.settings
       - DOCKER_ENV=1
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-false}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,serverapp.asuscomm.com}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://serverapp.asuscomm.com:8080}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
     # The database file must be mounted properly if it's placed in /app directly, 
     # but usually it's better to store it in a subfolder like /app/db_data.
     # To keep it simple without changing Django settings, we just map the whole app dir,

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, PiggyBank, Pencil, Check, X } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 export default function FondoCassa() {
   const { user } = useAuth();
@@ -32,7 +33,7 @@ export default function FondoCassa() {
 
   const saveEdit = () => {
     setUpdating(true);
-    fetch(`/api/fondo-cassa/${editingId}/update/`, {
+    apiFetch(`/api/fondo-cassa/${editingId}/update/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -61,7 +62,7 @@ export default function FondoCassa() {
 
   const fetchData = () => {
     setLoading(true);
-    fetch('/api/fondo-cassa/')
+    apiFetch('/api/fondo-cassa/')
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') { setMovimenti(d.data); setTotale(d.totale); }
@@ -79,7 +80,7 @@ export default function FondoCassa() {
     if (imp === 0 || isNaN(imp)) { setSaveError('Inserisci un importo valido (positivo o negativo)'); return; }
     setSaving(true);
     setSaveError(null);
-    fetch('/api/fondo-cassa/create/', {
+    apiFetch('/api/fondo-cassa/create/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date, importo: imp, descrizione }),
@@ -95,7 +96,7 @@ export default function FondoCassa() {
 
   const handleDelete = (id) => {
     if (!window.confirm('Eliminare questo movimento?')) return;
-    fetch(`/api/fondo-cassa/${id}/delete/`, { method: 'DELETE' })
+    apiFetch(`/api/fondo-cassa/${id}/delete/`, { method: 'DELETE' })
       .then(r => r.json())
       .then(d => { if (d.status === 'success') fetchData(); })
       .catch(() => {});

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 import Login from './Login';
 import AcquisisciChiusure from './AcquisisciChiusure';
 import AcquisisciChiusureAI from './AcquisisciChiusureAI';
@@ -16,6 +17,7 @@ function AppShell() {
 
   const [closures, setClosures] = useState([]);
   const [versamenti, setVersamenti] = useState([]);
+  const [saldoCassa, setSaldoCassa] = useState(null);
   const [fondoCassa, setFondoCassa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -31,39 +33,51 @@ function AppShell() {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const fetchClosures = () => {
+  const fetchClosures = useCallback(() => {
     if (!isAdmin) return;
-    fetch('/api/closures/list/')
+    apiFetch('/api/closures/list/')
       .then(res => res.json())
       .then(data => { if (data.status === 'success') setClosures(data.data); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, [isAdmin]);
 
-  const fetchVersamenti = () => {
-    fetch('/api/versamenti/')
+  const fetchVersamenti = useCallback(() => {
+    apiFetch('/api/versamenti/')
       .then(r => r.json())
-      .then(d => { if (d.status === 'success') setVersamenti(d.data); })
+      .then(d => {
+        if (d.status === 'success') {
+          setVersamenti(d.data);
+          setSaldoCassa(d.saldo_cassa);
+        }
+      })
       .catch(() => {});
-  };
+  }, []);
 
-  const fetchFondoCassa = () => {
-    fetch('/api/fondo-cassa/')
+  const fetchFondoCassa = useCallback(() => {
+    apiFetch('/api/fondo-cassa/')
       .then(r => r.json())
       .then(d => { if (d.status === 'success') setFondoCassa(d.totale); })
       .catch(() => {});
-  };
+  }, []);
 
-  useEffect(() => { fetchClosures(); fetchVersamenti(); fetchFondoCassa(); }, []);
+  const refreshDashboardData = useCallback(() => {
+    fetchClosures();
+    fetchVersamenti();
+    fetchFondoCassa();
+  }, [fetchClosures, fetchVersamenti, fetchFondoCassa]);
+
+  useEffect(() => { refreshDashboardData(); }, [refreshDashboardData]);
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
-  const totalContanti = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
+  const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
+  const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
   const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
   const handleEditClick = (closure) => {
     setEditingId(closure.id);
-    setEditFormData({ ...closure.summary, items: JSON.parse(JSON.stringify(closure.items)) });
+    setEditFormData({ ...closure.summary, items: JSON.parse(JSON.stringify(closure.items)), deleted_item_ids: [] });
   };
 
   const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
@@ -72,6 +86,8 @@ function AppShell() {
     const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
     return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
   };
+
+  const roundMoney = (value) => Math.round(value * 100) / 100;
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -91,16 +107,35 @@ function AppShell() {
     }));
   };
 
+  const handleRemoveItem = (itemId) => {
+    setEditFormData(prev => {
+      const item = prev.items.find(i => i.id === itemId);
+      if (!item) return prev;
+
+      const amount = Number(item.entrate || item.saldo || 0);
+      const updated = {
+        ...prev,
+        contanti: roundMoney(Math.max(0, (prev.contanti || 0) - amount)),
+        totale: roundMoney(Math.max(0, (prev.totale || 0) - amount)),
+        totale_cassetto: roundMoney(Math.max(0, (prev.totale_cassetto || 0) - amount)),
+        items: prev.items.filter(i => i.id !== itemId),
+        deleted_item_ids: [...(prev.deleted_item_ids || []), itemId],
+      };
+      updated.differenza = calcDifferenza(updated);
+      return updated;
+    });
+  };
+
   const handleSaveEdit = (id) => {
     setSaving(true);
-    fetch(`/api/closures/update/${id}/`, {
+    apiFetch(`/api/closures/update/${id}/`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editFormData),
     })
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') { fetchClosures(); setEditingId(null); }
+        if (data.status === 'success') { refreshDashboardData(); setEditingId(null); }
         else alert('Errore durante il salvataggio: ' + data.error);
       })
       .catch(() => alert('Errore di rete durante il salvataggio.'))
@@ -109,16 +144,20 @@ function AppShell() {
 
   const handleDelete = (id) => {
     if (!window.confirm("Sei sicuro di voler eliminare questa chiusura? L'operazione è irreversibile.")) return;
-    fetch(`/api/closures/delete/${id}/`, { method: 'DELETE' })
+    apiFetch(`/api/closures/delete/${id}/`, { method: 'DELETE' })
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') { fetchClosures(); if (expandedId === id) setExpandedId(null); }
+        if (data.status === 'success') { refreshDashboardData(); if (expandedId === id) setExpandedId(null); }
         else alert("Errore durante l'eliminazione: " + data.error);
       })
       .catch(() => alert("Errore di rete durante l'eliminazione."));
   };
 
-  const navigate = (view) => { setCurrentView(view); setIsMobileMenuOpen(false); };
+  const navigate = (view) => {
+    setCurrentView(view);
+    setIsMobileMenuOpen(false);
+    if (view === 'dashboard') refreshDashboardData();
+  };
 
   return (
     <div className="app-container">
@@ -191,9 +230,9 @@ function AppShell() {
         </div>
 
         {currentView === 'acquisisci' ? (
-          <AcquisisciChiusure onBack={() => { navigate('dashboard'); fetchClosures(); }} />
+          <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />
         ) : currentView === 'acquisisci-ai' ? (
-          <AcquisisciChiusureAI onBack={() => { navigate(isAdmin ? 'dashboard' : 'acquisisci-ai'); fetchClosures(); }} />
+          <AcquisisciChiusureAI onBack={() => { navigate(isAdmin ? 'dashboard' : 'acquisisci-ai'); refreshDashboardData(); }} />
         ) : currentView === 'reparti' ? (
           <RepartiManager />
         ) : currentView === 'impostazioni' ? (
@@ -270,7 +309,7 @@ function AppShell() {
                             <tr>
                               <td colSpan="7" style={{ padding: 0, borderBottom: 'none' }}>
                                 <div className="expanded-content">
-                                  <div className="summary-section" style={{ marginBottom: '2rem', padding: '1rem', background: 'var(--bg-dark)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                  <div className="summary-section" style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                       <h2 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         <Calculator size={16} color="var(--accent)" /> Riepilogo Totali
@@ -332,7 +371,7 @@ function AppShell() {
                                   <table className="inner-table">
                                     <thead>
                                       <tr>
-                                        <th>Descrizione</th><th>Entrate</th><th>Uscite</th><th>Saldo</th>
+                                        <th>Descrizione</th><th>Entrate</th><th>Uscite</th><th>Saldo</th>{editingId === closure.id && <th>Azioni</th>}
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -344,10 +383,21 @@ function AppShell() {
                                             <td>{editingId === closure.id ? <input type="number" value={editItem?.entrate === 0 ? '' : editItem?.entrate} onChange={(e) => handleItemInputChange(item.id, 'entrate', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.entrate > 0 ? 'var(--success)' : 'inherit' }}>€ {item.entrate.toFixed(2)}</span>}</td>
                                             <td>{editingId === closure.id ? <input type="number" value={editItem?.uscite === 0 ? '' : editItem?.uscite} onChange={(e) => handleItemInputChange(item.id, 'uscite', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.uscite > 0 ? 'var(--danger)' : 'inherit' }}>€ {item.uscite.toFixed(2)}</span>}</td>
                                             <td>{editingId === closure.id ? <input type="number" value={editItem?.saldo === 0 ? '' : editItem?.saldo} onChange={(e) => handleItemInputChange(item.id, 'saldo', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span>€ {item.saldo.toFixed(2)}</span>}</td>
+                                            {editingId === closure.id && (
+                                              <td>
+                                                <button
+                                                  onClick={() => handleRemoveItem(item.id)}
+                                                  title="Elimina incasso"
+                                                  style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}
+                                                >
+                                                  <Trash2 size={15} />
+                                                </button>
+                                              </td>
+                                            )}
                                           </tr>
                                         );
                                       }) : (
-                                        <tr><td colSpan="4" style={{ textAlign: 'center' }}>Nessuna voce trovata</td></tr>
+                                        <tr><td colSpan={editingId === closure.id ? 5 : 4} style={{ textAlign: 'center' }}>Nessuna voce trovata</td></tr>
                                       )}
                                     </tbody>
                                   </table>

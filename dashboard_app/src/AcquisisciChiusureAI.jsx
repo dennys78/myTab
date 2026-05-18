@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -23,6 +24,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [error, setError] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [drafts, setDrafts] = useState([]);
+  const [loadingDraftId, setLoadingDraftId] = useState(null);
+
+  const fetchDrafts = () => {
+    apiFetch('/api/acquisition-drafts/')
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') setDrafts(d.data); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { fetchDrafts(); }, []);
 
   // Rigenera thumbnail ogni volta che cambia la lista file
   useEffect(() => {
@@ -53,7 +65,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     setError(null);
     const fd = new FormData();
     filesRef.current.forEach((f, i) => fd.append(`file${i}`, f));
-    fetch('/api/closures/extract-ai/', { method: 'POST', body: fd })
+    apiFetch('/api/closures/extract-ai/', { method: 'POST', body: fd })
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
@@ -69,6 +81,27 @@ export default function AcquisisciChiusureAI({ onBack }) {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setLoading(false));
+  };
+
+  const loadDraft = (draftId) => {
+    setLoadingDraftId(draftId);
+    setError(null);
+    apiFetch(`/api/acquisition-drafts/${draftId}/extract-ai/`, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          const enriched = {
+            ...d.data,
+            items: d.data.items.map((item, i) => ({ ...item, id: `d${draftId}_${i}` })),
+          };
+          if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
+          setPreviewData(enriched);
+        } else {
+          setError(d.error || 'Errore durante il caricamento della bozza.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setLoadingDraftId(null));
   };
 
   const handleItemChange = (id, field, value) => {
@@ -106,21 +139,27 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const removeItem = (id) => setPreviewData(prev => ({ ...prev, items: prev.items.filter(i => i.id !== id) }));
 
   const handleAcquire = () => {
+    const cleanItems = previewData.items.map(item => {
+      const cleanItem = { ...item };
+      delete cleanItem.id;
+      return cleanItem;
+    });
     setSaving(true);
     setError(null);
-    fetch('/api/closures/insert/', {
+    apiFetch('/api/closures/insert/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: previewData.date,
         operator: user?.username || 'IA Groq',
         summary: previewData.summary,
-        items: previewData.items.map(({ id, ...r }) => r),
+        items: cleanItems,
+        draft_id: previewData.draft_id,
       }),
     })
       .then(r => r.json())
       .then(d => {
-        if (d.status === 'success' || d.id) { alert('Acquisizione completata!'); onBack(); }
+        if (d.status === 'success' || d.id) { alert('Chiusura cassa registrata correttamente in myTab.'); fetchDrafts(); onBack(); }
         else setError(d.error || 'Errore salvataggio.');
       })
       .catch(() => setError('Errore di rete.'))
@@ -137,8 +176,21 @@ export default function AcquisisciChiusureAI({ onBack }) {
     ...extra,
   });
 
+  const summaryLabel = (key) => ({
+    totale: 'Totale riportato da cassa',
+    totale_cassetto: 'Totale scassettato',
+    differenza: 'Differenza',
+  }[key] || key.replace(/_/g, ' '));
+
   // ─── PREVIEW ────────────────────────────────────────────────────────────────
   if (previewData) {
+    const regularSummaryEntries = Object.entries(previewData.summary).filter(
+      ([key]) => !['totale_cassetto', 'differenza'].includes(key)
+    );
+    const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
+    const differenza = previewData.summary.differenza ?? 0;
+    const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + (Number(item.saldo) || 0), 0);
+
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
@@ -170,29 +222,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
               style={{ ...inp(), width: isMobile ? '100%' : '200px' }} />
           </div>
           <div className="acq-summary-grid">
-            {Object.keys(previewData.summary).map(key => {
-              const val = previewData.summary[key];
-              const label = key.replace(/_/g, ' ');
-              if (key === 'differenza') {
-                return (
-                  <div key={key}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
-                      {label}
-                    </label>
-                    <div style={{
-                      padding: '0.5rem 0.6rem', borderRadius: '6px', fontWeight: 700, fontSize: '1rem',
-                      border: '1px solid var(--border)', background: 'var(--bg-dark)',
-                      color: val > 0 ? '#22c55e' : val < 0 ? 'var(--danger)' : 'var(--text-muted)',
-                    }}>
-                      {val >= 0 ? '+' : ''}{val.toFixed(2)}
-                    </div>
-                  </div>
-                );
-              }
+            {regularSummaryEntries.map(([key, val]) => {
               return (
                 <div key={key}>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
-                    {label}
+                    {summaryLabel(key)}
                   </label>
                   <input type="number" name={key}
                     value={val === 0 ? '' : val}
@@ -201,6 +235,45 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 </div>
               );
             })}
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: '1rem',
+            padding: '1rem',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '14px',
+            background: 'rgba(79, 141, 247, 0.08)',
+          }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Totale scassettato
+              </label>
+              <input
+                type="number"
+                name="totale_cassetto"
+                value={totaleScassettato === 0 ? '' : totaleScassettato}
+                onChange={handleSummaryChange}
+                placeholder="0.00"
+                style={{ ...inp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Differenza
+              </label>
+              <div style={{
+                padding: '0.62rem 0.75rem',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '1.1rem',
+                border: '1px solid var(--border-strong)',
+                background: 'var(--bg-dark)',
+                color: differenza > 0 ? 'var(--success)' : differenza < 0 ? 'var(--danger)' : 'var(--text-muted)',
+              }}>
+                {differenza >= 0 ? '+' : ''}{Number(differenza).toFixed(2)}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -231,19 +304,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 {previewData.items.map(item => (
                   <tr key={item.id}>
                     <td>
-                      <input type="text" value={item.descrizione}
+                      <input className="acq-edit-input" type="text" value={item.descrizione}
                         onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
                         placeholder="Nome Reparto"
                         style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
                     </td>
                     <td>
-                      <input type="number" value={item.entrate === 0 ? '' : item.entrate}
+                      <input className="acq-edit-input" type="number" value={item.entrate === 0 ? '' : item.entrate}
                         onChange={e => handleItemChange(item.id, 'entrate', e.target.value)}
                         placeholder="0.00"
                         style={{ ...inp({ width: isMobile ? '75px' : '95px' }) }} />
                     </td>
                     <td>
-                      <input type="number" value={item.uscite === 0 ? '' : item.uscite}
+                      <input className="acq-edit-input" type="number" value={item.uscite === 0 ? '' : item.uscite}
                         onChange={e => handleItemChange(item.id, 'uscite', e.target.value)}
                         placeholder="0.00"
                         style={{ ...inp({ width: isMobile ? '75px' : '95px' }) }} />
@@ -265,6 +338,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
                     </td>
                   </tr>
                 ))}
+                {previewData.items.length > 0 && (
+                  <tr className="acq-total-row">
+                    <td colSpan="3">Somma algebrica saldi reparti</td>
+                    <td>
+                      <span className={saldoTotaleReparti > 0 ? 'success' : saldoTotaleReparti < 0 ? 'danger' : ''}>
+                        {saldoTotaleReparti.toFixed(2)}
+                      </span>
+                    </td>
+                    <td></td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -303,6 +387,34 @@ export default function AcquisisciChiusureAI({ onBack }) {
       {error && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.9rem 1rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
           {error}
+        </div>
+      )}
+
+      {drafts.length > 0 && (
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem', marginBottom: '1.5rem' }}>
+          <h2 style={{ margin: '0 0 0.75rem', fontSize: '1rem' }}>Bozze ricevute da Telegram</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {drafts.map(draft => (
+              <div key={draft.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>
+                    {draft.operator || 'Telegram'} · {draft.photo_count} foto
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                    Totale scassettato € {Number(draft.totale_scassettato).toFixed(2)} · {new Date(draft.created_at).toLocaleString('it-IT')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => loadDraft(draft.id)}
+                  disabled={loadingDraftId === draft.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  {loadingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+                  Carica bozza
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -1,0 +1,15 @@
+.git
+.env
+.env.local
+.env.*.local
+db.sqlite3
+db_data/
+sqlite_data/
+__pycache__/
+*.pyc
+.pycache-check/
+dashboard_app/node_modules/
+dashboard_app/dist/
+logs/
+*.log
+.DS_Store

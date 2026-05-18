@@ -1,0 +1,20 @@
+---
+description: Git update and beta deploy handoff after project changes
+alwaysApply: true
+---
+
+# Git And Beta Deploy Handoff
+
+After completing code or configuration changes in this project:
+
+- Run verification appropriate to the change, then inspect `git status` and relevant diffs.
+- Prepare a concise commit message and ask the user for confirmation before committing or pushing.
+- If the user confirms, create the commit and push to the connected remote branch.
+- Never commit secrets, `.env` files, credentials, local database files, generated media, or unrelated user changes.
+- In the final response, include the server command for the Mac beta host using Docker Compose:
+
+```bash
+cd /path/to/myTaba && git pull && docker compose up -d --build
+```
+
+Replace `/path/to/myTaba` with the actual server project path if known.

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Upload, FileImage, Calculator, Save, AlertCircle, Loader2, X, Plus } from 'lucide-react';
+import { apiFetch } from './api';
 
 export default function AcquisisciChiusure({ onBack }) {
   const [files, setFiles] = useState([]);
@@ -31,7 +32,7 @@ export default function AcquisisciChiusure({ onBack }) {
       formData.append(`file${index}`, file);
     });
 
-    fetch('/api/closures/extract/', {
+    apiFetch('/api/closures/extract/', {
       method: 'POST',
       body: formData,
     })
@@ -41,6 +42,11 @@ export default function AcquisisciChiusure({ onBack }) {
           // Initialize IDs for items to edit them easily
           const dataWithIds = {
             ...data.data,
+            summary: {
+              ...data.data.summary,
+              totale_cassetto: data.data.summary?.totale_cassetto || 0,
+              differenza: data.data.summary?.differenza || 0,
+            },
             items: data.data.items.map((item, i) => ({ ...item, id: `temp_${i}` }))
           };
           if (!dataWithIds.date) {
@@ -63,13 +69,15 @@ export default function AcquisisciChiusure({ onBack }) {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setPreviewData(prev => ({
-      ...prev,
-      summary: {
+    setPreviewData(prev => {
+      const summary = {
         ...prev.summary,
         [name]: parseFloat(value) || 0
-      }
-    }));
+      };
+      const atteso = (summary.totale || 0) - (summary.pag_pos || 0) - (summary.distrib || 0) - (summary.reso_auto || 0) - (summary.reso_cont || 0);
+      summary.differenza = Math.round(((summary.totale_cassetto || 0) - atteso) * 100) / 100;
+      return { ...prev, summary };
+    });
   };
 
   const handleDateChange = (e) => {
@@ -124,24 +132,37 @@ export default function AcquisisciChiusure({ onBack }) {
         reso_auto: 0,
         distrib: 0,
         totale: 0,
+        totale_cassetto: 0,
+        differenza: 0,
       },
       items: []
     });
   };
+
+  const summaryLabel = (key) => ({
+    totale: 'Totale riportato da cassa',
+    totale_cassetto: 'Totale scassettato',
+    differenza: 'Differenza',
+  }[key] || key.replace(/_/g, ' '));
 
   const handleAcquire = () => {
     setSaving(true);
     setError(null);
     
     // Remove temporary IDs
+    const cleanItems = previewData.items.map(item => {
+      const cleanItem = { ...item };
+      delete cleanItem.id;
+      return cleanItem;
+    });
     const payload = {
       date: previewData.date,
       operator: 'Web Dashboard',
       summary: previewData.summary,
-      items: previewData.items.map(({ id, ...rest }) => rest)
+      items: cleanItems
     };
 
-    fetch('/api/closures/insert/', {
+    apiFetch('/api/closures/insert/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -151,7 +172,7 @@ export default function AcquisisciChiusure({ onBack }) {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success' || data.id) {
-          alert("Acquisizione completata con successo!");
+          alert("Chiusura cassa registrata correttamente in myTab.");
           onBack(); // Go back to dashboard
         } else {
           setError(data.error || "Errore durante il salvataggio.");
@@ -167,6 +188,13 @@ export default function AcquisisciChiusure({ onBack }) {
   };
 
   if (previewData) {
+    const regularSummaryEntries = Object.entries(previewData.summary).filter(
+      ([key]) => !['totale_cassetto', 'differenza'].includes(key)
+    );
+    const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
+    const differenza = previewData.summary.differenza ?? 0;
+    const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + (Number(item.saldo) || 0), 0);
+
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -218,22 +246,61 @@ export default function AcquisisciChiusure({ onBack }) {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-            {Object.keys(previewData.summary).map(key => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+            {regularSummaryEntries.map(([key, val]) => (
               <div key={key}>
                 <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'capitalize' }}>
-                  {key.replace('_', ' ')}
+                  {summaryLabel(key)}
                 </label>
                 <input 
                   type="number" 
                   name={key}
-                  value={previewData.summary[key] === 0 ? '' : previewData.summary[key]} 
+                  value={val === 0 ? '' : val} 
                   onChange={handleInputChange}
                   placeholder="0.00"
                   style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '6px' }}
                 />
               </div>
             ))}
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            padding: '1rem',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '14px',
+            background: 'rgba(79, 141, 247, 0.08)',
+          }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Totale scassettato
+              </label>
+              <input
+                type="number"
+                name="totale_cassetto"
+                value={totaleScassettato === 0 ? '' : totaleScassettato}
+                onChange={handleInputChange}
+                placeholder="0.00"
+                style={{ width: '100%', padding: '0.62rem 0.75rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700 }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Differenza
+              </label>
+              <div style={{
+                padding: '0.62rem 0.75rem',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '1.1rem',
+                border: '1px solid var(--border-strong)',
+                background: 'var(--bg-dark)',
+                color: differenza > 0 ? 'var(--success)' : differenza < 0 ? 'var(--danger)' : 'var(--text-muted)',
+              }}>
+                {differenza >= 0 ? '+' : ''}{Number(differenza).toFixed(2)}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -263,7 +330,8 @@ export default function AcquisisciChiusure({ onBack }) {
                 {previewData.items.map(item => (
                   <tr key={item.id}>
                     <td>
-                      <input 
+                      <input
+                        className="acq-edit-input"
                         type="text" 
                         value={item.descrizione} 
                         onChange={(e) => handleItemChange(item.id, 'descrizione', e.target.value)}
@@ -272,7 +340,8 @@ export default function AcquisisciChiusure({ onBack }) {
                       />
                     </td>
                     <td>
-                      <input 
+                      <input
+                        className="acq-edit-input"
                         type="number" 
                         value={item.entrate === 0 ? '' : item.entrate} 
                         onChange={(e) => handleItemChange(item.id, 'entrate', e.target.value)}
@@ -281,7 +350,8 @@ export default function AcquisisciChiusure({ onBack }) {
                       />
                     </td>
                     <td>
-                      <input 
+                      <input
+                        className="acq-edit-input"
                         type="number" 
                         value={item.uscite === 0 ? '' : item.uscite} 
                         onChange={(e) => handleItemChange(item.id, 'uscite', e.target.value)}
@@ -316,6 +386,17 @@ export default function AcquisisciChiusure({ onBack }) {
                     <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       Nessun reparto estratto o inserito. Clicca su "Aggiungi Riga".
                     </td>
+                  </tr>
+                )}
+                {previewData.items.length > 0 && (
+                  <tr className="acq-total-row">
+                    <td colSpan="3">Somma algebrica saldi reparti</td>
+                    <td>
+                      <span className={saldoTotaleReparti > 0 ? 'success' : saldoTotaleReparti < 0 ? 'danger' : ''}>
+                        {saldoTotaleReparti.toFixed(2)}
+                      </span>
+                    </td>
+                    <td></td>
                   </tr>
                 )}
               </tbody>

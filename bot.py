@@ -1,81 +1,198 @@
 import os
-import io
-import django
-import pytesseract
-from PIL import Image
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from asgiref.sync import sync_to_async
-from django.utils import timezone
+import re
+import json
 
-# Configura l'ambiente Django per l'uso standalone del bot
+import django
+from asgiref.sync import sync_to_async
+from django.core.files.base import ContentFile
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+
+# Configura l'ambiente Django per l'uso standalone del bot.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cash_manager.settings')
 django.setup()
 
-from reconciliation.models import CashClosure
-from reconciliation.ocr_parser import parse_closure_receipt
+from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting
+
+
+def _initial_session():
+    return {
+        'photos': [],
+        'awaiting_amount': False,
+    }
+
+
+def _reset(context):
+    context.user_data['draft_session'] = _initial_session()
+
+
+def _parse_amount(text):
+    cleaned = text.strip().replace('€', '').replace(' ', '')
+    if not re.fullmatch(r'\d{1,9}([.,]\d{1,2})?', cleaned):
+        raise ValueError('Importo non valido')
+    if ',' in cleaned:
+        return float(cleaned.replace('.', '').replace(',', '.'))
+    return float(cleaned)
+
+
+def _money_text(value):
+    return f"€ {value:.2f}".replace('.', ',')
+
+
+def _get_telegram_token():
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    if token:
+        return token
+    try:
+        return AppSetting.objects.get(key='telegram_bot_token').value.strip()
+    except AppSetting.DoesNotExist:
+        return ''
+
+
+def _get_reset_marker_sync():
+    try:
+        return AppSetting.objects.get(key='telegram_reset_sessions_at').value
+    except AppSetting.DoesNotExist:
+        return ''
+
+
+def _remember_chat_sync(chat_id):
+    try:
+        setting = AppSetting.objects.get(key='telegram_chat_ids')
+        chat_ids = set(json.loads(setting.value))
+    except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
+        chat_ids = set()
+        setting = None
+
+    chat_ids.add(str(chat_id))
+    value = json.dumps(sorted(chat_ids))
+    if setting:
+        setting.value = value
+        setting.save(update_fields=['value'])
+    else:
+        AppSetting.objects.create(key='telegram_chat_ids', value=value)
+
+
+async def _prepare_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id is not None:
+        await sync_to_async(_remember_chat_sync)(chat_id)
+
+    reset_marker = await sync_to_async(_get_reset_marker_sync)()
+    seen_marker = context.user_data.get('telegram_reset_seen')
+    current_session = context.user_data.get('draft_session')
+    has_open_session = bool(current_session and current_session.get('photos'))
+    if reset_marker and reset_marker != seen_marker:
+        if seen_marker is None and not has_open_session:
+            context.user_data['telegram_reset_seen'] = reset_marker
+            context.user_data.setdefault('draft_session', _initial_session())
+            return False
+        context.user_data.clear()
+        context.user_data['telegram_reset_seen'] = reset_marker
+        context.user_data['draft_session'] = _initial_session()
+        return True
+    context.user_data.setdefault('draft_session', _initial_session())
+    return False
+
+
+def _save_draft_sync(operator, chat_id, photos, totale_scassettato):
+    draft = AcquisitionDraft.objects.create(
+        source='telegram',
+        operator=operator,
+        telegram_chat_id=str(chat_id),
+        totale_scassettato=totale_scassettato,
+    )
+    for index, photo_bytes in enumerate(photos, start=1):
+        AcquisitionDraftImage.objects.create(
+            draft=draft,
+            image=ContentFile(photo_bytes, name=f'telegram_{chat_id}_{draft.id}_{index}.jpg'),
+        )
+    return draft.id
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _prepare_context(update, context)
+    _reset(context)
     await update.message.reply_text(
-        "👋 Benvenuto nel Bot di Ingestion Casse!\n\n"
-        "Invia una **foto della schermata di chiusura cassa** e io la registrerò automaticamente a sistema."
+        "Bot myTab pronto.\n\n"
+        "Invia una o più foto della chiusura cassa. Quando hai finito, scrivi l'importo scassettato, ad esempio 1240,00."
     )
 
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _prepare_context(update, context)
+    _reset(context)
+    await update.message.reply_text("Bozza annullata. Invia una nuova foto per ricominciare.")
+
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    message = await update.message.reply_text("⏳ Download dell'immagine in corso...")
-    
+    await _prepare_context(update, context)
+    session = context.user_data.setdefault('draft_session', _initial_session())
+    photo_file = await update.message.photo[-1].get_file()
+    image_bytes = bytes(await photo_file.download_as_bytearray())
+    session['photos'].append(image_bytes)
+    session['awaiting_amount'] = True
+
+    count = len(session['photos'])
+    await update.message.reply_text(
+        f"Foto {count} ricevuta.\n\n"
+        "Invia un'altra foto oppure scrivi l'importo scassettato per creare la bozza in myTab."
+    )
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_applied = await _prepare_context(update, context)
+    if reset_applied:
+        await update.message.reply_text(
+            "Sessione Telegram precedente azzerata da myTab.\n\n"
+            "Invia una nuova foto della chiusura cassa per ricominciare."
+        )
+        return
+
+    session = context.user_data.setdefault('draft_session', _initial_session())
+    if not session.get('photos'):
+        await update.message.reply_text("Prima invia almeno una foto della chiusura cassa.")
+        return
+
     try:
-        # 1. Scarica la foto alla massima risoluzione disponibile
-        photo_file = await update.message.photo[-1].get_file()
-        image_bytes = await photo_file.download_as_bytearray()
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        await message.edit_text("🔍 Estrazione del testo tramite OCR...")
-        
-        # 2. OCR Estrazione
-        extracted_text = pytesseract.image_to_string(image, lang='ita')
-        
-        # 3. Parsing dei dati con le Regex
-        parsed_data = parse_closure_receipt(extracted_text)
-        
-        if parsed_data['total_in'] == 0.0:
-            await message.edit_text("⚠️ Attenzione: Non sono riuscito a leggere chiaramente gli importi. Riprova con un'immagine più nitida.")
-            return
+        totale_scassettato = _parse_amount(update.message.text)
+    except ValueError:
+        await update.message.reply_text("Importo non valido. Scrivilo così: 1240,00")
+        return
 
-        # 4. Salvataggio su DB
-        closure = await sync_to_async(CashClosure.objects.create)(
-            operator=user.username or user.first_name,
-            date=parsed_data['date'] or timezone.now().date(),
-            total_in=parsed_data['total_in'],
-            total_out=parsed_data['total_out'],
-            calculated_balance=parsed_data['calculated_balance']
-        )
-        
-        # 5. Feedback di successo formattato
-        response = (
-            f"✅ **Chiusura Cassa Acquisita!**\n\n"
-            f"📅 Data: {parsed_data['date']}\n"
-            f"👤 Operatore: {user.username or user.first_name}\n\n"
-            f"📈 **Incassi:** € {parsed_data['total_in']:.2f}\n"
-            f"📉 **Uscite:** € {parsed_data['total_out']:.2f}\n"
-            f"💰 **Saldo Finale:** € {parsed_data['calculated_balance']:.2f}\n\n"
-            f"Il dato è ora disponibile nella dashboard per la riconciliazione."
-        )
-        await message.edit_text(response, parse_mode='Markdown')
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    draft_id = await sync_to_async(_save_draft_sync)(
+        operator,
+        update.message.chat_id,
+        session['photos'],
+        totale_scassettato,
+    )
+    photo_count = len(session['photos'])
+    _reset(context)
 
-    except Exception as e:
-        await message.edit_text(f"❌ Si è verificato un errore durante l'elaborazione: {str(e)}")
+    await update.message.reply_text(
+        "Bozza acquisizione creata in myTab.\n\n"
+        f"Foto ricevute: {photo_count}\n"
+        f"Totale scassettato: {_money_text(totale_scassettato)}\n\n"
+        "Apri Acquisisci con IA nell'app: troverai la bozza pronta da controllare e confermare."
+    )
+
 
 def run_bot():
-    # Sostituisci "IL_TUO_TELEGRAM_TOKEN" con il token reale del tuo bot
-    app = ApplicationBuilder().token("8690393245:AAHdGuqzlA0njiQvbSbhnx1jcTqZJc2mzFw").build()
-    
+    token = _get_telegram_token()
+    if not token:
+        raise RuntimeError('Token Telegram non configurato in TELEGRAM_BOT_TOKEN o in Impostazioni.')
+
+    app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("annulla", cancel))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    
-    print("🤖 Telegram Ingestion Bot avviato...")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    print("Telegram bot myTab avviato.")
     app.run_polling()
+
 
 if __name__ == '__main__':
     run_bot()

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Edit2, Save, X, Trash2, Loader2, AlertCircle, Tag } from 'lucide-react';
+import { apiFetch } from './api';
 
 export default function RepartiManager() {
   const [departments, setDepartments] = useState([]);
@@ -11,7 +12,7 @@ export default function RepartiManager() {
   const [editName, setEditName] = useState('');
 
   const fetchDepts = () => {
-    fetch('/api/departments/')
+    apiFetch('/api/departments/')
       .then(r => r.json())
       .then(d => { if (d.status === 'success') setDepartments(d.data); })
       .catch(() => setError('Errore di rete.'))
@@ -24,7 +25,7 @@ export default function RepartiManager() {
     const name = newName.trim();
     if (!name) return;
     setAdding(true);
-    fetch('/api/departments/create/', {
+    apiFetch('/api/departments/create/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -38,7 +39,7 @@ export default function RepartiManager() {
   const handleSaveEdit = (id) => {
     const name = editName.trim();
     if (!name) return;
-    fetch(`/api/departments/update/${id}/`, {
+    apiFetch(`/api/departments/update/${id}/`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -50,7 +51,7 @@ export default function RepartiManager() {
 
   const handleDelete = (id, name) => {
     if (!window.confirm(`Eliminare il reparto "${name}"?`)) return;
-    fetch(`/api/departments/delete/${id}/`, { method: 'DELETE' })
+    apiFetch(`/api/departments/delete/${id}/`, { method: 'DELETE' })
       .then(r => r.json())
       .then(d => { if (d.status === 'success') fetchDepts(); else setError(d.error); })
       .catch(() => setError('Errore di rete.'));
