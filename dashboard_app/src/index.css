@@ -520,6 +520,57 @@ tbody tr:hover {
     padding: 1rem !important;
   }
 
+  .expanded-content > div {
+    padding: 0.9rem !important;
+    margin-bottom: 1rem !important;
+    border-radius: 12px !important;
+  }
+
+  .expanded-content .summary-section > div:first-child {
+    align-items: flex-start !important;
+    gap: 0.8rem;
+    flex-direction: column;
+  }
+
+  .expanded-content .summary-section > div:first-child > div {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .expanded-content .summary-section > div:nth-child(2) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+
+  .expanded-content .summary-section > div:nth-child(2) > div {
+    min-width: 0;
+    padding: 0.65rem;
+    border-radius: 10px;
+    background: rgba(8, 17, 31, 0.38);
+    border: 1px solid var(--border);
+  }
+
+  .expanded-content .summary-section input {
+    width: 100% !important;
+  }
+
+  .expanded-content .inner-table {
+    min-width: 560px;
+  }
+
+  .expanded-content .inner-table th,
+  .expanded-content .inner-table td {
+    padding: 0.52rem 0.48rem;
+    font-size: 0.82rem;
+  }
+
+  .expanded-content .inner-table input {
+    min-width: 0 !important;
+    width: 100% !important;
+    font-size: 16px !important;
+  }
+
   input,
   select,
   textarea {
@@ -556,10 +607,33 @@ tbody tr:hover {
   .nav-item {
     padding: 0.72rem 0.85rem;
   }
+
+  .expanded-content {
+    padding: 0.65rem;
+  }
+
+  .expanded-content > div {
+    padding: 0.75rem !important;
+  }
+
+  .expanded-content .summary-section > div:nth-child(2) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .expanded-content .inner-table {
+    min-width: 610px;
+  }
 }
 
 @media (max-width: 768px) and (orientation: landscape) {
+  .sidebar,
+  .sidebar-overlay,
+  .menu-button {
+    display: none !important;
+  }
+
   .mobile-header {
+    justify-content: center;
     padding-top: calc(0.55rem + env(safe-area-inset-top));
     padding-bottom: 0.55rem;
     margin-bottom: 0.75rem;
@@ -569,8 +643,32 @@ tbody tr:hover {
     padding-top: 0.65rem;
   }
 
-  .sidebar {
-    width: min(72vw, 300px);
+  .expanded-content {
+    padding: 0.75rem;
+  }
+
+  .expanded-content > div {
+    padding: 1rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .expanded-content .summary-section > div:first-child {
+    flex-direction: row;
+    align-items: center !important;
+  }
+
+  .expanded-content .summary-section > div:first-child > div {
+    width: auto;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .expanded-content .summary-section > div:nth-child(2) {
+    grid-template-columns: repeat(4, minmax(120px, 1fr)) !important;
+  }
+
+  .expanded-content .inner-table {
+    min-width: 720px;
   }
 
   .sidebar-header {
