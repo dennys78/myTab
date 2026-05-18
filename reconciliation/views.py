@@ -519,13 +519,41 @@ def api_delete_department(request, dept_id):
 # ── IMPOSTAZIONI ─────────────────────────────────────────────────────────────
 
 def _get_groq_key():
-    key = os.environ.get('GROQ_API_KEY', '').strip()
-    if not key:
-        try:
-            key = AppSetting.objects.get(key='groq_api_key').value.strip()
-        except AppSetting.DoesNotExist:
-            pass
-    return key
+    try:
+        key = AppSetting.objects.get(key='groq_api_key').value.strip()
+        if key:
+            return key
+    except AppSetting.DoesNotExist:
+        pass
+    return os.environ.get('GROQ_API_KEY', '').strip()
+
+
+def _get_gemini_key():
+    try:
+        key = AppSetting.objects.get(key='gemini_api_key').value.strip()
+        if key:
+            return key
+    except AppSetting.DoesNotExist:
+        pass
+    return os.environ.get('GEMINI_API_KEY', '').strip()
+
+
+def _get_ai_provider():
+    try:
+        provider = AppSetting.objects.get(key='ai_acquisition_provider').value.strip().lower()
+    except AppSetting.DoesNotExist:
+        provider = ''
+    return provider if provider in {'groq', 'gemini'} else 'groq'
+
+
+def _set_ai_provider(provider):
+    provider = str(provider or '').strip().lower()
+    if provider not in {'groq', 'gemini'}:
+        raise ValueError('Provider IA non valido.')
+    AppSetting.objects.update_or_create(
+        key='ai_acquisition_provider',
+        defaults={'value': provider},
+    )
 
 
 def _get_telegram_token():
@@ -587,6 +615,8 @@ def api_get_settings(request):
             'status': 'success',
             'data': {
                 'groq_key_configured': bool(_get_groq_key()),
+                'gemini_key_configured': bool(_get_gemini_key()),
+                'ai_acquisition_provider': _get_ai_provider(),
                 'telegram_token_configured': bool(_get_telegram_token()),
                 'saldo_cassa': float(_get_saldo_cassa()),
                 'fondo_cassa': float(_get_fondo_cassa()),
@@ -606,6 +636,16 @@ def api_save_settings(request):
                     key='groq_api_key',
                     defaults={'value': key},
                 )
+
+            gemini_key = data.get('gemini_api_key', '').strip()
+            if gemini_key:
+                AppSetting.objects.update_or_create(
+                    key='gemini_api_key',
+                    defaults={'value': gemini_key},
+                )
+
+            if 'ai_acquisition_provider' in data:
+                _set_ai_provider(data.get('ai_acquisition_provider'))
 
             telegram_token = data.get('telegram_bot_token', '').strip()
             if telegram_token:
@@ -732,103 +772,166 @@ Regole:
 - Se un valore non è leggibile usa 0.00"""
 
 
+def _json_from_ai_text(raw_json):
+    raw_json = (raw_json or '').strip()
+    if raw_json.startswith('```'):
+        raw_json = raw_json.split('```')[1]
+        if raw_json.startswith('json'):
+            raw_json = raw_json[4:]
+    start = raw_json.find('{')
+    end = raw_json.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        raw_json = raw_json[start:end + 1]
+    return json.loads(raw_json)
+
+
+def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, operator='IA'):
+    items = []
+    for item in parsed.get('items', []):
+        entrate = _money(item.get('entrate'))
+        uscite = _money(item.get('uscite'))
+        items.append({
+            'descrizione': str(item.get('descrizione', '')).strip().upper(),
+            'entrate': float(entrate),
+            'uscite': float(uscite),
+            'saldo': float(_money(entrate - uscite)),
+        })
+
+    known = list(Department.objects.values_list('name', flat=True))
+    for item in items:
+        resolved = _resolve_dept(item['descrizione'], known)
+        if resolved:
+            item['descrizione'] = resolved
+
+    seen: dict = {}
+    for item in items:
+        name = item['descrizione']
+        if name not in seen:
+            seen[name] = item
+        elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
+            seen[name] = item
+    items = list(seen.values())
+
+    summary = parsed.get('summary', {})
+    totale = _money(summary.get('totale'))
+    pag_pos = _money(summary.get('pag_pos'))
+    distrib = _money(summary.get('distrib'))
+    reso_auto = _money(summary.get('reso_auto'))
+    reso_cont = _money(summary.get('reso_cont'))
+    cassetto = _money(totale_scassettato) if totale_scassettato is not None else MONEY_ZERO
+    atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+    differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
+
+    data = {
+        'date': parsed.get('date', ''),
+        'operator': operator,
+        'summary': {
+            'contanti': _money_number(summary.get('contanti')),
+            'pag_pos': float(pag_pos),
+            'cassa_auto': _money_number(summary.get('cassa_auto')),
+            'reso_cont': float(reso_cont),
+            'reso_auto': float(reso_auto),
+            'distrib': float(distrib),
+            'totale': float(totale),
+            'totale_cassetto': float(cassetto),
+            'differenza': float(differenza),
+        },
+        'items': items,
+    }
+    if draft_id:
+        data['draft_id'] = draft_id
+    return data
+
+
+def _extract_ai_with_groq(images):
+    api_key = _get_groq_key()
+    if not api_key:
+        raise ValueError('Chiave API Groq non configurata. Vai su Impostazioni per inserirla.')
+
+    from openai import OpenAI
+
+    content = []
+    for image in images:
+        content.append({
+            'type': 'image_url',
+            'image_url': {'url': f"data:{image['mime']};base64,{image['b64']}"},
+        })
+    content.append({'type': 'text', 'text': AI_PROMPT})
+
+    client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
+    response = client.chat.completions.create(
+        model='meta-llama/llama-4-scout-17b-16e-instruct',
+        max_tokens=2048,
+        response_format={'type': 'json_object'},
+        messages=[{'role': 'user', 'content': content}],
+    )
+    return _json_from_ai_text(response.choices[0].message.content)
+
+
+def _extract_ai_with_gemini(images):
+    api_key = _get_gemini_key()
+    if not api_key:
+        raise ValueError('Chiave API Gemini non configurata. Vai su Impostazioni per inserirla.')
+
+    parts = []
+    for image in images:
+        parts.append({
+            'inline_data': {
+                'mime_type': image['mime'],
+                'data': image['b64'],
+            },
+        })
+    parts.append({'text': AI_PROMPT})
+
+    payload = {
+        'contents': [{'role': 'user', 'parts': parts}],
+        'generationConfig': {
+            'temperature': 0,
+            'response_mime_type': 'application/json',
+        },
+    }
+    data = json.dumps(payload).encode('utf-8')
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={urllib.parse.quote(api_key)}'
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.loads(response.read().decode('utf-8'))
+    raw_json = result['candidates'][0]['content']['parts'][0]['text']
+    return _json_from_ai_text(raw_json)
+
+
+def _extract_ai_payload(images):
+    provider = _get_ai_provider()
+    if provider == 'gemini':
+        return _extract_ai_with_gemini(images), 'IA Gemini'
+    return _extract_ai_with_groq(images), 'IA Groq'
+
+
 @require_auth
 def api_extract_closure_ai(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
-    api_key = _get_groq_key()
-    if not api_key:
-        return JsonResponse({'error': 'Chiave API Groq non configurata. Vai su Impostazioni per inserirla.'}, status=500)
-
     if not request.FILES:
         return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
 
     try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
-
-        # Costruisce il contenuto con tutte le immagini (OpenAI-compatible format)
-        content = []
+        images = []
         for file_key in request.FILES:
             f = request.FILES[file_key]
             mime = f.content_type or 'image/jpeg'
             b64 = base64.standard_b64encode(f.read()).decode('utf-8')
-            content.append({
-                'type': 'image_url',
-                'image_url': {'url': f'data:{mime};base64,{b64}'},
-            })
-        content.append({'type': 'text', 'text': AI_PROMPT})
+            images.append({'mime': mime, 'b64': b64})
 
-        response = client.chat.completions.create(
-            model='meta-llama/llama-4-scout-17b-16e-instruct',
-            max_tokens=2048,
-            messages=[{'role': 'user', 'content': content}],
-        )
-
-        raw_json = response.choices[0].message.content.strip()
-        if raw_json.startswith('```'):
-            raw_json = raw_json.split('```')[1]
-            if raw_json.startswith('json'):
-                raw_json = raw_json[4:]
-        parsed = json.loads(raw_json)
-
-        items = []
-        for item in parsed.get('items', []):
-            entrate = _money(item.get('entrate'))
-            uscite = _money(item.get('uscite'))
-            items.append({
-                'descrizione': str(item.get('descrizione', '')).strip().upper(),
-                'entrate': float(entrate),
-                'uscite': float(uscite),
-                'saldo': float(_money(entrate - uscite)),
-            })
-
-        summary = parsed.get('summary', {})
-
-        # Risolve nomi reparti contro archivio (exact → prefix → fuzzy)
-        known = list(Department.objects.values_list('name', flat=True))
-        for item in items:
-            resolved = _resolve_dept(item['descrizione'], known)
-            if resolved:
-                item['descrizione'] = resolved
-
-        seen: dict = {}
-        for item in items:
-            name = item['descrizione']
-            if name not in seen:
-                seen[name] = item
-            elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
-                seen[name] = item
-        items = list(seen.values())
-
-        totale    = _money(summary.get('totale'))
-        pag_pos   = _money(summary.get('pag_pos'))
-        distrib   = _money(summary.get('distrib'))
-        reso_auto = _money(summary.get('reso_auto'))
-        reso_cont = _money(summary.get('reso_cont'))
-        # differenza = cassetto fisico − importo atteso; al momento dell'estrazione cassetto = 0
-        differenza = 0.0
-
+        parsed, operator = _extract_ai_payload(images)
         return JsonResponse({
             'status': 'success',
-            'data': {
-                'date': parsed.get('date', ''),
-                'operator': 'IA Groq',
-                'summary': {
-                    'contanti':        _money_number(summary.get('contanti')),
-                    'pag_pos':         float(pag_pos),
-                    'cassa_auto':      _money_number(summary.get('cassa_auto')),
-                    'reso_cont':       float(reso_cont),
-                    'reso_auto':       float(reso_auto),
-                    'distrib':         float(distrib),
-                    'totale':          float(totale),
-                    'totale_cassetto': 0.0,
-                    'differenza':      differenza,
-                },
-                'items': items,
-            }
+            'provider': _get_ai_provider(),
+            'data': _parse_ai_closure_payload(parsed, operator=operator),
         })
 
     except json.JSONDecodeError as e:
@@ -866,14 +969,8 @@ def api_acquisition_draft_extract(request, draft_id):
     except AcquisitionDraft.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
 
-    api_key = _get_groq_key()
-    if not api_key:
-        return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata'}, status=500)
-
     try:
-        from openai import OpenAI
-
-        content = []
+        images = []
         for draft_image in draft.images.all():
             try:
                 with draft_image.image.open('rb') as img:
@@ -883,74 +980,21 @@ def api_acquisition_draft_extract(request, draft_id):
                     'status': 'error',
                     'error': 'Le foto di questa bozza non sono più disponibili sul server. Aggiorna myTab e fai reinviare le foto all’operatore.',
                 }, status=400)
-            content.append({
-                'type': 'image_url',
-                'image_url': {'url': f'data:image/jpeg;base64,{b64}'},
-            })
-        if not content:
+            images.append({'mime': 'image/jpeg', 'b64': b64})
+        if not images:
             return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
 
-        content.append({'type': 'text', 'text': AI_PROMPT})
-        client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
-        response = client.chat.completions.create(
-            model='meta-llama/llama-4-scout-17b-16e-instruct',
-            max_tokens=2048,
-            response_format={'type': 'json_object'},
-            messages=[{'role': 'user', 'content': content}],
-        )
-
-        raw_json = response.choices[0].message.content.strip()
-        if raw_json.startswith('```'):
-            raw_json = raw_json.split('```')[1]
-            if raw_json.startswith('json'):
-                raw_json = raw_json[4:]
-        parsed = json.loads(raw_json)
-
-        items = []
-        for item in parsed.get('items', []):
-            entrate = _money(item.get('entrate'))
-            uscite = _money(item.get('uscite'))
-            items.append({
-                'descrizione': str(item.get('descrizione', '')).strip().upper(),
-                'entrate': float(entrate),
-                'uscite': float(uscite),
-                'saldo': float(_money(entrate - uscite)),
-            })
-
-        known = list(Department.objects.values_list('name', flat=True))
-        for item in items:
-            resolved = _resolve_dept(item['descrizione'], known)
-            if resolved:
-                item['descrizione'] = resolved
-
-        summary = parsed.get('summary', {})
-        totale = _money(summary.get('totale'))
-        pag_pos = _money(summary.get('pag_pos'))
-        distrib = _money(summary.get('distrib'))
-        reso_auto = _money(summary.get('reso_auto'))
-        reso_cont = _money(summary.get('reso_cont'))
-        totale_scassettato = _money(draft.totale_scassettato)
-        atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+        parsed, operator = _extract_ai_payload(images)
 
         return JsonResponse({
             'status': 'success',
-            'data': {
-                'draft_id': draft.id,
-                'date': parsed.get('date', ''),
-                'operator': draft.operator or 'Telegram',
-                'summary': {
-                    'contanti': _money_number(summary.get('contanti')),
-                    'pag_pos': float(pag_pos),
-                    'cassa_auto': _money_number(summary.get('cassa_auto')),
-                    'reso_cont': float(reso_cont),
-                    'reso_auto': float(reso_auto),
-                    'distrib': float(distrib),
-                    'totale': float(totale),
-                    'totale_cassetto': float(totale_scassettato),
-                    'differenza': float(_money(totale_scassettato - atteso)),
-                },
-                'items': items,
-            },
+            'provider': _get_ai_provider(),
+            'data': _parse_ai_closure_payload(
+                parsed,
+                totale_scassettato=draft.totale_scassettato,
+                draft_id=draft.id,
+                operator=operator,
+            ),
         })
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)
