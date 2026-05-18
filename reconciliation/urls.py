@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/users/',                              views.api_users_list),
     path('api/users/create/',                       views.api_user_create),
     path('api/users/<int:user_id>/delete/',         views.api_user_delete),
+    path('api/users/<int:user_id>/update/',         views.api_user_update),
     path('api/users/<int:user_id>/change-password/', views.api_user_change_password),
 
     # Chiusure

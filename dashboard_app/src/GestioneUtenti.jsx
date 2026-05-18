@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, KeyRound, Loader2, Shield, User } from 'lucide-react';
+import { Plus, Trash2, Pencil, Loader2, Shield, User } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
@@ -16,10 +16,13 @@ export default function GestioneUtenti() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  // Cambio password
-  const [changePwdId, setChangePwdId] = useState(null);
-  const [changePwdValue, setChangePwdValue] = useState('');
-  const [changingPwd, setChangingPwd] = useState(false);
+  // Modifica utente
+  const [editUserId, setEditUserId] = useState(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editRole, setEditRole] = useState('utente');
+  const [updatingUser, setUpdatingUser] = useState(false);
+  const [editError, setEditError] = useState(null);
 
   const fetchUsers = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -69,20 +72,46 @@ export default function GestioneUtenti() {
       .catch(() => {});
   };
 
-  const handleChangePassword = (id) => {
-    if (!changePwdValue.trim()) return;
-    setChangingPwd(true);
-    apiFetch(`/api/users/${id}/change-password/`, {
+  const startEditUser = (u) => {
+    setEditUserId(u.id);
+    setEditUsername(u.username);
+    setEditPassword('');
+    setEditRole(u.role);
+    setEditError(null);
+  };
+
+  const cancelEditUser = () => {
+    setEditUserId(null);
+    setEditUsername('');
+    setEditPassword('');
+    setEditRole('utente');
+    setEditError(null);
+  };
+
+  const handleUpdateUser = (id) => {
+    if (!editUsername.trim()) return;
+    setUpdatingUser(true);
+    setEditError(null);
+    apiFetch(`/api/users/${id}/update/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: changePwdValue }),
+      body: JSON.stringify({
+        username: editUsername.trim(),
+        password: editPassword,
+        role: editRole,
+      }),
     })
       .then(r => r.json())
       .then(d => {
-        if (d.status === 'success') { setChangePwdId(null); setChangePwdValue(''); }
+        if (d.status === 'success') {
+          cancelEditUser();
+          fetchUsers();
+        } else {
+          setEditError(d.error || 'Errore aggiornamento utente');
+        }
       })
-      .catch(() => {})
-      .finally(() => setChangingPwd(false));
+      .catch(() => setEditError('Errore di rete'))
+      .finally(() => setUpdatingUser(false));
   };
 
   const inp = { padding: '0.55rem 0.75rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '6px', fontSize: '0.9rem' };
@@ -167,40 +196,69 @@ export default function GestioneUtenti() {
                 borderBottom: idx < users.length - 1 ? '1px solid var(--border)' : 'none',
                 display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
               }}>
-                <div style={{ flex: 1, minWidth: '120px' }}>
+                <div style={{ flex: 1, minWidth: '160px' }}>
                   <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>
-                    {u.username}
-                    {u.id === me?.id && <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>(tu)</span>}
+                    {editUserId === u.id ? 'Modifica operatore' : u.username}
+                    {u.id === me?.id && editUserId !== u.id && <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>(tu)</span>}
                   </div>
-                  <RoleBadge role={u.role} />
+                  {editUserId === u.id ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(140px, 1fr) minmax(130px, 0.7fr)', gap: '0.5rem', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Username</label>
+                        <input
+                          type="text"
+                          value={editUsername}
+                          onChange={e => setEditUsername(e.target.value)}
+                          autoFocus
+                          style={{ ...inp, width: '100%' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Nuova password</label>
+                        <input
+                          type="password"
+                          value={editPassword}
+                          onChange={e => setEditPassword(e.target.value)}
+                          placeholder="Lascia vuoto per non cambiarla"
+                          style={{ ...inp, width: '100%' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Ruolo</label>
+                        <select value={editRole} onChange={e => setEditRole(e.target.value)} style={{ ...inp, width: '100%' }}>
+                          <option value="utente">Utente</option>
+                          <option value="amministratore">Amministratore</option>
+                        </select>
+                      </div>
+                      {editError && (
+                        <div style={{ gridColumn: '1 / -1', color: 'var(--danger)', fontSize: '0.82rem' }}>
+                          {editError}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <RoleBadge role={u.role} />
+                  )}
                 </div>
 
-                {/* Cambio password inline */}
-                {changePwdId === u.id ? (
+                {/* Modifica utente inline */}
+                {editUserId === u.id ? (
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <input
-                      type="password"
-                      value={changePwdValue}
-                      onChange={e => setChangePwdValue(e.target.value)}
-                      placeholder="Nuova password"
-                      autoFocus
-                      style={{ ...inp, width: '160px' }}
-                    />
-                    <button onClick={() => handleChangePassword(u.id)} disabled={changingPwd || !changePwdValue.trim()}
+                    <button onClick={() => handleUpdateUser(u.id)} disabled={updatingUser || !editUsername.trim()}
                       style={{ padding: '0.5rem 0.875rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      {changingPwd ? <Loader2 size={14} className="spin" /> : 'Salva'}
+                      {updatingUser ? <Loader2 size={14} className="spin" /> : 'Salva'}
                     </button>
-                    <button onClick={() => { setChangePwdId(null); setChangePwdValue(''); }}
+                    <button onClick={cancelEditUser}
                       style={{ padding: '0.5rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
                       Annulla
                     </button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={() => { setChangePwdId(u.id); setChangePwdValue(''); }}
-                      title="Cambia password"
+                    <button onClick={() => startEditUser(u)}
+                      title="Modifica username, password e ruolo"
                       style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}>
-                      <KeyRound size={14} /> Password
+                      <Pencil size={14} /> Modifica
                     </button>
                     <button
                       onClick={() => handleDelete(u.id, u.username)}

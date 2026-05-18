@@ -12,7 +12,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db import transaction
-from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.models import User
 from difflib import get_close_matches
 from .models import (
@@ -158,6 +158,37 @@ def api_user_change_password(request, user_id):
         user.set_password(password)
         user.save()
         return JsonResponse({'status': 'success'})
+    except User.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@require_admin
+def api_user_update(request, user_id):
+    if request.method not in ['POST', 'PUT']:
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        user = User.objects.get(id=user_id)
+
+        username = data.get('username', user.username).strip()
+        password = data.get('password', '').strip()
+        role = data.get('role', 'amministratore' if user.is_staff else 'utente')
+
+        if not username:
+            return JsonResponse({'status': 'error', 'error': 'Username obbligatorio'})
+        if User.objects.exclude(id=user.id).filter(username=username).exists():
+            return JsonResponse({'status': 'error', 'error': 'Username già in uso'})
+
+        user.username = username
+        user.is_staff = role == 'amministratore'
+        if password:
+            user.set_password(password)
+        user.save()
+        if user.id == request.user.id and password:
+            update_session_auth_hash(request, user)
+        return JsonResponse({'status': 'success', 'data': _user_info(user)})
     except User.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
     except Exception as e:
