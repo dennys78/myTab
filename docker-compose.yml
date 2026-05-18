@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - sqlite_data:/app/db_data
+      - media_data:/app/media
     environment:
       - DJANGO_SETTINGS_MODULE=cash_manager.settings
       - DOCKER_ENV=1
@@ -37,6 +38,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - sqlite_data:/app/db_data
+      - media_data:/app/media
     environment:
       - DJANGO_SETTINGS_MODULE=cash_manager.settings
       - DOCKER_ENV=1
@@ -63,3 +65,4 @@ services:
 
 volumes:
   sqlite_data:
+  media_data:

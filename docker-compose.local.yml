@@ -10,6 +10,7 @@ services:
       - DOCKER_ENV=1
     volumes:
       - sqlite_local_data:/app/db_data
+      - media_local_data:/app/media
     expose:
       - "8000"
     command: >
@@ -28,3 +29,4 @@ services:
 
 volumes:
   sqlite_local_data:
+  media_local_data:

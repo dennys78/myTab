@@ -875,8 +875,14 @@ def api_acquisition_draft_extract(request, draft_id):
 
         content = []
         for draft_image in draft.images.all():
-            with draft_image.image.open('rb') as img:
-                b64 = base64.standard_b64encode(img.read()).decode('utf-8')
+            try:
+                with draft_image.image.open('rb') as img:
+                    b64 = base64.standard_b64encode(img.read()).decode('utf-8')
+            except FileNotFoundError:
+                return JsonResponse({
+                    'status': 'error',
+                    'error': 'Le foto di questa bozza non sono più disponibili sul server. Aggiorna myTab e fai reinviare le foto all’operatore.',
+                }, status=400)
             content.append({
                 'type': 'image_url',
                 'image_url': {'url': f'data:image/jpeg;base64,{b64}'},
