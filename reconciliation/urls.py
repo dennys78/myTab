@@ -22,6 +22,7 @@ urlpatterns = [
     path('api/closures/delete/<int:closure_id>/',   views.api_delete_closure),
     path('api/acquisition-drafts/',                 views.api_acquisition_drafts_list),
     path('api/acquisition-drafts/<int:draft_id>/extract-ai/', views.api_acquisition_draft_extract),
+    path('api/acquisition-drafts/<int:draft_id>/cancel/', views.api_acquisition_draft_cancel),
 
     # Reparti
     path('api/departments/',                        views.api_list_departments),

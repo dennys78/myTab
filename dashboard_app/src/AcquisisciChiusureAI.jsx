@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images } from 'lucide-react';
+import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
@@ -26,6 +26,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [loadingDraftId, setLoadingDraftId] = useState(null);
+  const [deletingDraftId, setDeletingDraftId] = useState(null);
 
   const fetchDrafts = () => {
     apiFetch('/api/acquisition-drafts/')
@@ -102,6 +103,23 @@ export default function AcquisisciChiusureAI({ onBack }) {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setLoadingDraftId(null));
+  };
+
+  const removeDraft = (draft) => {
+    if (!window.confirm(`Rimuovere la bozza di ${draft.operator || 'Telegram'}? L'incasso non verrà registrato.`)) return;
+    setDeletingDraftId(draft.id);
+    setError(null);
+    apiFetch(`/api/acquisition-drafts/${draft.id}/cancel/`, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setDrafts(prev => prev.filter(item => item.id !== draft.id));
+        } else {
+          setError(d.error || 'Errore durante la rimozione della bozza.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setDeletingDraftId(null));
   };
 
   const handleItemChange = (id, field, value) => {
@@ -404,14 +422,24 @@ export default function AcquisisciChiusureAI({ onBack }) {
                     Totale scassettato € {Number(draft.totale_scassettato).toFixed(2)} · {new Date(draft.created_at).toLocaleString('it-IT')}
                   </div>
                 </div>
-                <button
-                  onClick={() => loadDraft(draft.id)}
-                  disabled={loadingDraftId === draft.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
-                >
-                  {loadingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-                  Carica bozza
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => loadDraft(draft.id)}
+                    disabled={loadingDraftId === draft.id || deletingDraftId === draft.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
+                  >
+                    {loadingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+                    Carica bozza
+                  </button>
+                  <button
+                    onClick={() => removeDraft(draft)}
+                    disabled={loadingDraftId === draft.id || deletingDraftId === draft.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 0.8rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
+                  >
+                    {deletingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+                    Rimuovi
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -1000,6 +1000,19 @@ def api_acquisition_draft_extract(request, draft_id):
         return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)
 
 
+@require_auth
+def api_acquisition_draft_cancel(request, draft_id):
+    if request.method not in ['POST', 'DELETE']:
+        return JsonResponse({'status': 'error'}, status=405)
+    updated = AcquisitionDraft.objects.filter(id=draft_id, status='pending').update(
+        status='cancelled',
+        completed_at=timezone.now(),
+    )
+    if not updated:
+        return JsonResponse({'status': 'error', 'error': 'Bozza non trovata o già registrata'}, status=404)
+    return JsonResponse({'status': 'success'})
+
+
 # ── VERSAMENTI ────────────────────────────────────────────────────────────────
 
 def _get_saldo_cassa_base():
