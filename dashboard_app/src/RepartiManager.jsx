@@ -22,7 +22,7 @@ export default function RepartiManager() {
   useEffect(() => { fetchDepts(); }, []);
 
   const handleAdd = () => {
-    const name = newName.trim();
+    const name = newName.trim().toUpperCase();
     if (!name) return;
     setAdding(true);
     apiFetch('/api/departments/create/', {
@@ -37,7 +37,7 @@ export default function RepartiManager() {
   };
 
   const handleSaveEdit = (id) => {
-    const name = editName.trim();
+    const name = editName.trim().toUpperCase();
     if (!name) return;
     apiFetch(`/api/departments/update/${id}/`, {
       method: 'PUT',
@@ -95,7 +95,7 @@ export default function RepartiManager() {
           style={{ ...inputStyle, flex: 1 }}
           placeholder="Nome nuovo reparto (es. TABACCHI)"
           value={newName}
-          onChange={e => setNewName(e.target.value)}
+          onChange={e => setNewName(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
         />
         <button onClick={handleAdd} disabled={adding || !newName.trim()} style={btnStyle()}>
@@ -129,7 +129,7 @@ export default function RepartiManager() {
                   <input
                     style={{ ...inputStyle, flex: 1 }}
                     value={editName}
-                    onChange={e => setEditName(e.target.value)}
+                    onChange={e => setEditName(e.target.value.toUpperCase())}
                     onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(dept.id); if (e.key === 'Escape') setEditingId(null); }}
                     autoFocus
                   />

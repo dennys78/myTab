@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import base64
 import os
+import re
 import urllib.parse
 import urllib.request
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -209,17 +210,39 @@ def _resolve_dept(name: str, known: list) -> str | None:
     1. Exact match
     2. A known dept is a prefix of `name` (≥5 chars) — handles
        'LOTTOMATICA(LOTTO + 10&LOTTO)' → 'LOTTOMATICA'
-    3. Fuzzy match with cutoff 0.6
+    3. Fuzzy match with cutoff 0.3
     """
+    name = _dept_name(name)
     if not known or not name:
         return None
-    if name in known:
-        return name
+    normalized_known = { _dept_name(k): _dept_name(k) for k in known if _dept_name(k) }
+    if name in normalized_known:
+        return normalized_known[name]
     for k in known:
-        if len(k) >= 5 and name.startswith(k):
-            return k
-    matches = get_close_matches(name, known, n=1, cutoff=0.6)
-    return matches[0] if matches else None
+        candidate = _dept_name(k)
+        if len(candidate) >= 5 and (name.startswith(candidate) or candidate.startswith(name)):
+            return candidate
+    matches = get_close_matches(name, list(normalized_known.keys()), n=1, cutoff=0.3)
+    return normalized_known[matches[0]] if matches else None
+
+
+def _dept_name(value):
+    return re.sub(r'\s+', ' ', str(value or '').strip()).upper()
+
+
+def _department_for_import(raw_name, known_depts, create_missing=False):
+    dept_name = _dept_name(raw_name)
+    if not dept_name or dept_name == 'REPARTO SCONOSCIUTO':
+        return 'REPARTO SCONOSCIUTO'
+
+    resolved = _resolve_dept(dept_name, known_depts)
+    if resolved:
+        return resolved
+
+    if create_missing:
+        Department.objects.get_or_create(name=dept_name)
+        known_depts.append(dept_name)
+    return dept_name
 
 
 @require_auth
@@ -265,18 +288,15 @@ def api_insert_closure(request):
                 # Auto-popola archivio reparti e inserisce le righe
                 known_depts = list(Department.objects.values_list('name', flat=True))
                 for item in items:
-                    dept_name = item.get('descrizione', '').strip()
-                    if dept_name and dept_name != 'Reparto Sconosciuto':
-                        resolved = _resolve_dept(dept_name, known_depts)
-                        if resolved:
-                            dept_name = resolved
-                        else:
-                            Department.objects.get_or_create(name=dept_name)
-                            known_depts.append(dept_name)
+                    dept_name = _department_for_import(
+                        item.get('descrizione', ''),
+                        known_depts,
+                        create_missing=True,
+                    )
 
                     CashClosureItem.objects.create(
                         closure=closure,
-                        department_name=dept_name or 'Reparto Sconosciuto',
+                        department_name=dept_name,
                         incomes=_money(item.get('entrate')),
                         expenses=abs(_money(item.get('uscite'))),
                         balance=_money(_money(item.get('entrate')) - abs(_money(item.get('uscite'))))
@@ -323,6 +343,8 @@ def api_extract_closure(request):
                 resolved = _resolve_dept(item['descrizione'], known)
                 if resolved:
                     item['descrizione'] = resolved
+                else:
+                    item['descrizione'] = _dept_name(item['descrizione'])
 
             # Dedup post-resolve: nomi diversi convergono sullo stesso canonico
             seen: dict = {}
@@ -367,7 +389,7 @@ def api_list_closures(request):
             for item in c.items.all():
                 items.append({
                     'id': item.id,
-                    'descrizione': item.department_name,
+                    'descrizione': _dept_name(item.department_name),
                     'entrate': float(item.incomes),
                     'uscite': float(item.expenses),
                     'saldo': float(item.balance)
@@ -429,7 +451,7 @@ def api_update_closure(request, closure_id):
                         if 'entrate' in item_data: item.incomes = _money(item_data['entrate'])
                         if 'uscite' in item_data: item.expenses = _money(item_data['uscite'])
                         if 'saldo' in item_data: item.balance = _money(item_data['saldo'])
-                        if 'descrizione' in item_data: item.department_name = str(item_data['descrizione'])
+                        if 'descrizione' in item_data: item.department_name = _dept_name(item_data['descrizione'])
                         item.save()
                     except CashClosureItem.DoesNotExist:
                         pass # Ignora gli ID non validi
@@ -465,7 +487,7 @@ def api_delete_closure(request, closure_id):
 @require_admin
 def api_list_departments(request):
     if request.method == 'GET':
-        data = [{'id': d.id, 'name': d.name} for d in Department.objects.all()]
+        data = [{'id': d.id, 'name': _dept_name(d.name)} for d in Department.objects.all()]
         return JsonResponse({'status': 'success', 'data': data})
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
@@ -474,7 +496,7 @@ def api_list_departments(request):
 def api_create_department(request):
     if request.method == 'POST':
         try:
-            name = json.loads(request.body).get('name', '').strip().upper()
+            name = _dept_name(json.loads(request.body).get('name', ''))
             if not name:
                 return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
             dept, created = Department.objects.get_or_create(name=name)
@@ -490,7 +512,7 @@ def api_update_department(request, dept_id):
     if request.method in ['POST', 'PUT']:
         try:
             dept = Department.objects.get(id=dept_id)
-            name = json.loads(request.body).get('name', '').strip().upper()
+            name = _dept_name(json.loads(request.body).get('name', ''))
             if not name:
                 return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
             dept.name = name
@@ -798,7 +820,7 @@ def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, op
         entrate = _money(item.get('entrate'))
         uscite = abs(_money(item.get('uscite')))
         items.append({
-            'descrizione': str(item.get('descrizione', '')).strip().upper(),
+            'descrizione': _dept_name(item.get('descrizione', '')),
             'entrate': float(entrate),
             'uscite': float(uscite),
             'saldo': float(_money(entrate - uscite)),
@@ -809,6 +831,8 @@ def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, op
         resolved = _resolve_dept(item['descrizione'], known)
         if resolved:
             item['descrizione'] = resolved
+        else:
+            item['descrizione'] = _dept_name(item['descrizione'])
 
     seen: dict = {}
     for item in items:

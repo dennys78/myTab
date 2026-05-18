@@ -96,7 +96,7 @@ export default function AcquisisciChiusure({ onBack }) {
         if (item.id !== id) return item;
         const updated = {
           ...item,
-          [field]: field === 'descrizione' ? value : (parseFloat(value) || 0),
+          [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0),
         };
         if (field === 'uscite') updated.uscite = Math.abs(updated.uscite);
         if (field === 'entrate' || field === 'uscite') {

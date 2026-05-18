@@ -102,7 +102,7 @@ function AppShell() {
     setEditFormData(prev => ({
       ...prev,
       items: prev.items.map(item =>
-        item.id === itemId ? { ...item, [field]: field === 'descrizione' ? value : (parseFloat(value) || 0) } : item
+        item.id === itemId ? { ...item, [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0) } : item
       )
     }));
   };

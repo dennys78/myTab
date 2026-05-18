@@ -53,6 +53,10 @@ class Department(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        self.name = (self.name or '').strip().upper()
+        super().save(*args, **kwargs)
+
 
 class AppSetting(models.Model):
     key = models.CharField(max_length=100, unique=True)

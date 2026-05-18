@@ -129,7 +129,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       ...prev,
       items: prev.items.map(item => {
         if (item.id !== id) return item;
-        const upd = { ...item, [field]: field === 'descrizione' ? value : (parseFloat(value) || 0) };
+        const upd = { ...item, [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0) };
         if (field === 'uscite') upd.uscite = Math.abs(upd.uscite);
         if (field === 'entrate' || field === 'uscite') upd.saldo = calcItemSaldo(upd);
         return upd;
