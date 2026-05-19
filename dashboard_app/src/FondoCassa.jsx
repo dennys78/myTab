@@ -102,16 +102,6 @@ export default function FondoCassa() {
       .catch(() => {});
   };
 
-  const inp = {
-    padding: '0.65rem 0.75rem',
-    background: 'var(--bg-dark)',
-    border: '1px solid var(--border)',
-    color: 'white',
-    borderRadius: '8px',
-    fontSize: '0.95rem',
-    boxSizing: 'border-box',
-  };
-
   return (
     <div style={{ maxWidth: '750px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Fondo Cassa</h1>
@@ -150,21 +140,21 @@ export default function FondoCassa() {
             </div>
           )}
 
-          <form onSubmit={handleSave}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Data</label>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, width: '100%' }} />
+          <form className="fondo-nuovo-form" onSubmit={handleSave}>
+            <div className="fondo-form-grid">
+              <div className="fondo-form-date">
+                <label className="fondo-form-label">Data</label>
+                <input type="date" className="fondo-form-input" value={date} onChange={e => setDate(e.target.value)} />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Importo (€)</label>
-                <input type="number" step="0.01" value={importo} onChange={e => setImporto(e.target.value)}
-                  placeholder="es. 50.00 o -20.00" style={{ ...inp, width: '100%' }} />
+              <div className="fondo-form-importo">
+                <label className="fondo-form-label">Importo (€)</label>
+                <input type="number" step="0.01" className="fondo-form-input" value={importo} onChange={e => setImporto(e.target.value)}
+                  placeholder="es. 50.00 o -20.00" />
               </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Descrizione</label>
-                <input type="text" value={descrizione} onChange={e => setDescrizione(e.target.value)}
-                  placeholder="es. Prelievo per spese..." style={{ ...inp, width: '100%' }} />
+              <div className="fondo-form-desc">
+                <label className="fondo-form-label">Descrizione</label>
+                <input type="text" className="fondo-form-input" value={descrizione} onChange={e => setDescrizione(e.target.value)}
+                  placeholder="es. Prelievo per spese..." />
               </div>
             </div>
             <button type="submit" disabled={saving || !importo}
@@ -206,12 +196,13 @@ export default function FondoCassa() {
           </div>
         ) : (
           <div className="table-responsive-wrapper">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="fondo-table">
               <thead>
                 <tr>
-                  {['Data', 'Descrizione', 'Importo', ...(isAdmin ? ['Azioni'] : [])].map(h => (
-                    <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
+                  <th>Data</th>
+                  <th className="fondo-col-desc">Descrizione</th>
+                  <th>Importo</th>
+                  {isAdmin && <th>Azioni</th>}
                 </tr>
               </thead>
               <tbody>
@@ -226,7 +217,7 @@ export default function FondoCassa() {
                           ? <input type="date" value={editRow.date} onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))} style={{ ...inpStyle, width: '130px' }} />
                           : new Date(m.date).toLocaleDateString('it-IT')}
                       </td>
-                      <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      <td className="fondo-col-desc" style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                         {isEditing
                           ? <input type="text" value={editRow.descrizione} onChange={e => setEditRow(r => ({ ...r, descrizione: e.target.value }))} style={{ ...inpStyle, width: '100%', minWidth: '180px' }} />
                           : (m.descrizione || (m.versamento_id ? 'Accantonamento da versamento' : '—'))}
