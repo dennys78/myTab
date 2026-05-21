@@ -107,6 +107,36 @@ class Versamento(models.Model):
         return f"Versamento {self.date.strftime('%d/%m/%Y')} — € {self.importo_versato} ({self.operator})"
 
 
+class MovimentoCassa(models.Model):
+    TIPO_ENTRATA = 'ENTRATA'
+    TIPO_USCITA = 'USCITA'
+    TIPO_CHOICES = [
+        (TIPO_ENTRATA, 'Entrata'),
+        (TIPO_USCITA, 'Uscita'),
+    ]
+
+    date = models.DateField(verbose_name="Data Movimento")
+    operator = models.CharField(max_length=100, verbose_name="Operatore")
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, verbose_name="Tipo")
+    importo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo")
+    saldo_precedente = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Saldo Precedente")
+    note = models.TextField(blank=True, verbose_name="Note")
+    ricorda_promemoria = models.BooleanField(
+        default=False,
+        verbose_name="Ricorda come promemoria",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Movimento Cassa"
+        verbose_name_plural = "Movimenti Cassa"
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        segno = '+' if self.tipo == self.TIPO_ENTRATA else '-'
+        return f"Movimento {self.date.strftime('%d/%m/%Y')} — {segno}€ {self.importo} ({self.operator})"
+
+
 class FondoCassaMovimento(models.Model):
     date = models.DateField(verbose_name="Data")
     importo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo")

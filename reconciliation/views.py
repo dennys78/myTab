@@ -27,6 +27,7 @@ from .models import (
     Department,
     AppSetting,
     Versamento,
+    MovimentoCassa,
     FondoCassaMovimento,
 )
 from .ocr_parser import parse_closure_receipt
@@ -1231,12 +1232,19 @@ def api_acquisition_draft_cancel(request, draft_id):
 
 # ── VERSAMENTI ────────────────────────────────────────────────────────────────
 
+def _get_movimenti_cassa_net():
+    from django.db.models import Sum
+    entrate = MovimentoCassa.objects.filter(tipo=MovimentoCassa.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
+    uscite = MovimentoCassa.objects.filter(tipo=MovimentoCassa.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
+    return _money(entrate) - _money(uscite)
+
+
 def _get_saldo_cassa_base():
     from django.db.models import Sum
     tc   = CashClosure.objects.aggregate(s=Sum('totale_cassetto'))['s'] or 0
     diff = CashClosure.objects.aggregate(s=Sum('differenza'))['s'] or 0
     vers = Versamento.objects.aggregate(s=Sum('importo_versato'))['s'] or 0
-    return _money(tc) + _money(diff) - _money(vers)
+    return _money(tc) + _money(diff) - _money(vers) + _get_movimenti_cassa_net()
 
 
 def _get_saldo_cassa():
@@ -1363,6 +1371,110 @@ def api_versamenti_update(request, vers_id):
         v.save()
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+# ── MOVIMENTI CASSA ───────────────────────────────────────────────────────────
+
+def _serialize_movimento_cassa(m):
+    return {
+        'id': m.id,
+        'date': m.date.isoformat(),
+        'operator': m.operator,
+        'tipo': m.tipo,
+        'importo': float(m.importo),
+        'saldo_precedente': float(m.saldo_precedente),
+        'note': m.note,
+        'ricorda_promemoria': m.ricorda_promemoria,
+    }
+
+
+@require_auth
+def api_movimenti_cassa_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    items = MovimentoCassa.objects.all()
+    return JsonResponse({
+        'status': 'success',
+        'saldo_cassa': float(_get_saldo_cassa()),
+        'data': [_serialize_movimento_cassa(m) for m in items],
+    })
+
+
+@require_auth
+def api_movimenti_cassa_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        parsed_date = parse_date(data.get('date', ''))
+        if not parsed_date:
+            return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+        tipo = data.get('tipo', '').strip().upper()
+        if tipo not in (MovimentoCassa.TIPO_ENTRATA, MovimentoCassa.TIPO_USCITA):
+            return JsonResponse({'status': 'error', 'error': 'Tipo movimento non valido'})
+        importo = _money(data.get('importo'))
+        if importo <= 0:
+            return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+        saldo_prec = _get_saldo_cassa()
+        m = MovimentoCassa.objects.create(
+            date=parsed_date,
+            operator=data.get('operator', '').strip(),
+            tipo=tipo,
+            importo=importo,
+            saldo_precedente=saldo_prec,
+            note=data.get('note', '').strip(),
+            ricorda_promemoria=bool(data.get('ricorda_promemoria')),
+        )
+        return JsonResponse({'status': 'success', 'id': m.id, 'saldo_precedente': float(saldo_prec)})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@require_admin
+def api_movimenti_cassa_delete(request, mov_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        MovimentoCassa.objects.get(id=mov_id).delete()
+        return JsonResponse({'status': 'success'})
+    except MovimentoCassa.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
+
+
+@require_admin
+def api_movimenti_cassa_update(request, mov_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body)
+        m = MovimentoCassa.objects.get(id=mov_id)
+        if 'date' in data:
+            parsed = parse_date(data['date'])
+            if not parsed:
+                return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+            m.date = parsed
+        if 'operator' in data:
+            m.operator = data['operator'].strip()
+        if 'tipo' in data:
+            tipo = data['tipo'].strip().upper()
+            if tipo not in (MovimentoCassa.TIPO_ENTRATA, MovimentoCassa.TIPO_USCITA):
+                return JsonResponse({'status': 'error', 'error': 'Tipo movimento non valido'})
+            m.tipo = tipo
+        if 'importo' in data:
+            importo = _money(data['importo'])
+            if importo <= 0:
+                return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+            m.importo = importo
+        if 'note' in data:
+            m.note = data['note'].strip()
+        if 'ricorda_promemoria' in data:
+            m.ricorda_promemoria = bool(data['ricorda_promemoria'])
+        m.save()
+        return JsonResponse({'status': 'success'})
+    except MovimentoCassa.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)

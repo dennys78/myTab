@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, ArrowLeftRight } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -9,9 +9,11 @@ import RepartiManager from './RepartiManager';
 import Impostazioni from './Impostazioni';
 import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
+import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
+import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
 import './index.css';
 
 function AppShell() {
@@ -19,6 +21,7 @@ function AppShell() {
 
   const [closures, setClosures] = useState([]);
   const [versamenti, setVersamenti] = useState([]);
+  const [movimentiCassa, setMovimentiCassa] = useState([]);
   const [saldoCassa, setSaldoCassa] = useState(null);
   const [fondoCassa, setFondoCassa] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -36,6 +39,7 @@ function AppShell() {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [versamentoEditId, setVersamentoEditId] = useState(null);
+  const [movimentoEditId, setMovimentoEditId] = useState(null);
 
   const fetchClosures = useCallback(() => {
     if (!isAdmin) return;
@@ -57,6 +61,18 @@ function AppShell() {
       .catch(() => {});
   }, []);
 
+  const fetchMovimentiCassa = useCallback(() => {
+    apiFetch('/api/movimenti-cassa/')
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setMovimentiCassa(d.data);
+          setSaldoCassa(d.saldo_cassa);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchFondoCassa = useCallback(() => {
     apiFetch('/api/fondo-cassa/')
       .then(r => r.json())
@@ -67,14 +83,18 @@ function AppShell() {
   const refreshDashboardData = useCallback(() => {
     fetchClosures();
     fetchVersamenti();
+    fetchMovimentiCassa();
     fetchFondoCassa();
-  }, [fetchClosures, fetchVersamenti, fetchFondoCassa]);
+  }, [fetchClosures, fetchVersamenti, fetchMovimentiCassa, fetchFondoCassa]);
 
   useEffect(() => { refreshDashboardData(); }, [refreshDashboardData]);
 
   useEffect(() => {
-    if (currentView === 'dashboard' && isAdmin) fetchVersamenti();
-  }, [currentView, isAdmin, fetchVersamenti]);
+    if (currentView === 'dashboard' && isAdmin) {
+      fetchVersamenti();
+      fetchMovimentiCassa();
+    }
+  }, [currentView, isAdmin, fetchVersamenti, fetchMovimentiCassa]);
 
   useEffect(() => {
     const closeMenuOnLandscape = () => {
@@ -92,7 +112,8 @@ function AppShell() {
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
-  const hasPromemoria = versamenti.some(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1);
+  const hasPromemoriaVersamenti = versamenti.some(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1);
+  const hasPromemoriaMovimenti = movimentiCassa.some(m => m.ricorda_promemoria === true || m.ricorda_promemoria === 1);
   const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
@@ -230,12 +251,21 @@ function AppShell() {
     setCurrentView(view);
     setIsMobileMenuOpen(false);
     if (view !== 'versamenti') setVersamentoEditId(null);
+    if (view !== 'movimenti') setMovimentoEditId(null);
     if (view === 'dashboard' || view === 'chiusure') refreshDashboardData();
   };
 
   const openVersamentoEdit = (id) => {
     setVersamentoEditId(id);
+    setMovimentoEditId(null);
     setCurrentView('versamenti');
+    setIsMobileMenuOpen(false);
+  };
+
+  const openMovimentoEdit = (id) => {
+    setMovimentoEditId(id);
+    setVersamentoEditId(null);
+    setCurrentView('movimenti');
     setIsMobileMenuOpen(false);
   };
 
@@ -267,6 +297,10 @@ function AppShell() {
 
           <div className={`nav-item ${currentView === 'versamenti' ? 'active' : ''}`} onClick={() => navigate('versamenti')}>
             <Wallet size={20} /><span>Versamenti</span>
+          </div>
+
+          <div className={`nav-item ${currentView === 'movimenti' ? 'active' : ''}`} onClick={() => navigate('movimenti')}>
+            <ArrowLeftRight size={20} /><span>Movimenti</span>
           </div>
 
           <div className={`nav-item ${currentView === 'fondo-cassa' ? 'active' : ''}`} onClick={() => navigate('fondo-cassa')}>
@@ -325,7 +359,13 @@ function AppShell() {
           <Versamenti
             initialEditId={versamentoEditId}
             onEditConsumed={() => setVersamentoEditId(null)}
-            onDataChange={fetchVersamenti}
+            onDataChange={refreshDashboardData}
+          />
+        ) : currentView === 'movimenti' ? (
+          <Movimenti
+            initialEditId={movimentoEditId}
+            onEditConsumed={() => setMovimentoEditId(null)}
+            onDataChange={refreshDashboardData}
           />
         ) : currentView === 'fondo-cassa' ? (
           <FondoCassa />
@@ -347,7 +387,7 @@ function AppShell() {
                   <div className="stat-title">Fondo Cassa</div>
                   <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
                 </div>
-                {hasPromemoria ? (
+                {hasPromemoriaVersamenti ? (
                   <PromemoriaDashboardCard
                     versamenti={versamenti}
                     onSelect={openVersamentoEdit}
@@ -357,6 +397,12 @@ function AppShell() {
                     <div className="stat-title">Chiusure Ricevute</div>
                     <div className="stat-value">{closures.length}</div>
                   </div>
+                )}
+                {hasPromemoriaMovimenti && (
+                  <PromemoriaMovimentiDashboardCard
+                    movimenti={movimentiCassa}
+                    onSelect={openMovimentoEdit}
+                  />
                 )}
               </div>
             )}
