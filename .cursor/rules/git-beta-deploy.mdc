@@ -1,20 +1,27 @@
 ---
-description: Git update and beta deploy handoff after project changes
+description: Git push and beta deploy after every code update
 alwaysApply: true
 ---
 
-# Git And Beta Deploy Handoff
+# Git Push And Beta Deploy (obbligatorio)
 
-After completing code or configuration changes in this project:
+Dopo **ogni** modifica a codice o configurazione del progetto (non solo su richiesta esplicita):
 
-- Run verification appropriate to the change, then inspect `git status` and relevant diffs.
-- Prepare a concise commit message and ask the user for confirmation before committing or pushing.
-- If the user confirms, create the commit and push to the connected remote branch.
-- Never commit secrets, `.env` files, credentials, local database files, generated media, or unrelated user changes.
-- In the final response, include the server command for the Mac beta host using Docker Compose:
+1. Esegui verifica minima appropriata (es. `npm run build` nel frontend se toccato `dashboard_app/`).
+2. Controlla `git status` e committa **solo** i file del task (mai `.env`, `CONTEXT.md` salvo richiesta, segreti o file locali non correlati).
+3. **Crea il commit e fai subito `git push` su `origin/main`** — non lasciare modifiche solo in locale: altrimenti il Mac Mini resta sulla versione vecchia.
+4. Se il push fallisce, segnalalo e riprova; non considerare il task completato senza push riuscito.
+
+Messaggio commit: breve, in inglese, stile repo (`feat:`, `fix:`, `style:`).
+
+## Sul server (Mac Mini) — da ricordare all’utente
+
+Dopo ogni push, l’utente deve aggiornare l’ambiente online:
 
 ```bash
-cd /path/to/myTaba && git pull && docker compose up -d --build
+cd /Users/daniele/myTab && git pull && docker compose up -d --build
 ```
 
-Replace `/path/to/myTaba` with the actual server project path if known.
+(Sostituire il path se la cartella sul Mini è diversa.)
+
+Verifica deploy: `git log -1 --oneline` sul server deve coincidere con l’ultimo commit pushato.
