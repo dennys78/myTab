@@ -1243,17 +1243,6 @@ def _get_saldo_cassa():
     return _get_saldo_cassa_base() + _get_setting_money('saldo_cassa_adjustment')
 
 
-def _apply_versamento_promemoria(versamento, attivo):
-    if attivo:
-        Versamento.objects.exclude(pk=versamento.pk).update(ricorda_promemoria=False)
-        if not versamento.ricorda_promemoria:
-            versamento.ricorda_promemoria = True
-            versamento.save(update_fields=['ricorda_promemoria'])
-    elif versamento.ricorda_promemoria:
-        versamento.ricorda_promemoria = False
-        versamento.save(update_fields=['ricorda_promemoria'])
-
-
 @require_auth
 def api_versamenti_list(request):
     if request.method != 'GET':
@@ -1302,8 +1291,6 @@ def api_versamenti_create(request):
             note=data.get('note', '').strip(),
             ricorda_promemoria=ricorda,
         )
-        if ricorda:
-            _apply_versamento_promemoria(v, True)
         if accantonamento > 0:
             FondoCassaMovimento.objects.create(
                 date=parsed_date,
@@ -1356,7 +1343,7 @@ def api_versamenti_update(request, vers_id):
         if 'note' in data:
             v.note = data['note'].strip()
         if 'ricorda_promemoria' in data:
-            _apply_versamento_promemoria(v, bool(data['ricorda_promemoria']))
+            v.ricorda_promemoria = bool(data['ricorda_promemoria'])
         if v.accantonamento > v.importo_versato:
             return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
         fondo_qs = FondoCassaMovimento.objects.filter(versamento=v)

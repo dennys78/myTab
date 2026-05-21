@@ -250,12 +250,140 @@ h2 {
 .stat-card-promemoria {
   border-color: rgba(245, 158, 11, 0.35);
   background: linear-gradient(145deg, rgba(245, 158, 11, 0.08), var(--bg-card));
+  padding: 0;
+  overflow: hidden;
+  cursor: default;
 }
 
-.stat-card-promemoria:hover,
-.stat-card-promemoria:active {
-  border-color: rgba(245, 158, 11, 0.55);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14), 0 18px 42px rgba(245, 158, 11, 0.12);
+.stat-card-promemoria--open {
+  grid-column: 1 / -1;
+}
+
+.stat-card-promemoria-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1.15rem 1.25rem;
+  font: inherit;
+}
+
+.stat-card-promemoria-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stat-promemoria-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.22);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.stat-promemoria-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.stat-promemoria-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.stat-promemoria-collapsed {
+  margin-top: 0.45rem;
+}
+
+.stat-promemoria-expanded {
+  padding: 0 1.25rem 1.15rem;
+  border-top: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.stat-promemoria-hint {
+  margin: 0.85rem 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--text-subtle);
+}
+
+.promemoria-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.promemoria-list-item {
+  width: 100%;
+  text-align: left;
+  background: rgba(8, 17, 31, 0.45);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.promemoria-list-item:hover,
+.promemoria-list-item:focus-visible {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.1);
+  outline: none;
+}
+
+.promemoria-list-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.promemoria-list-importo {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.promemoria-list-note {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-main);
+  margin-bottom: 0.4rem;
+}
+
+.promemoria-list-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.vers-row-editing {
+  background: rgba(79, 141, 247, 0.08);
+}
+
+.vers-row-editing td {
+  border-bottom-color: rgba(79, 141, 247, 0.25);
 }
 
 .stat-promemoria-meta {

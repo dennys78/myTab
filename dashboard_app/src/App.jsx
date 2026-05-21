@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, Bookmark } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -11,6 +11,7 @@ import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
 import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
+import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import './index.css';
 
 function AppShell() {
@@ -34,6 +35,7 @@ function AppShell() {
   const [currentView, setCurrentView] = useState(isAdmin ? 'dashboard' : 'acquisisci-ai');
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [versamentoEditId, setVersamentoEditId] = useState(null);
 
   const fetchClosures = useCallback(() => {
     if (!isAdmin) return;
@@ -86,7 +88,7 @@ function AppShell() {
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
-  const promemoriaVersamento = versamenti.find(v => v.ricorda_promemoria) ?? null;
+  const hasPromemoria = versamenti.some(v => v.ricorda_promemoria);
   const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
@@ -223,7 +225,14 @@ function AppShell() {
   const navigate = (view) => {
     setCurrentView(view);
     setIsMobileMenuOpen(false);
+    if (view !== 'versamenti') setVersamentoEditId(null);
     if (view === 'dashboard' || view === 'chiusure') refreshDashboardData();
+  };
+
+  const openVersamentoEdit = (id) => {
+    setVersamentoEditId(id);
+    setCurrentView('versamenti');
+    setIsMobileMenuOpen(false);
   };
 
   return (
@@ -309,7 +318,10 @@ function AppShell() {
         ) : currentView === 'utenti' ? (
           <GestioneUtenti />
         ) : currentView === 'versamenti' ? (
-          <Versamenti />
+          <Versamenti
+            initialEditId={versamentoEditId}
+            onEditConsumed={() => setVersamentoEditId(null)}
+          />
         ) : currentView === 'fondo-cassa' ? (
           <FondoCassa />
         ) : (
@@ -330,27 +342,11 @@ function AppShell() {
                   <div className="stat-title">Fondo Cassa</div>
                   <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
                 </div>
-                {promemoriaVersamento ? (
-                  <div
-                    className="stat-card stat-card-shortcut stat-card-promemoria"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate('versamenti')}
-                    onKeyDown={(e) => e.key === 'Enter' && navigate('versamenti')}
-                  >
-                    <div className="stat-title">
-                      <Bookmark size={14} style={{ verticalAlign: '-2px', marginRight: '0.35rem' }} />
-                      Promemoria versamento
-                    </div>
-                    <div className="stat-promemoria-meta">
-                      {new Date(promemoriaVersamento.date).toLocaleDateString('it-IT')}
-                      {' · '}
-                      € {Number(promemoriaVersamento.importo_versato).toFixed(2)}
-                    </div>
-                    <div className="stat-promemoria-note">
-                      {promemoriaVersamento.note?.trim() || 'Nessuna nota'}
-                    </div>
-                  </div>
+                {hasPromemoria ? (
+                  <PromemoriaDashboardCard
+                    versamenti={versamenti}
+                    onSelect={openVersamentoEdit}
+                  />
                 ) : (
                   <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('chiusure')} onKeyDown={(e) => e.key === 'Enter' && navigate('chiusure')}>
                     <div className="stat-title">Chiusure Ricevute</div>

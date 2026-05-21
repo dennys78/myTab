@@ -3,7 +3,7 @@ import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X, Bookm
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
-export default function Versamenti() {
+export default function Versamenti({ initialEditId = null, onEditConsumed }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'amministratore';
 
@@ -74,6 +74,18 @@ export default function Versamenti() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  useEffect(() => {
+    if (!initialEditId || loading || versamenti.length === 0) return;
+    const target = versamenti.find(v => v.id === initialEditId);
+    if (!target) return;
+    startEdit(target);
+    onEditConsumed?.();
+    const t = window.setTimeout(() => {
+      document.getElementById(`vers-row-${target.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [initialEditId, loading, versamenti]);
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -214,7 +226,7 @@ export default function Versamenti() {
             <span>Ricorda come promemoria</span>
           </label>
           <p className="vers-promemoria-hint">
-            Se attivo, in dashboard al posto delle chiusure ricevute compariranno data, importo e note di questo versamento.
+            Se attivo, il versamento compare nei promemoria in dashboard (puoi averne più di uno).
           </p>
 
           <button type="submit" disabled={saving || !importo}
@@ -260,7 +272,7 @@ export default function Versamenti() {
                   const tdStyle = {};
                   const inpStyle = { padding: '0.3rem 0.4rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.85rem' };
                   return (
-                    <tr key={v.id}>
+                    <tr key={v.id} id={`vers-row-${v.id}`} className={editingId === v.id ? 'vers-row-editing' : ''}>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         {isEditing
                           ? <input type="date" value={editRow.date} onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))} style={{ ...inpStyle, width: '130px' }} />
