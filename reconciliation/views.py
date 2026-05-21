@@ -812,7 +812,8 @@ def api_save_settings(request):
                 if delta != MONEY_ZERO:
                     FondoCassaMovimento.objects.create(
                         date=timezone.localdate(),
-                        importo=delta,
+                        tipo=FondoCassaMovimento.TIPO_ENTRATA if delta > 0 else FondoCassaMovimento.TIPO_USCITA,
+                        importo=abs(delta),
                         descrizione='Rettifica manuale da Impostazioni',
                     )
 
@@ -1302,6 +1303,7 @@ def api_versamenti_create(request):
         if accantonamento > 0:
             FondoCassaMovimento.objects.create(
                 date=parsed_date,
+                tipo=FondoCassaMovimento.TIPO_ENTRATA,
                 importo=accantonamento,
                 descrizione=f'Accantonamento da versamento del {parsed_date.strftime("%d/%m/%Y")} ({data.get("operator", "")})',
                 versamento=v,
@@ -1362,6 +1364,7 @@ def api_versamenti_update(request, vers_id):
             else:
                 FondoCassaMovimento.objects.create(
                     date=v.date,
+                    tipo=FondoCassaMovimento.TIPO_ENTRATA,
                     importo=v.accantonamento,
                     descrizione=descrizione,
                     versamento=v,
@@ -1484,8 +1487,20 @@ def api_movimenti_cassa_update(request, mov_id):
 
 def _get_fondo_cassa():
     from django.db.models import Sum
-    total = FondoCassaMovimento.objects.aggregate(s=Sum('importo'))['s'] or 0
-    return _money(total)
+    entrate = FondoCassaMovimento.objects.filter(tipo=FondoCassaMovimento.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
+    uscite = FondoCassaMovimento.objects.filter(tipo=FondoCassaMovimento.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
+    return _money(entrate) - _money(uscite)
+
+
+def _serialize_fondo_cassa_movimento(m):
+    return {
+        'id': m.id,
+        'date': m.date.isoformat(),
+        'tipo': m.tipo,
+        'importo': float(m.importo),
+        'descrizione': m.descrizione,
+        'versamento_id': m.versamento_id,
+    }
 
 
 @require_auth
@@ -1496,13 +1511,7 @@ def api_fondo_cassa_list(request):
     return JsonResponse({
         'status': 'success',
         'totale': float(_get_fondo_cassa()),
-        'data': [{
-            'id': m.id,
-            'date': m.date.isoformat(),
-            'importo': float(m.importo),
-            'descrizione': m.descrizione,
-            'versamento_id': m.versamento_id,
-        } for m in movimenti],
+        'data': [_serialize_fondo_cassa_movimento(m) for m in movimenti],
     })
 
 
@@ -1515,11 +1524,15 @@ def api_fondo_cassa_create(request):
         parsed_date = parse_date(data.get('date', ''))
         if not parsed_date:
             return JsonResponse({'status': 'error', 'error': 'Data non valida'})
+        tipo = data.get('tipo', '').strip().upper()
+        if tipo not in (FondoCassaMovimento.TIPO_ENTRATA, FondoCassaMovimento.TIPO_USCITA):
+            return JsonResponse({'status': 'error', 'error': 'Tipo movimento non valido'})
         importo = _money(data.get('importo'))
-        if importo == 0:
-            return JsonResponse({'status': 'error', 'error': 'Importo non può essere zero'})
+        if importo <= 0:
+            return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
         m = FondoCassaMovimento.objects.create(
             date=parsed_date,
+            tipo=tipo,
             importo=importo,
             descrizione=data.get('descrizione', '').strip(),
         )
@@ -1546,13 +1559,23 @@ def api_fondo_cassa_update(request, mov_id):
     try:
         data = json.loads(request.body)
         m = FondoCassaMovimento.objects.get(id=mov_id)
+        if m.versamento_id:
+            return JsonResponse({'status': 'error', 'error': 'Movimento da versamento: modifica dal versamento collegato'}, status=400)
         if 'date' in data:
             parsed = parse_date(data['date'])
             if not parsed:
                 return JsonResponse({'status': 'error', 'error': 'Data non valida'})
             m.date = parsed
+        if 'tipo' in data:
+            tipo = data['tipo'].strip().upper()
+            if tipo not in (FondoCassaMovimento.TIPO_ENTRATA, FondoCassaMovimento.TIPO_USCITA):
+                return JsonResponse({'status': 'error', 'error': 'Tipo movimento non valido'})
+            m.tipo = tipo
         if 'importo' in data:
-            m.importo = _money(data['importo'])
+            importo = _money(data['importo'])
+            if importo <= 0:
+                return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
+            m.importo = importo
         if 'descrizione' in data:
             m.descrizione = data['descrizione'].strip()
         m.save()

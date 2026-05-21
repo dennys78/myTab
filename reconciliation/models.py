@@ -138,7 +138,15 @@ class MovimentoCassa(models.Model):
 
 
 class FondoCassaMovimento(models.Model):
+    TIPO_ENTRATA = 'ENTRATA'
+    TIPO_USCITA = 'USCITA'
+    TIPO_CHOICES = [
+        (TIPO_ENTRATA, 'Entrata'),
+        (TIPO_USCITA, 'Uscita'),
+    ]
+
     date = models.DateField(verbose_name="Data")
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default=TIPO_ENTRATA, verbose_name="Tipo")
     importo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo")
     descrizione = models.CharField(max_length=200, blank=True, verbose_name="Descrizione")
     versamento = models.ForeignKey(

@@ -276,7 +276,7 @@ function AppShell() {
     else navigate('acquisisci-ai');
   };
 
-  useLandscapeOnMobile(currentView === 'versamenti' || currentView === 'movimenti');
+  useLandscapeOnMobile(currentView === 'versamenti' || currentView === 'movimenti' || currentView === 'fondo-cassa');
 
   return (
     <div className="app-container">
