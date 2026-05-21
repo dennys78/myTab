@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, ArrowLeftRight } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -14,6 +14,8 @@ import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
+import MyTabBrand from './MyTabBrand';
+import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import './index.css';
 
 function AppShell() {
@@ -269,14 +271,20 @@ function AppShell() {
     setIsMobileMenuOpen(false);
   };
 
+  const goHome = () => {
+    if (isAdmin) navigate('dashboard');
+    else navigate('acquisisci-ai');
+  };
+
+  useLandscapeOnMobile(currentView === 'versamenti' || currentView === 'movimenti');
+
   return (
     <div className="app-container">
       <div className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`} onClick={() => setIsMobileMenuOpen(false)} />
 
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
-        <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Cigarette size={24} color="var(--accent)" />
-          myTab
+        <div className="sidebar-header">
+          <MyTabBrand onClick={goHome} />
         </div>
 
         <nav className="nav-links">
@@ -335,13 +343,17 @@ function AppShell() {
 
       <main className="main-content">
         <div className="mobile-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)' }}>
-            <Cigarette size={24} />myTab
-          </div>
+          <MyTabBrand onClick={goHome} className="mytab-brand--mobile" />
           <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
             <Menu size={24} />
           </button>
         </div>
+
+        {(currentView === 'versamenti' || currentView === 'movimenti') && (
+          <div className="landscape-hint" role="status">
+            Ruota il dispositivo in orizzontale per visualizzare meglio le tabelle.
+          </div>
+        )}
 
         <InstallPwa />
 

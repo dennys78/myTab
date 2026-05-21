@@ -696,6 +696,86 @@ h2 {
   border-color: rgba(239, 68, 68, 0.55);
 }
 
+.mytab-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1.25rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mytab-brand:hover,
+.mytab-brand:focus-visible {
+  color: #93c5fd;
+  outline: none;
+}
+
+.mytab-brand--mobile {
+  font-size: 1.25rem;
+}
+
+.storico-period-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.storico-period-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.storico-period-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.storico-period-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.storico-period-select {
+  padding: 0.45rem 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.landscape-hint {
+  display: none;
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+  html.prefer-landscape-active .landscape-hint {
+    display: block;
+    margin: 0 0 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    border: 1px solid rgba(79, 141, 247, 0.35);
+    background: rgba(79, 141, 247, 0.12);
+    color: #bfdbfe;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    text-align: center;
+  }
+}
+
 .stat-title {
   color: var(--text-muted);
   font-size: 0.78rem;

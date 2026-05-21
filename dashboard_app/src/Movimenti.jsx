@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Loader2, ArrowLeftRight, Pencil, Check, X, Bookmark, TrendingUp, TrendingDown } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import { filterByPeriod } from './dateFilters';
+import StoricoPeriodHeader from './StoricoPeriodHeader';
 
 const TIPO_ENTRATA = 'ENTRATA';
 const TIPO_USCITA = 'USCITA';
@@ -26,6 +28,12 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
   const [updating, setUpdating] = useState(false);
+  const [storicoFiltro, setStoricoFiltro] = useState('week');
+
+  const movimentiFiltrati = useMemo(
+    () => filterByPeriod(movimenti, storicoFiltro),
+    [movimenti, storicoFiltro],
+  );
 
   const startEdit = (m) => {
     setEditingId(m.id);
@@ -260,9 +268,11 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
       </div>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem' }}>Storico Movimenti</h2>
-        </div>
+        <StoricoPeriodHeader
+          title="Storico Movimenti"
+          value={storicoFiltro}
+          onChange={setStoricoFiltro}
+        />
 
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento...</div>
@@ -270,6 +280,8 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
           <div style={{ padding: '1.5rem', color: 'var(--danger)', fontSize: '0.9rem' }}>{error}</div>
         ) : movimenti.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun movimento registrato.</div>
+        ) : movimentiFiltrati.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun movimento nel periodo selezionato.</div>
         ) : (
           <div className="table-responsive-wrapper">
             <table className="mov-table vers-table">
@@ -281,7 +293,7 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
                 </tr>
               </thead>
               <tbody>
-                {movimenti.map(m => {
+                {movimentiFiltrati.map(m => {
                   const isEditing = editingId === m.id;
                   const isEntrata = (isEditing ? editRow.tipo : m.tipo) === TIPO_ENTRATA;
                   const rowClass = isEntrata ? 'mov-row-entrata' : 'mov-row-uscita';

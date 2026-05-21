@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X, Bookmark } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import { filterByPeriod } from './dateFilters';
+import StoricoPeriodHeader from './StoricoPeriodHeader';
 
 export default function Versamenti({ initialEditId = null, onEditConsumed, onDataChange }) {
   const { user } = useAuth();
@@ -25,6 +27,12 @@ export default function Versamenti({ initialEditId = null, onEditConsumed, onDat
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
   const [updating, setUpdating] = useState(false);
+  const [storicoFiltro, setStoricoFiltro] = useState('week');
+
+  const versamentiFiltrati = useMemo(
+    () => filterByPeriod(versamenti, storicoFiltro),
+    [versamenti, storicoFiltro],
+  );
 
   const startEdit = (v) => {
     setEditingId(v.id);
@@ -258,9 +266,11 @@ export default function Versamenti({ initialEditId = null, onEditConsumed, onDat
 
       {/* Storico versamenti */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem' }}>Storico Versamenti</h2>
-        </div>
+        <StoricoPeriodHeader
+          title="Storico Versamenti"
+          value={storicoFiltro}
+          onChange={setStoricoFiltro}
+        />
 
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento...</div>
@@ -268,6 +278,8 @@ export default function Versamenti({ initialEditId = null, onEditConsumed, onDat
           <div style={{ padding: '1.5rem', color: 'var(--danger)', fontSize: '0.9rem' }}>{error}</div>
         ) : versamenti.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun versamento registrato.</div>
+        ) : versamentiFiltrati.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun versamento nel periodo selezionato.</div>
         ) : (
           <div className="table-responsive-wrapper">
             <table className="vers-table">
@@ -279,7 +291,7 @@ export default function Versamenti({ initialEditId = null, onEditConsumed, onDat
                 </tr>
               </thead>
               <tbody>
-                {versamenti.map(v => {
+                {versamentiFiltrati.map(v => {
                   const isEditing = editingId === v.id;
                   const tdStyle = {};
                   const inpStyle = { padding: '0.3rem 0.4rem', background: 'var(--bg-dark)', border: '1px solid var(--accent)', color: 'white', borderRadius: '5px', fontSize: '0.85rem' };
