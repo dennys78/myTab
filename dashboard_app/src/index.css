@@ -303,8 +303,40 @@ h2 {
   transform: rotate(180deg);
 }
 
-.stat-promemoria-collapsed {
-  margin-top: 0.45rem;
+.promemoria-preview-list {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 9.5rem;
+  overflow-y: auto;
+}
+
+.promemoria-preview-item {
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  background: rgba(8, 17, 31, 0.4);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.promemoria-preview-meta {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.promemoria-preview-note {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-promemoria-expanded {

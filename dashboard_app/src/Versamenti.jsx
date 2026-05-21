@@ -3,7 +3,7 @@ import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X, Bookm
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
-export default function Versamenti({ initialEditId = null, onEditConsumed }) {
+export default function Versamenti({ initialEditId = null, onEditConsumed, onDataChange }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'amministratore';
 
@@ -52,7 +52,13 @@ export default function Versamenti({ initialEditId = null, onEditConsumed }) {
       }),
     })
       .then(r => r.json())
-      .then(d => { if (d.status === 'success') { cancelEdit(); fetchData(); } })
+      .then(d => {
+        if (d.status === 'success') {
+          cancelEdit();
+          fetchData();
+          onDataChange?.();
+        }
+      })
       .catch(() => {})
       .finally(() => setUpdating(false));
   };
@@ -114,6 +120,7 @@ export default function Versamenti({ initialEditId = null, onEditConsumed }) {
           setRicordaPromemoria(false);
           setDate(new Date().toISOString().split('T')[0]);
           fetchData();
+          onDataChange?.();
         } else {
           setSaveError(d.error || 'Errore salvataggio');
         }
@@ -126,7 +133,12 @@ export default function Versamenti({ initialEditId = null, onEditConsumed }) {
     if (!window.confirm('Eliminare questo versamento?')) return;
     apiFetch(`/api/versamenti/${id}/delete/`, { method: 'DELETE' })
       .then(r => r.json())
-      .then(d => { if (d.status === 'success') fetchData(); })
+      .then(d => {
+        if (d.status === 'success') {
+          fetchData();
+          onDataChange?.();
+        }
+      })
       .catch(() => {});
   };
 

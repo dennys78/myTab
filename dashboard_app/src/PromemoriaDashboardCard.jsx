@@ -3,19 +3,26 @@ import { Bookmark, ChevronDown, Pencil } from 'lucide-react';
 
 function formatVersamento(v) {
   return {
-    date: new Date(v.date).toLocaleDateString('it-IT'),
+    date: new Date(`${v.date}T12:00:00`).toLocaleDateString('it-IT'),
     importo: Number(v.importo_versato).toFixed(2),
     note: v.note?.trim() || 'Nessuna nota',
   };
 }
 
+function promemoriaList(versamenti) {
+  return [...versamenti]
+    .filter(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1)
+    .sort((a, b) => {
+      const byDate = String(b.date).localeCompare(String(a.date));
+      return byDate !== 0 ? byDate : (b.id ?? 0) - (a.id ?? 0);
+    });
+}
+
 export default function PromemoriaDashboardCard({ versamenti, onSelect }) {
   const [open, setOpen] = useState(false);
-  const list = versamenti.filter(v => v.ricorda_promemoria);
+  const list = promemoriaList(versamenti);
 
   if (list.length === 0) return null;
-
-  const first = formatVersamento(list[0]);
 
   return (
     <div className={`stat-card stat-card-promemoria ${open ? 'stat-card-promemoria--open' : ''}`}>
@@ -34,13 +41,17 @@ export default function PromemoriaDashboardCard({ versamenti, onSelect }) {
           <ChevronDown size={18} className={`stat-promemoria-chevron ${open ? 'is-open' : ''}`} />
         </div>
         {!open && (
-          <div className="stat-promemoria-collapsed">
-            <div className="stat-promemoria-meta">
-              {first.date} · € {first.importo}
-              {list.length > 1 && ` · +${list.length - 1} altri`}
-            </div>
-            <div className="stat-promemoria-note">{first.note}</div>
-          </div>
+          <ul className="promemoria-preview-list" aria-label="Elenco promemoria">
+            {list.map(v => {
+              const f = formatVersamento(v);
+              return (
+                <li key={v.id} className="promemoria-preview-item">
+                  <span className="promemoria-preview-meta">{f.date} · € {f.importo}</span>
+                  <span className="promemoria-preview-note">{f.note}</span>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </button>
 
