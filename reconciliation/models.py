@@ -92,6 +92,10 @@ class Versamento(models.Model):
     saldo_precedente = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Saldo Precedente")
     accantonamento = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Accantonamento Fondo Cassa")
     note = models.TextField(blank=True, verbose_name="Note")
+    ricorda_promemoria = models.BooleanField(
+        default=False,
+        verbose_name="Ricorda come promemoria",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

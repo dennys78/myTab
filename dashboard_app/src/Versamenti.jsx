@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Loader2, Wallet, ArrowDownToLine, Pencil, Check, X, Bookmark } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
@@ -17,6 +17,7 @@ export default function Versamenti() {
   const [importo, setImporto] = useState('');
   const [accantonamento, setAccantonamento] = useState('');
   const [note, setNote] = useState('');
+  const [ricordaPromemoria, setRicordaPromemoria] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
@@ -27,7 +28,13 @@ export default function Versamenti() {
 
   const startEdit = (v) => {
     setEditingId(v.id);
-    setEditRow({ date: v.date, importo_versato: v.importo_versato, accantonamento: v.accantonamento, note: v.note || '' });
+    setEditRow({
+      date: v.date,
+      importo_versato: v.importo_versato,
+      accantonamento: v.accantonamento,
+      note: v.note || '',
+      ricorda_promemoria: !!v.ricorda_promemoria,
+    });
   };
   const cancelEdit = () => { setEditingId(null); setEditRow({}); };
 
@@ -41,6 +48,7 @@ export default function Versamenti() {
         importo_versato: parseFloat(editRow.importo_versato) || 0,
         accantonamento: parseFloat(editRow.accantonamento) || 0,
         note: editRow.note || '',
+        ricorda_promemoria: !!editRow.ricorda_promemoria,
       }),
     })
       .then(r => r.json())
@@ -82,6 +90,7 @@ export default function Versamenti() {
         importo_versato: imp,
         accantonamento: parseFloat(accantonamento) || 0,
         note,
+        ricorda_promemoria: ricordaPromemoria,
       }),
     })
       .then(r => r.json())
@@ -90,6 +99,7 @@ export default function Versamenti() {
           setImporto('');
           setAccantonamento('');
           setNote('');
+          setRicordaPromemoria(false);
           setDate(new Date().toISOString().split('T')[0]);
           fetchData();
         } else {
@@ -194,6 +204,19 @@ export default function Versamenti() {
             />
           </div>
 
+          <label className="vers-promemoria-flag">
+            <input
+              type="checkbox"
+              checked={ricordaPromemoria}
+              onChange={e => setRicordaPromemoria(e.target.checked)}
+            />
+            <Bookmark size={16} />
+            <span>Ricorda come promemoria</span>
+          </label>
+          <p className="vers-promemoria-hint">
+            Se attivo, in dashboard al posto delle chiusure ricevute compariranno data, importo e note di questo versamento.
+          </p>
+
           <button type="submit" disabled={saving || !importo}
             style={{
               display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -257,9 +280,29 @@ export default function Versamenti() {
                           : (v.accantonamento > 0 ? `€ ${v.accantonamento.toFixed(2)}` : '—')}
                       </td>
                       <td style={{ ...tdStyle, minWidth: '180px', color: 'var(--text-muted)' }}>
-                        {isEditing
-                          ? <textarea value={editRow.note} onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))} rows={2} style={{ ...inpStyle, width: '100%', minWidth: '180px', resize: 'vertical', fontFamily: 'inherit' }} />
-                          : (v.note || '—')}
+                        {isEditing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <textarea value={editRow.note} onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))} rows={2} style={{ ...inpStyle, width: '100%', minWidth: '180px', resize: 'vertical', fontFamily: 'inherit' }} />
+                            <label className="vers-promemoria-flag vers-promemoria-flag--compact">
+                              <input
+                                type="checkbox"
+                                checked={!!editRow.ricorda_promemoria}
+                                onChange={e => setEditRow(r => ({ ...r, ricorda_promemoria: e.target.checked }))}
+                              />
+                              <Bookmark size={14} />
+                              <span>Promemoria</span>
+                            </label>
+                          </div>
+                        ) : (
+                          <div>
+                            {v.ricorda_promemoria && (
+                              <div className="vers-promemoria-badge" title="Promemoria in dashboard">
+                                <Bookmark size={12} /> Promemoria
+                              </div>
+                            )}
+                            <span>{v.note || '—'}</span>
+                          </div>
+                        )}
                       </td>
                       {isAdmin && (
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>

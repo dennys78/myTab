@@ -27,6 +27,15 @@ Assicurati che sul Mac Mini siano installati **Git** e **Docker Desktop** (o Doc
 A questo punto l'applicativo è in ascolto sulla **porta 8080** del Mac Mini. 
 (Se il Mac Mini ha IP `192.168.1.100`, la dashboard sarà visibile dal browser semplicemente visitando `http://192.168.1.100:8080`).
 
+### Installazione su smartphone (PWA)
+
+Da **Safari** (iPhone) o **Chrome** (Android), apri l'URL HTTPS pubblico (es. `https://www.my-tab.uk`):
+
+- **iPhone**: pulsante Condividi → **Aggiungi a Home**
+- **Android**: menu ⋮ → **Installa app** / **Aggiungi a schermata Home**
+
+Serve HTTPS (es. tunnel Cloudflare). Dopo un aggiornamento: `git pull && docker compose up -d --build` sul frontend.
+
 ---
 
 ## 2. Aggiornamento dell'Applicativo (Release successive)

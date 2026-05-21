@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Cigarette, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, Bookmark } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -85,6 +85,7 @@ function AppShell() {
 
   const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
+  const promemoriaVersamento = versamenti.find(v => v.ricorda_promemoria) ?? null;
   const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
@@ -229,15 +230,7 @@ function AppShell() {
       <div className={`sidebar-overlay ${isMobileMenuOpen ? 'show' : ''}`} onClick={() => setIsMobileMenuOpen(false)} />
 
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
-        <div
-          className="sidebar-header"
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate('dashboard')}
-          onKeyDown={(e) => e.key === 'Enter' && navigate('dashboard')}
-          title="Torna alla Dashboard"
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
-        >
+        <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Cigarette size={24} color="var(--accent)" />
           myTab
         </div>
@@ -294,14 +287,7 @@ function AppShell() {
 
       <main className="main-content">
         <div className="mobile-header">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => navigate('dashboard')}
-            onKeyDown={(e) => e.key === 'Enter' && navigate('dashboard')}
-            title="Torna alla Dashboard"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)', cursor: 'pointer' }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--accent)' }}>
             <Cigarette size={24} />myTab
           </div>
           <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
@@ -341,10 +327,33 @@ function AppShell() {
                   <div className="stat-title">Fondo Cassa</div>
                   <div className="stat-value" style={{ color: '#f59e0b' }}>€ {fondoCassa.toFixed(2)}</div>
                 </div>
-                <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('chiusure')} onKeyDown={(e) => e.key === 'Enter' && navigate('chiusure')}>
-                  <div className="stat-title">Chiusure Ricevute</div>
-                  <div className="stat-value">{closures.length}</div>
-                </div>
+                {promemoriaVersamento ? (
+                  <div
+                    className="stat-card stat-card-shortcut stat-card-promemoria"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('versamenti')}
+                    onKeyDown={(e) => e.key === 'Enter' && navigate('versamenti')}
+                  >
+                    <div className="stat-title">
+                      <Bookmark size={14} style={{ verticalAlign: '-2px', marginRight: '0.35rem' }} />
+                      Promemoria versamento
+                    </div>
+                    <div className="stat-promemoria-meta">
+                      {new Date(promemoriaVersamento.date).toLocaleDateString('it-IT')}
+                      {' · '}
+                      € {Number(promemoriaVersamento.importo_versato).toFixed(2)}
+                    </div>
+                    <div className="stat-promemoria-note">
+                      {promemoriaVersamento.note?.trim() || 'Nessuna nota'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('chiusure')} onKeyDown={(e) => e.key === 'Enter' && navigate('chiusure')}>
+                    <div className="stat-title">Chiusure Ricevute</div>
+                    <div className="stat-value">{closures.length}</div>
+                  </div>
+                )}
               </div>
             )}
 
