@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Cigarette, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import InstallPwa from './InstallPwa';
 
 export default function Login() {
   const { login } = useAuth();
@@ -39,13 +40,14 @@ export default function Login() {
       justifyContent: 'center',
       padding: '1rem',
     }}>
+      <div style={{ width: '100%', maxWidth: '420px' }}>
+        <InstallPwa />
       <div style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',
         borderRadius: '16px',
         padding: '2.5rem 2rem',
         width: '100%',
-        maxWidth: '380px',
       }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
@@ -151,6 +153,7 @@ export default function Login() {
             {loading ? <><Loader2 size={18} className="spin" /> Accesso...</> : 'Accedi'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import Impostazioni from './Impostazioni';
 import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
 import FondoCassa from './FondoCassa';
+import InstallPwa from './InstallPwa';
 import './index.css';
 
 function AppShell() {
@@ -294,6 +295,8 @@ function AppShell() {
             <Menu size={24} />
           </button>
         </div>
+
+        <InstallPwa />
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />

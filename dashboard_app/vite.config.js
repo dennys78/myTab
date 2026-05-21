@@ -13,12 +13,14 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
+        id: '/',
         name: 'myTab — Chiusure Cassa',
         short_name: 'myTab',
         description: 'Gestione chiusure cassa, versamenti e fondo cassa',
         theme_color: '#08111f',
         background_color: '#08111f',
         display: 'standalone',
+        display_override: ['standalone', 'browser'],
         orientation: 'any',
         scope: '/',
         start_url: '/',
@@ -29,11 +31,13 @@ export default defineConfig({
             src: 'pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: 'pwa-512x512.png',
@@ -43,6 +47,7 @@ export default defineConfig({
           },
         ],
       },
+      injectRegister: 'auto',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
         navigateFallback: '/index.html',
