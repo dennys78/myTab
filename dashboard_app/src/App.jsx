@@ -21,7 +21,7 @@ import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import './index.css';
 
 function AppShell() {
-  const { user, logout } = useAuth();
+  const { user, logout, switchCompany } = useAuth();
 
   const [closures, setClosures] = useState([]);
   const [versamenti, setVersamenti] = useState([]);
@@ -336,6 +336,35 @@ function AppShell() {
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
             Connesso come <strong style={{ color: 'var(--text-main)' }}>{user?.username}</strong>
           </div>
+          {!isAdmin && user?.assigned_company && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+              Azienda: <strong style={{ color: 'var(--text-main)' }}>{user.assigned_company.denominazione}</strong>
+            </div>
+          )}
+          {isAdmin && user?.can_switch_company && (user?.companies?.length ?? 0) > 0 && (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                Azienda attiva
+              </label>
+              <select
+                value={user.company?.id || ''}
+                onChange={(e) => switchCompany(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.55rem',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  color: 'white',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                }}
+              >
+                {user.companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.denominazione || `Azienda #${c.id}`}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%', padding: '0.5rem 0.6rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
             <LogOut size={15} /> Esci
           </button>

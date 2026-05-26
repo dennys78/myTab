@@ -36,9 +36,12 @@ from .company_scope import (
     create_company_for_user,
     ensure_user_membership,
     get_active_company,
+    get_user_assigned_company,
+    is_admin_user,
     provision_default_membership,
     serialize_company,
     set_active_company,
+    set_user_company,
     user_companies,
 )
 from .ocr_parser import parse_closure_receipt
@@ -65,7 +68,7 @@ def _money_number(value):
 # ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 
 def _is_admin(user):
-    return user.is_staff or user.is_superuser
+    return is_admin_user(user)
 
 def _user_info(user, request=None):
     info = {
@@ -73,10 +76,19 @@ def _user_info(user, request=None):
         'username': user.username,
         'role': 'amministratore' if _is_admin(user) else 'utente',
     }
+    assigned = get_user_assigned_company(user)
+    info['assigned_company'] = serialize_company(assigned)
     if request is not None:
         company = get_active_company(request)
         info['company'] = serialize_company(company)
-        info['companies'] = [serialize_company(c) for c in user_companies(user)]
+        info['active_company_id'] = company.id if company else None
+        info['can_switch_company'] = _is_admin(user)
+        if _is_admin(user):
+            info['companies'] = [serialize_company(c) for c in user_companies(user)]
+        elif assigned:
+            info['companies'] = [serialize_company(assigned)]
+        else:
+            info['companies'] = []
     return info
 
 def require_auth(view_func):
@@ -152,10 +164,23 @@ def api_user_create(request):
         user = User(username=username, is_staff=(role == 'amministratore'))
         user.set_password(password)
         user.save()
-        provision_default_membership(user)
-        company, err = bind_company(request)
-        if company:
-            ensure_user_membership(user, company)
+        if role == 'amministratore':
+            set_user_company(user, None)
+        else:
+            company_id = data.get('company_id')
+            if not company_id:
+                user.delete()
+                return JsonResponse({'status': 'error', 'error': 'Seleziona un\'azienda per l\'operatore'})
+            try:
+                company_id = int(company_id)
+            except (TypeError, ValueError):
+                user.delete()
+                return JsonResponse({'status': 'error', 'error': 'Azienda non valida'})
+            company = Company.objects.filter(id=company_id).first()
+            if not company:
+                user.delete()
+                return JsonResponse({'status': 'error', 'error': 'Azienda non valida'})
+            set_user_company(user, company)
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
@@ -213,6 +238,17 @@ def api_user_update(request, user_id):
         if password:
             user.set_password(password)
         user.save()
+        if user.is_staff:
+            set_user_company(user, None)
+        else:
+            company_id = data.get('company_id')
+            if company_id:
+                company = Company.objects.filter(id=int(company_id)).first()
+                if not company:
+                    return JsonResponse({'status': 'error', 'error': 'Azienda non valida'})
+                set_user_company(user, company)
+            elif not get_user_assigned_company(user):
+                return JsonResponse({'status': 'error', 'error': 'Seleziona un\'azienda per l\'operatore'})
         if user.id == request.user.id and password:
             update_session_auth_hash(request, user)
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
@@ -237,7 +273,7 @@ def api_companies_list(request):
     })
 
 
-@require_auth
+@require_admin
 def api_companies_switch(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
