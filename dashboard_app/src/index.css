@@ -238,16 +238,30 @@ h2 {
   color: var(--text-muted);
 }
 
+.reparti-charts-section__filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
 .reparti-charts-section__filter {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  min-width: 0;
 }
 
 .reparti-charts-section__filter-label {
   font-size: 0.8rem;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.reparti-chart-dept-select {
+  min-width: 10.5rem;
+  max-width: 14rem;
 }
 
 .reparti-charts-grid {

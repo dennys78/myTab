@@ -22,3 +22,21 @@ export function saveUserPreference(username, name, value) {
     /* ignore */
   }
 }
+
+export function loadUserPreferenceJson(username, name, defaultValue) {
+  try {
+    const raw = localStorage.getItem(storageKey(username, name));
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return defaultValue;
+}
+
+export function saveUserPreferenceJson(username, name, value) {
+  try {
+    localStorage.setItem(storageKey(username, name), JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
+}

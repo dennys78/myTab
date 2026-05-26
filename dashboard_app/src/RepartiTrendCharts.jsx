@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { REPARTI_CHART_PERIOD_OPTIONS, getRepartiChartPeriodLabel } from './dateFilters';
-import { getFilteredClosureSeries, isGrattaEVinci, isTabacchi } from './repartiChartUtils';
+import {
+  CHART_SLOT_COLORS,
+  collectDepartmentsFromClosures,
+  getDeptLabel,
+  getFilteredClosureSeries,
+  resolveChartDeptPair,
+} from './repartiChartUtils';
 import { useAuth } from './auth';
-import { loadUserPreference, saveUserPreference } from './userPreferences';
+import { loadUserPreference, loadUserPreferenceJson, saveUserPreference, saveUserPreferenceJson } from './userPreferences';
 
 const REPARTI_PERIOD_VALUES = REPARTI_CHART_PERIOD_OPTIONS.map((o) => o.value);
 const DEFAULT_REPARTI_PERIOD = 'month';
 const PREF_REPARTI_PERIOD = 'repartiChartPeriod';
+const PREF_REPARTI_DEPTS = 'repartiChartDepts';
 
 const CHART_W = 400;
 const CHART_H = 160;
@@ -91,7 +98,7 @@ function MiniLineChart({ title, subtitle, color, series }) {
         role="img"
         aria-label={`${title}: andamento saldo per giorno`}
       >
-        {yTicks.map((tick, i) => {
+        {yTicks.map((tick) => {
           const y = PAD.top + plotH - ((tick - minVal) / range) * plotH;
           return (
             <g key={tick}>
@@ -122,33 +129,94 @@ function MiniLineChart({ title, subtitle, color, series }) {
   );
 }
 
+function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled }) {
+  return (
+    <div className="reparti-charts-section__filter">
+      <label htmlFor={id} className="reparti-charts-section__filter-label">{label}</label>
+      <select
+        id={id}
+        className="storico-period-select reparti-chart-dept-select"
+        value={value || ''}
+        disabled={disabled || !options.length}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {!value && <option value="">—</option>}
+        {options.map((d) => (
+          <option key={d.key} value={d.key} disabled={excludeKey && d.key === excludeKey}>
+            {d.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export default function RepartiTrendCharts({ closures }) {
   const { user } = useAuth();
   const username = user?.username;
 
+  const departments = useMemo(() => collectDepartmentsFromClosures(closures), [closures]);
+
   const [period, setPeriod] = useState(() =>
     loadUserPreference(username, PREF_REPARTI_PERIOD, REPARTI_PERIOD_VALUES, DEFAULT_REPARTI_PERIOD),
+  );
+
+  const [deptPair, setDeptPair] = useState(() =>
+    resolveChartDeptPair(loadUserPreferenceJson(username, PREF_REPARTI_DEPTS, null), departments),
   );
 
   useEffect(() => {
     setPeriod(loadUserPreference(username, PREF_REPARTI_PERIOD, REPARTI_PERIOD_VALUES, DEFAULT_REPARTI_PERIOD));
   }, [username]);
 
+  useEffect(() => {
+    const saved = loadUserPreferenceJson(username, PREF_REPARTI_DEPTS, null);
+    setDeptPair(resolveChartDeptPair(saved, departments));
+  }, [username, departments]);
+
   const handlePeriodChange = (next) => {
     setPeriod(next);
     saveUserPreference(username, PREF_REPARTI_PERIOD, next);
   };
 
-  const periodLabel = getRepartiChartPeriodLabel(period);
+  const persistDeptPair = (pair) => {
+    setDeptPair(pair);
+    saveUserPreferenceJson(username, PREF_REPARTI_DEPTS, pair);
+  };
 
-  const tabacchiSeries = useMemo(
-    () => getFilteredClosureSeries(closures, period, isTabacchi),
-    [closures, period],
+  const handleDept1Change = (key) => {
+    const next = [key, deptPair[1]];
+    if (key === deptPair[1] && departments.length > 1) {
+      const alt = departments.find((d) => d.key !== key)?.key;
+      next[1] = alt || key;
+    }
+    persistDeptPair(next);
+  };
+
+  const handleDept2Change = (key) => {
+    const next = [deptPair[0], key];
+    if (key === deptPair[0] && departments.length > 1) {
+      const alt = departments.find((d) => d.key !== key)?.key;
+      next[0] = alt || key;
+    }
+    persistDeptPair(next);
+  };
+
+  const periodLabel = getRepartiChartPeriodLabel(period);
+  const [deptKey1, deptKey2] = deptPair;
+  const label1 = getDeptLabel(departments, deptKey1);
+  const label2 = getDeptLabel(departments, deptKey2);
+
+  const series1 = useMemo(
+    () => (deptKey1 ? getFilteredClosureSeries(closures, period, deptKey1) : []),
+    [closures, period, deptKey1],
   );
-  const grattaSeries = useMemo(
-    () => getFilteredClosureSeries(closures, period, isGrattaEVinci),
-    [closures, period],
+  const series2 = useMemo(
+    () => (deptKey2 ? getFilteredClosureSeries(closures, period, deptKey2) : []),
+    [closures, period, deptKey2],
   );
+
+  const hasDepartments = departments.length > 0;
 
   return (
     <section className="reparti-charts-section" aria-labelledby="reparti-charts-heading">
@@ -156,38 +224,66 @@ export default function RepartiTrendCharts({ closures }) {
         <div>
           <h2 id="reparti-charts-heading" className="reparti-charts-section__title">Andamento reparti</h2>
           <p className="reparti-charts-section__hint">
-            Andamento del {periodLabel} — saldo giornaliero da chiusure (Tabacchi e Gratta e Vinci).
-            La scelta del periodo viene ricordata su questo dispositivo.
+            {hasDepartments ? (
+              <>
+                Andamento del {periodLabel} per <strong>{label1}</strong> e <strong>{label2}</strong>.
+                Periodo e reparti scelti vengono ricordati su questo dispositivo.
+              </>
+            ) : (
+              'Registra almeno una chiusura con voci reparto per visualizzare i grafici.'
+            )}
           </p>
         </div>
-        <div className="reparti-charts-section__filter">
-          <label htmlFor="reparti-chart-period" className="reparti-charts-section__filter-label">Periodo</label>
-          <select
-            id="reparti-chart-period"
-            className="storico-period-select"
-            value={period}
-            onChange={(e) => handlePeriodChange(e.target.value)}
-          >
-            {REPARTI_CHART_PERIOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+        <div className="reparti-charts-section__filters">
+          <DeptSelect
+            id="reparti-chart-dept-1"
+            label="Grafico 1"
+            value={deptKey1}
+            options={departments}
+            excludeKey={deptKey2}
+            onChange={handleDept1Change}
+            disabled={!hasDepartments}
+          />
+          <DeptSelect
+            id="reparti-chart-dept-2"
+            label="Grafico 2"
+            value={deptKey2}
+            options={departments}
+            excludeKey={deptKey1}
+            onChange={handleDept2Change}
+            disabled={!hasDepartments}
+          />
+          <div className="reparti-charts-section__filter">
+            <label htmlFor="reparti-chart-period" className="reparti-charts-section__filter-label">Periodo</label>
+            <select
+              id="reparti-chart-period"
+              className="storico-period-select"
+              value={period}
+              onChange={(e) => handlePeriodChange(e.target.value)}
+            >
+              {REPARTI_CHART_PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
-      <div className="reparti-charts-grid">
-        <MiniLineChart
-          title="Tabacchi"
-          subtitle="Saldo cassa per giorno"
-          color="#d97706"
-          series={tabacchiSeries}
-        />
-        <MiniLineChart
-          title="Gratta e Vinci"
-          subtitle="Saldo cassa per giorno"
-          color="#8b5cf6"
-          series={grattaSeries}
-        />
-      </div>
+      {hasDepartments && (
+        <div className="reparti-charts-grid">
+          <MiniLineChart
+            title={label1}
+            subtitle="Saldo cassa per giorno"
+            color={CHART_SLOT_COLORS[0]}
+            series={series1}
+          />
+          <MiniLineChart
+            title={label2}
+            subtitle="Saldo cassa per giorno"
+            color={CHART_SLOT_COLORS[1]}
+            series={series2}
+          />
+        </div>
+      )}
     </section>
   );
 }
