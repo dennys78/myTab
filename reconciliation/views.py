@@ -27,10 +27,12 @@ from .models import (
     Company,
     Department,
     AppSetting,
+    UserProfile,
     Versamento,
     MovimentoCassa,
     FondoCassaMovimento,
 )
+from .nav_permissions import default_sidebar_menu, normalize_sidebar_menu
 from .company_scope import (
     bind_company,
     create_company_for_user,
@@ -70,11 +72,33 @@ def _money_number(value):
 def _is_admin(user):
     return is_admin_user(user)
 
+
+def _get_user_sidebar_menu(user):
+    is_admin = _is_admin(user)
+    try:
+        menu = user.profile.sidebar_menu
+    except UserProfile.DoesNotExist:
+        return default_sidebar_menu(is_admin)
+    if menu:
+        return normalize_sidebar_menu(menu, is_admin)
+    return default_sidebar_menu(is_admin)
+
+
+def _set_user_sidebar_menu(user, menu_ids):
+    is_admin = _is_admin(user)
+    normalized = normalize_sidebar_menu(menu_ids, is_admin)
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.sidebar_menu = normalized
+    profile.save(update_fields=['sidebar_menu'])
+    return normalized
+
+
 def _user_info(user, request=None):
     info = {
         'id': user.id,
         'username': user.username,
         'role': 'amministratore' if _is_admin(user) else 'utente',
+        'sidebar_menu': _get_user_sidebar_menu(user),
     }
     assigned = get_user_assigned_company(user)
     info['assigned_company'] = serialize_company(assigned)
@@ -181,6 +205,10 @@ def api_user_create(request):
                 user.delete()
                 return JsonResponse({'status': 'error', 'error': 'Azienda non valida'})
             set_user_company(user, company)
+        if 'sidebar_menu' in data:
+            _set_user_sidebar_menu(user, data.get('sidebar_menu'))
+        else:
+            _set_user_sidebar_menu(user, default_sidebar_menu(user.is_staff))
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
@@ -234,6 +262,7 @@ def api_user_update(request, user_id):
             return JsonResponse({'status': 'error', 'error': 'Username già in uso'})
 
         user.username = username
+        was_admin = user.is_staff
         user.is_staff = role == 'amministratore'
         if password:
             user.set_password(password)
@@ -249,6 +278,10 @@ def api_user_update(request, user_id):
                 set_user_company(user, company)
             elif not get_user_assigned_company(user):
                 return JsonResponse({'status': 'error', 'error': 'Seleziona un\'azienda per l\'operatore'})
+        if 'sidebar_menu' in data:
+            _set_user_sidebar_menu(user, data.get('sidebar_menu'))
+        elif was_admin != user.is_staff:
+            _set_user_sidebar_menu(user, default_sidebar_menu(user.is_staff))
         if user.id == request.user.id and password:
             update_session_auth_hash(request, user)
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})

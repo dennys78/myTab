@@ -17,6 +17,7 @@ import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard
 import RepartiTrendCharts from './RepartiTrendCharts';
 import IncassatoDashboardSection from './IncassatoDashboardSection';
 import MyTabBrand from './MyTabBrand';
+import { getVisibleNavItems, canAccessView } from './navConfig';
 import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import './index.css';
 
@@ -37,21 +38,34 @@ function AppShell() {
   const [closuresFilter, setClosuresFilter] = useState('week');
 
   const isAdmin = user?.role === 'amministratore';
+  const navItems = React.useMemo(
+    () => getVisibleNavItems(user?.role, user?.sidebar_menu),
+    [user],
+  );
+  const canSeeClosures = canAccessView(user?.role, user?.sidebar_menu, 'dashboard')
+    || canAccessView(user?.role, user?.sidebar_menu, 'chiusure');
 
-  // Gli utenti normali entrano direttamente nella pagina di acquisizione
-  const [currentView, setCurrentView] = useState(isAdmin ? 'dashboard' : 'acquisisci-ai');
+  const [currentView, setCurrentView] = useState('acquisisci-ai');
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [versamentoEditId, setVersamentoEditId] = useState(null);
   const [movimentoEditId, setMovimentoEditId] = useState(null);
 
   const fetchClosures = useCallback(() => {
-    if (!isAdmin) return;
+    if (!canSeeClosures) return;
     apiFetch('/api/closures/list/')
       .then(res => res.json())
       .then(data => { if (data.status === 'success') setClosures(data.data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [isAdmin]);
+  }, [canSeeClosures]);
+
+  useEffect(() => {
+    if (!user || !navItems.length) return;
+    const ids = navItems.map(item => item.id);
+    if (!ids.includes(currentView)) {
+      setCurrentView(ids[0]);
+    }
+  }, [user, navItems, currentView]);
 
   const fetchVersamenti = useCallback(() => {
     apiFetch('/api/versamenti/')
@@ -273,8 +287,7 @@ function AppShell() {
   };
 
   const goHome = () => {
-    if (isAdmin) navigate('dashboard');
-    else navigate('acquisisci-ai');
+    navigate(navItems[0]?.id || 'acquisisci-ai');
   };
 
   useLandscapeOnMobile(currentView === 'versamenti' || currentView === 'movimenti' || currentView === 'fondo-cassa');
@@ -289,50 +302,23 @@ function AppShell() {
         </div>
 
         <nav className="nav-links">
-          {isAdmin && (
-            <>
-              <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>
-                <LayoutDashboard size={20} /><span>Dashboard</span>
+          {navItems.map(item => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.id}
+                className={`nav-item ${currentView === item.id ? 'active' : ''}`}
+                onClick={() => navigate(item.id)}
+                style={item.pushToBottom ? { marginTop: 'auto' } : undefined}
+              >
+                <Icon size={20} /><span>{item.label}</span>
               </div>
-              <div className={`nav-item ${currentView === 'chiusure' ? 'active' : ''}`} onClick={() => navigate('chiusure')}>
-                <Receipt size={20} /><span>Chiusure Cassa</span>
-              </div>
-            </>
-          )}
-
-          <div className={`nav-item ${currentView === 'acquisisci-ai' ? 'active' : ''}`} onClick={() => navigate('acquisisci-ai')}>
-            <Sparkles size={20} /><span>Acquisisci con IA</span>
-          </div>
-
-          <div className={`nav-item ${currentView === 'versamenti' ? 'active' : ''}`} onClick={() => navigate('versamenti')}>
-            <Wallet size={20} /><span>Versamenti</span>
-          </div>
-
-          <div className={`nav-item ${currentView === 'movimenti' ? 'active' : ''}`} onClick={() => navigate('movimenti')}>
-            <ArrowLeftRight size={20} /><span>Movimenti</span>
-          </div>
-
-          <div className={`nav-item ${currentView === 'fondo-cassa' ? 'active' : ''}`} onClick={() => navigate('fondo-cassa')}>
-            <PiggyBank size={20} /><span>Fondo Cassa</span>
-          </div>
-
-          {isAdmin && (
-            <>
-              <div className={`nav-item ${currentView === 'reparti' ? 'active' : ''}`} onClick={() => navigate('reparti')}>
-                <Tag size={20} /><span>Reparti</span>
-              </div>
-              <div className={`nav-item ${currentView === 'utenti' ? 'active' : ''}`} onClick={() => navigate('utenti')}>
-                <Users size={20} /><span>Utenti</span>
-              </div>
-              <div className={`nav-item ${currentView === 'impostazioni' ? 'active' : ''}`} onClick={() => navigate('impostazioni')} style={{ marginTop: 'auto' }}>
-                <Settings size={20} /><span>Impostazioni</span>
-              </div>
-            </>
-          )}
+            );
+          })}
         </nav>
 
         {/* Footer sidebar: utente loggato + logout */}
-        <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', marginTop: isAdmin ? '0' : 'auto' }}>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', marginTop: navItems.some(i => i.pushToBottom) ? '0' : 'auto' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
             Connesso come <strong style={{ color: 'var(--text-main)' }}>{user?.username}</strong>
           </div>

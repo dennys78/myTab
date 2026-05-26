@@ -4,17 +4,18 @@ import {
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
-import { getVisibleNavItems } from './navConfig';
+import { getConfigurableNavItems, getDefaultSidebarMenu, getVisibleNavItems, normalizeSidebarMenu } from './navConfig';
 
 const EMPTY_FORM = {
   username: '',
   password: '',
   role: 'utente',
   companyId: '',
+  sidebarMenu: [],
 };
 
 export default function GestioneUtenti() {
-  const { user: me } = useAuth();
+  const { user: me, refreshUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,10 +32,31 @@ export default function GestioneUtenti() {
     [users, selectedUserId],
   );
 
-  const visibleNavItems = useMemo(
-    () => getVisibleNavItems(form.role),
+  const configurableItems = useMemo(
+    () => getConfigurableNavItems(form.role),
     [form.role],
   );
+
+  const visibleNavItems = useMemo(
+    () => getVisibleNavItems(form.role, form.sidebarMenu),
+    [form.role, form.sidebarMenu],
+  );
+
+  const toggleMenuItem = (itemId) => {
+    setForm(f => {
+      const selected = new Set(f.sidebarMenu);
+      if (selected.has(itemId)) {
+        if (selected.size <= 1) return f;
+        selected.delete(itemId);
+      } else {
+        selected.add(itemId);
+      }
+      return {
+        ...f,
+        sidebarMenu: normalizeSidebarMenu(f.role, [...selected]),
+      };
+    });
+  };
 
   const fetchCompanies = useCallback(() => {
     apiFetch('/api/companies/')
@@ -75,6 +97,7 @@ export default function GestioneUtenti() {
     setForm({
       ...EMPTY_FORM,
       companyId: companies[0]?.id ? String(companies[0].id) : '',
+      sidebarMenu: getDefaultSidebarMenu('utente'),
     });
     setFormError(null);
   };
@@ -89,6 +112,7 @@ export default function GestioneUtenti() {
       companyId: selectedUser.assigned_company?.id
         ? String(selectedUser.assigned_company.id)
         : (companies[0]?.id ? String(companies[0].id) : ''),
+      sidebarMenu: selectedUser.sidebar_menu || getDefaultSidebarMenu(selectedUser.role),
     });
     setFormError(null);
   };
@@ -128,6 +152,10 @@ export default function GestioneUtenti() {
       setFormError('Seleziona l\'azienda su cui può operare.');
       return;
     }
+    if (!form.sidebarMenu.length) {
+      setFormError('Seleziona almeno una voce del menu laterale.');
+      return;
+    }
 
     setSaving(true);
     setFormError(null);
@@ -136,6 +164,7 @@ export default function GestioneUtenti() {
       username: form.username.trim(),
       password: form.password,
       role: form.role,
+      sidebar_menu: form.sidebarMenu,
     };
     if (form.role === 'utente') payload.company_id = Number(form.companyId);
 
@@ -151,6 +180,7 @@ export default function GestioneUtenti() {
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
+          if (d.data?.id === me?.id) refreshUser();
           resetPanel();
           fetchUsers(false);
         } else {
@@ -281,7 +311,14 @@ export default function GestioneUtenti() {
                   <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Ruolo</label>
                   <select
                     value={form.role}
-                    onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                    onChange={e => {
+                      const role = e.target.value;
+                      setForm(f => ({
+                        ...f,
+                        role,
+                        sidebarMenu: normalizeSidebarMenu(role, f.sidebarMenu),
+                      }));
+                    }}
                     style={inp}
                   >
                     <option value="utente">Utente</option>
@@ -327,32 +364,44 @@ export default function GestioneUtenti() {
                 Menu laterale visibile
               </div>
               <p style={{ margin: '0 0 0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                Anteprima delle voci disponibili per il ruolo <strong style={{ color: 'var(--text-main)' }}>{form.role === 'amministratore' ? 'Amministratore' : 'Utente'}</strong>.
+                Seleziona le voci visibili nel menu laterale per il ruolo <strong style={{ color: 'var(--text-main)' }}>{form.role === 'amministratore' ? 'Amministratore' : 'Utente'}</strong>.
               </p>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                {visibleNavItems.map(item => {
+                {configurableItems.map(item => {
                   const Icon = item.icon;
+                  const checked = form.sidebarMenu.includes(item.id);
                   return (
-                    <li
-                      key={item.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.45rem',
-                        padding: '0.45rem 0.55rem',
-                        borderRadius: '6px',
-                        background: 'rgba(79,141,247,0.08)',
-                        border: '1px solid rgba(79,141,247,0.15)',
-                        fontSize: '0.8rem',
-                        color: 'var(--text-main)',
-                      }}
-                    >
-                      <Icon size={15} color="var(--accent)" />
-                      {item.label}
+                    <li key={item.id}>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.45rem 0.55rem',
+                          borderRadius: '6px',
+                          background: checked ? 'rgba(79,141,247,0.08)' : 'transparent',
+                          border: `1px solid ${checked ? 'rgba(79,141,247,0.25)' : 'var(--border)'}`,
+                          fontSize: '0.8rem',
+                          color: 'var(--text-main)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMenuItem(item.id)}
+                          style={{ accentColor: 'var(--accent)' }}
+                        />
+                        <Icon size={15} color="var(--accent)" />
+                        {item.label}
+                      </label>
                     </li>
                   );
                 })}
               </ul>
+              <p style={{ margin: '0.75rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Anteprima attiva: {visibleNavItems.map(item => item.label).join(', ') || '—'}
+              </p>
               {form.role === 'utente' && form.companyId && (
                 <p style={{ margin: '0.75rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                   Dati limitati a: <strong style={{ color: 'var(--text-main)' }}>{companies.find(c => String(c.id) === form.companyId)?.denominazione || '—'}</strong>

@@ -19,10 +19,34 @@ export const SIDEBAR_ITEMS = [
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
   { id: 'reparti', label: 'Reparti', icon: Tag, adminOnly: true },
   { id: 'utenti', label: 'Utenti', icon: Users, adminOnly: true },
-  { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: true },
+  { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: true, pushToBottom: true },
 ];
 
-export function getVisibleNavItems(role) {
+export function getDefaultSidebarMenu(role) {
+  const isAdmin = role === 'amministratore';
+  return SIDEBAR_ITEMS
+    .filter(item => isAdmin || !item.adminOnly)
+    .map(item => item.id);
+}
+
+export function getConfigurableNavItems(role) {
   const isAdmin = role === 'amministratore';
   return SIDEBAR_ITEMS.filter(item => isAdmin || !item.adminOnly);
+}
+
+export function normalizeSidebarMenu(role, menuIds) {
+  const allowed = new Set(getDefaultSidebarMenu(role));
+  const selected = (menuIds || []).filter(id => allowed.has(id));
+  if (!selected.length) return getDefaultSidebarMenu(role);
+  return SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
+}
+
+export function getVisibleNavItems(role, menuIds) {
+  const normalized = normalizeSidebarMenu(role, menuIds ?? getDefaultSidebarMenu(role));
+  const byId = Object.fromEntries(SIDEBAR_ITEMS.map(item => [item.id, item]));
+  return normalized.map(id => byId[id]).filter(Boolean);
+}
+
+export function canAccessView(role, menuIds, viewId) {
+  return getVisibleNavItems(role, menuIds).some(item => item.id === viewId);
 }

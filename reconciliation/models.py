@@ -31,6 +31,18 @@ class CompanyMembership(models.Model):
         return f'{self.user.username} → {self.company}'
 
 
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    sidebar_menu = models.JSONField(default=list, blank=True, verbose_name='Menu laterale')
+
+    class Meta:
+        verbose_name = 'Profilo utente'
+        verbose_name_plural = 'Profili utente'
+
+    def __str__(self):
+        return f'Profilo {self.user.username}'
+
+
 class CashClosure(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='closures', verbose_name='Azienda')
     date = models.DateField(default=timezone.now, verbose_name="Data Chiusura")
