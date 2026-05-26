@@ -8,13 +8,11 @@ export default function MyTabBrand({ onClick, className = '' }) {
     >
       <img
         src="/logo.png"
-        alt=""
-        className="mytab-brand__icon"
-        width={40}
-        height={40}
-        aria-hidden
+        alt="myTab"
+        className="mytab-brand__logo"
+        width={140}
+        height={78}
       />
-      <span className="mytab-brand__text">myTab</span>
     </button>
   );
 }
