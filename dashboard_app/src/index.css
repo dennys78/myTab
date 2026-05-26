@@ -239,16 +239,15 @@ h2 {
 }
 
 .reparti-charts-section__filters {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(10.5rem, 12.5rem));
   gap: 0.75rem 1rem;
+  align-items: start;
 }
 
 .reparti-charts-section__filter {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
   gap: 0.35rem;
   min-width: 0;
 }
@@ -257,11 +256,27 @@ h2 {
   font-size: 0.8rem;
   color: var(--text-muted);
   font-weight: 600;
+  line-height: 1.2;
+  min-height: 1rem;
 }
 
-.reparti-chart-dept-select {
-  min-width: 10.5rem;
-  max-width: 14rem;
+.reparti-chart-select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.reparti-chart-filter-footer {
+  min-height: 2.35rem;
+  display: flex;
+  align-items: flex-start;
 }
 
 .reparti-charts-grid {
@@ -314,7 +329,12 @@ h2 {
 .reparti-chart-dept-avg {
   font-size: 0.75rem;
   color: var(--text-muted);
-  line-height: 1.3;
+  line-height: 1.35;
+}
+
+.reparti-chart-dept-avg--placeholder {
+  visibility: hidden;
+  user-select: none;
 }
 
 .reparti-chart-svg {
@@ -344,6 +364,11 @@ h2 {
 @media (max-width: 768px) {
   .reparti-charts-grid {
     grid-template-columns: 1fr;
+  }
+
+  .reparti-charts-section__filters {
+    grid-template-columns: 1fr;
+    width: 100%;
   }
 }
 

@@ -138,13 +138,30 @@ function MiniLineChart({ title, subtitle, color, series, periodLabel, average })
   );
 }
 
-function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled, periodLabel, average }) {
+function ChartFilterField({ id, label, children, footer }) {
   return (
     <div className="reparti-charts-section__filter">
       <label htmlFor={id} className="reparti-charts-section__filter-label">{label}</label>
+      {children}
+      <div className="reparti-chart-filter-footer">{footer}</div>
+    </div>
+  );
+}
+
+function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled, periodLabel, average }) {
+  return (
+    <ChartFilterField
+      id={id}
+      label={label}
+      footer={(
+        <span className="reparti-chart-dept-avg" title={`Media saldo giornaliero nel ${periodLabel}`}>
+          Media ({periodLabel}): {average != null ? `€ ${average.toFixed(2)}` : '—'}
+        </span>
+      )}
+    >
       <select
         id={id}
-        className="storico-period-select reparti-chart-dept-select"
+        className="reparti-chart-select"
         value={value || ''}
         disabled={disabled || !options.length}
         onChange={(e) => onChange(e.target.value)}
@@ -156,10 +173,7 @@ function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled,
           </option>
         ))}
       </select>
-      <span className="reparti-chart-dept-avg" title={`Media saldo giornaliero nel ${periodLabel}`}>
-        Media ({periodLabel}): {average != null ? `€ ${average.toFixed(2)}` : '—'}
-      </span>
-    </div>
+    </ChartFilterField>
   );
 }
 
@@ -272,11 +286,14 @@ export default function RepartiTrendCharts({ closures }) {
             periodLabel={periodLabel}
             average={average2}
           />
-          <div className="reparti-charts-section__filter">
-            <label htmlFor="reparti-chart-period" className="reparti-charts-section__filter-label">Periodo</label>
+          <ChartFilterField
+            id="reparti-chart-period"
+            label="Periodo"
+            footer={<span className="reparti-chart-dept-avg reparti-chart-dept-avg--placeholder" aria-hidden="true" />}
+          >
             <select
               id="reparti-chart-period"
-              className="storico-period-select"
+              className="reparti-chart-select"
               value={period}
               onChange={(e) => handlePeriodChange(e.target.value)}
             >
@@ -284,7 +301,7 @@ export default function RepartiTrendCharts({ closures }) {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-          </div>
+          </ChartFilterField>
         </div>
       </div>
       {hasDepartments && (
