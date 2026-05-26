@@ -1012,31 +1012,25 @@ h2 {
 .mytab-brand {
   display: inline-flex;
   align-items: center;
+  gap: 0.55rem;
   padding: 0;
   border: none;
   background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1.35rem;
   cursor: pointer;
   font-family: inherit;
-  line-height: 0;
 }
 
-.mytab-brand__logo {
-  display: block;
-  height: 2.65rem;
-  width: auto;
-  max-width: 100%;
-  border-radius: 8px;
-  object-fit: contain;
-}
-
-.mytab-brand:hover .mytab-brand__logo,
-.mytab-brand:focus-visible .mytab-brand__logo {
-  filter: brightness(1.06);
+.mytab-brand:hover,
+.mytab-brand:focus-visible {
+  color: #93c5fd;
   outline: none;
 }
 
-.mytab-brand--mobile .mytab-brand__logo {
-  height: 2.25rem;
+.mytab-brand--mobile {
+  font-size: 1.3rem;
 }
 
 .storico-period-header {

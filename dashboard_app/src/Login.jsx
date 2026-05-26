@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Cigarette, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import InstallPwa from './InstallPwa';
@@ -51,11 +51,10 @@ export default function Login() {
       }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <img
-            src="/logo.png"
-            alt="myTab"
-            style={{ display: 'block', margin: '0 auto 0.75rem', height: '5rem', width: 'auto', maxWidth: '100%', borderRadius: '10px' }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.55rem', marginBottom: '0.5rem' }}>
+            <Cigarette size={36} color="var(--accent)" />
+            <span style={{ fontSize: '1.95rem', fontWeight: '700', color: 'var(--text-main)' }}>myTab</span>
+          </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
             Gestione Chiusure Cassa
           </p>
