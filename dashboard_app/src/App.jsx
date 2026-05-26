@@ -15,6 +15,7 @@ import InstallPwa from './InstallPwa';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
 import RepartiTrendCharts from './RepartiTrendCharts';
+import IncassatoDashboardSection from './IncassatoDashboardSection';
 import MyTabBrand from './MyTabBrand';
 import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import './index.css';
@@ -113,7 +114,6 @@ function AppShell() {
     };
   }, []);
 
-  const totalIncassato = closures.reduce((acc, c) => acc + c.summary.totale, 0);
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
   const hasPromemoriaVersamenti = versamenti.some(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1);
   const hasPromemoriaMovimenti = movimentiCassa.some(m => m.ricorda_promemoria === true || m.ricorda_promemoria === 1);
@@ -388,10 +388,6 @@ function AppShell() {
 
             {currentView === 'dashboard' && (
               <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-title">Totale Generale (Mese)</div>
-                  <div className="stat-value">€ {totalIncassato.toFixed(2)}</div>
-                </div>
                 <div className="stat-card stat-card-shortcut" role="button" tabIndex={0} onClick={() => navigate('versamenti')} onKeyDown={(e) => e.key === 'Enter' && navigate('versamenti')}>
                   <div className="stat-title">Contanti in Cassa</div>
                   <div className={`stat-value ${totalContanti >= 0 ? 'success' : 'danger'}`}>€ {totalContanti.toFixed(2)}</div>
@@ -418,6 +414,10 @@ function AppShell() {
                   />
                 )}
               </div>
+            )}
+
+            {currentView === 'dashboard' && (
+              <IncassatoDashboardSection closures={closures} />
             )}
 
             {currentView === 'dashboard' && (
