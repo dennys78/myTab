@@ -53,9 +53,11 @@ export default function Login() {
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <img
             src="/logo.png"
-            alt="myTab"
-            style={{ display: 'block', margin: '0 auto 0.75rem', height: '4.5rem', width: 'auto', maxWidth: '100%', borderRadius: '10px' }}
+            alt=""
+            style={{ display: 'block', margin: '0 auto 0.65rem', height: '4.25rem', width: 'auto' }}
+            aria-hidden
           />
+          <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>myTab</div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
             Gestione Chiusure Cassa
           </p>
