@@ -1,5 +1,3 @@
-import { Cigarette } from 'lucide-react';
-
 export default function MyTabBrand({ onClick, className = '' }) {
   return (
     <button
@@ -8,8 +6,13 @@ export default function MyTabBrand({ onClick, className = '' }) {
       onClick={onClick}
       title="Vai alla dashboard"
     >
-      <Cigarette size={24} color="var(--accent)" aria-hidden />
-      <span>myTab</span>
+      <img
+        src="/logo.png"
+        alt="myTab"
+        className="mytab-brand__logo"
+        width={128}
+        height={72}
+      />
     </button>
   );
 }
