@@ -212,6 +212,110 @@ h2 {
   margin-bottom: 1.5rem;
 }
 
+/* Dashboard reparti charts */
+.reparti-charts-section {
+  margin-bottom: 1.75rem;
+}
+
+.reparti-charts-section__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.reparti-charts-section__title {
+  font-size: 1.1rem;
+  font-weight: 650;
+  margin: 0 0 0.25rem;
+}
+
+.reparti-charts-section__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.reparti-charts-section__filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reparti-charts-section__filter-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.reparti-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.reparti-chart-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)), var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem 1rem 0.75rem;
+  min-width: 0;
+}
+
+.reparti-chart-card__head {
+  margin-bottom: 0.5rem;
+}
+
+.reparti-chart-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.reparti-chart-card__sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.reparti-chart-card__total {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.reparti-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.reparti-chart-grid {
+  stroke: rgba(148, 163, 184, 0.12);
+  stroke-width: 1;
+}
+
+.reparti-chart-axis {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-family: Inter, sans-serif;
+}
+
+.reparti-chart-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+  .reparti-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .stat-card {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)), var(--bg-card);
   border: 1px solid var(--border);

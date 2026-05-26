@@ -14,6 +14,7 @@ import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
+import RepartiTrendCharts from './RepartiTrendCharts';
 import MyTabBrand from './MyTabBrand';
 import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import './index.css';
@@ -417,6 +418,10 @@ function AppShell() {
                   />
                 )}
               </div>
+            )}
+
+            {currentView === 'dashboard' && (
+              <RepartiTrendCharts closures={closures} />
             )}
 
             {currentView === 'chiusure' && (
