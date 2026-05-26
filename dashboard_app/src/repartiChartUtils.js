@@ -107,3 +107,10 @@ export function getDeptLabel(departments, key) {
 }
 
 export const CHART_SLOT_COLORS = ['#d97706', '#8b5cf6'];
+
+/** Media dei saldi giornalieri nel periodo (solo giorni con movimento). */
+export function averageSeriesValue(series) {
+  if (!series?.length) return null;
+  const sum = series.reduce((acc, p) => acc + p.value, 0);
+  return Math.round((sum / series.length) * 100) / 100;
+}

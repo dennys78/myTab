@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { REPARTI_CHART_PERIOD_OPTIONS, getRepartiChartPeriodLabel } from './dateFilters';
 import {
   CHART_SLOT_COLORS,
+  averageSeriesValue,
   collectDepartmentsFromClosures,
   getDeptLabel,
   getFilteredClosureSeries,
@@ -29,7 +30,7 @@ function formatEuro(n) {
   return `€${Math.round(n)}`;
 }
 
-function MiniLineChart({ title, subtitle, color, series }) {
+function MiniLineChart({ title, subtitle, color, series, periodLabel, average }) {
   const plotW = CHART_W - PAD.left - PAD.right;
   const plotH = CHART_H - PAD.top - PAD.bottom;
 
@@ -75,6 +76,9 @@ function MiniLineChart({ title, subtitle, color, series }) {
         <header className="reparti-chart-card__head">
           <h3 className="reparti-chart-card__title" style={{ color }}>{title}</h3>
           <p className="reparti-chart-card__sub">{subtitle}</p>
+          <div className="reparti-chart-card__stats">
+            <span className="reparti-chart-card__stat">Media ({periodLabel}): —</span>
+          </div>
         </header>
         <div className="reparti-chart-empty">Nessun dato nel periodo selezionato.</div>
       </article>
@@ -88,8 +92,13 @@ function MiniLineChart({ title, subtitle, color, series }) {
       <header className="reparti-chart-card__head">
         <h3 className="reparti-chart-card__title" style={{ color }}>{title}</h3>
         <p className="reparti-chart-card__sub">{subtitle}</p>
-        <div className="reparti-chart-card__total" style={{ color }}>
-          Ultimo: € {series[series.length - 1].value.toFixed(2)}
+        <div className="reparti-chart-card__stats">
+          <span className="reparti-chart-card__stat" style={{ color }}>
+            Media ({periodLabel}): € {(average ?? 0).toFixed(2)}
+          </span>
+          <span className="reparti-chart-card__stat reparti-chart-card__stat--muted">
+            Ultimo giorno: € {series[series.length - 1].value.toFixed(2)}
+          </span>
         </div>
       </header>
       <svg
@@ -129,7 +138,7 @@ function MiniLineChart({ title, subtitle, color, series }) {
   );
 }
 
-function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled }) {
+function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled, periodLabel, average }) {
   return (
     <div className="reparti-charts-section__filter">
       <label htmlFor={id} className="reparti-charts-section__filter-label">{label}</label>
@@ -147,6 +156,9 @@ function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled 
           </option>
         ))}
       </select>
+      <span className="reparti-chart-dept-avg" title={`Media saldo giornaliero nel ${periodLabel}`}>
+        Media ({periodLabel}): {average != null ? `€ ${average.toFixed(2)}` : '—'}
+      </span>
     </div>
   );
 }
@@ -216,6 +228,9 @@ export default function RepartiTrendCharts({ closures }) {
     [closures, period, deptKey2],
   );
 
+  const average1 = useMemo(() => averageSeriesValue(series1), [series1]);
+  const average2 = useMemo(() => averageSeriesValue(series2), [series2]);
+
   const hasDepartments = departments.length > 0;
 
   return (
@@ -243,6 +258,8 @@ export default function RepartiTrendCharts({ closures }) {
             excludeKey={deptKey2}
             onChange={handleDept1Change}
             disabled={!hasDepartments}
+            periodLabel={periodLabel}
+            average={average1}
           />
           <DeptSelect
             id="reparti-chart-dept-2"
@@ -252,6 +269,8 @@ export default function RepartiTrendCharts({ closures }) {
             excludeKey={deptKey1}
             onChange={handleDept2Change}
             disabled={!hasDepartments}
+            periodLabel={periodLabel}
+            average={average2}
           />
           <div className="reparti-charts-section__filter">
             <label htmlFor="reparti-chart-period" className="reparti-charts-section__filter-label">Periodo</label>
@@ -275,12 +294,16 @@ export default function RepartiTrendCharts({ closures }) {
             subtitle="Saldo cassa per giorno"
             color={CHART_SLOT_COLORS[0]}
             series={series1}
+            periodLabel={periodLabel}
+            average={average1}
           />
           <MiniLineChart
             title={label2}
             subtitle="Saldo cassa per giorno"
             color={CHART_SLOT_COLORS[1]}
             series={series2}
+            periodLabel={periodLabel}
+            average={average2}
           />
         </div>
       )}
