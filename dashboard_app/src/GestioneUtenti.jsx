@@ -1,7 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, Pencil, Loader2, Shield, User, Building2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Plus, Trash2, Pencil, Loader2, Shield, User, Building2, Save, X, Menu,
+} from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import { getVisibleNavItems } from './navConfig';
+
+const EMPTY_FORM = {
+  username: '',
+  password: '',
+  role: 'utente',
+  companyId: '',
+};
 
 export default function GestioneUtenti() {
   const { user: me } = useAuth();
@@ -10,30 +20,27 @@ export default function GestioneUtenti() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState('utente');
-  const [newCompanyId, setNewCompanyId] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [panelMode, setPanelMode] = useState(null); // null | 'new' | 'edit'
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formError, setFormError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  const [editUserId, setEditUserId] = useState(null);
-  const [editUsername, setEditUsername] = useState('');
-  const [editPassword, setEditPassword] = useState('');
-  const [editRole, setEditRole] = useState('utente');
-  const [editCompanyId, setEditCompanyId] = useState('');
-  const [updatingUser, setUpdatingUser] = useState(false);
-  const [editError, setEditError] = useState(null);
+  const selectedUser = useMemo(
+    () => users.find(u => u.id === selectedUserId) || null,
+    [users, selectedUserId],
+  );
+
+  const visibleNavItems = useMemo(
+    () => getVisibleNavItems(form.role),
+    [form.role],
+  );
 
   const fetchCompanies = useCallback(() => {
     apiFetch('/api/companies/')
       .then(r => r.json())
       .then(d => {
-        if (d.status === 'success') {
-          const list = d.data || [];
-          setCompanies(list);
-          setNewCompanyId(prev => prev || (list[0]?.id ? String(list[0].id) : ''));
-        }
+        if (d.status === 'success') setCompanies(d.data || []);
       })
       .catch(() => {});
   }, []);
@@ -56,23 +63,87 @@ export default function GestioneUtenti() {
     return () => window.clearTimeout(timer);
   }, [fetchCompanies, fetchUsers]);
 
-  const handleCreate = (e) => {
+  const resetPanel = () => {
+    setPanelMode(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+  };
+
+  const handleNuovo = () => {
+    setPanelMode('new');
+    setSelectedUserId(null);
+    setForm({
+      ...EMPTY_FORM,
+      companyId: companies[0]?.id ? String(companies[0].id) : '',
+    });
+    setFormError(null);
+  };
+
+  const handleModifica = () => {
+    if (!selectedUser) return;
+    setPanelMode('edit');
+    setForm({
+      username: selectedUser.username,
+      password: '',
+      role: selectedUser.role,
+      companyId: selectedUser.assigned_company?.id
+        ? String(selectedUser.assigned_company.id)
+        : (companies[0]?.id ? String(companies[0].id) : ''),
+    });
+    setFormError(null);
+  };
+
+  const handleDelete = () => {
+    if (!selectedUser) return;
+    if (selectedUser.id === me?.id) {
+      setError('Non puoi eliminare il tuo account.');
+      return;
+    }
+    if (!window.confirm(`Eliminare l'utente "${selectedUser.username}"?`)) return;
+    apiFetch(`/api/users/${selectedUser.id}/delete/`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setSelectedUserId(null);
+          resetPanel();
+          fetchUsers();
+        } else {
+          setError(d.error || 'Errore eliminazione');
+        }
+      })
+      .catch(() => setError('Errore di rete'));
+  };
+
+  const handleSave = (e) => {
     e.preventDefault();
-    if (!newUsername.trim() || !newPassword.trim()) return;
-    if (newRole === 'utente' && !newCompanyId) {
-      setCreateError('Seleziona un\'azienda per l\'operatore.');
+    if (!form.username.trim()) {
+      setFormError('Username obbligatorio.');
       return;
     }
-    setCreating(true);
-    setCreateError(null);
-    const payload = {
-      username: newUsername.trim(),
-      password: newPassword,
-      role: newRole,
-    };
-    if (newRole === 'utente') payload.company_id = Number(newCompanyId);
+    if (panelMode === 'new' && !form.password.trim()) {
+      setFormError('Password obbligatoria per il nuovo operatore.');
+      return;
+    }
+    if (form.role === 'utente' && !form.companyId) {
+      setFormError('Seleziona l\'azienda su cui può operare.');
+      return;
+    }
 
-    apiFetch('/api/users/create/', {
+    setSaving(true);
+    setFormError(null);
+
+    const payload = {
+      username: form.username.trim(),
+      password: form.password,
+      role: form.role,
+    };
+    if (form.role === 'utente') payload.company_id = Number(form.companyId);
+
+    const url = panelMode === 'new'
+      ? '/api/users/create/'
+      : `/api/users/${selectedUserId}/update/`;
+
+    apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -80,253 +151,276 @@ export default function GestioneUtenti() {
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
-          setNewUsername('');
-          setNewPassword('');
-          setNewRole('utente');
-          fetchUsers();
+          resetPanel();
+          fetchUsers(false);
         } else {
-          setCreateError(d.error || 'Errore creazione');
+          setFormError(d.error || 'Errore salvataggio');
         }
       })
-      .catch(() => setCreateError('Errore di rete'))
-      .finally(() => setCreating(false));
+      .catch(() => setFormError('Errore di rete'))
+      .finally(() => setSaving(false));
   };
 
-  const handleDelete = (id, username) => {
-    if (!window.confirm(`Eliminare l'utente "${username}"?`)) return;
-    apiFetch(`/api/users/${id}/delete/`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(d => { if (d.status === 'success') fetchUsers(); })
-      .catch(() => {});
+  const inp = {
+    padding: '0.55rem 0.75rem',
+    background: 'var(--bg-dark)',
+    border: '1px solid var(--border)',
+    color: 'white',
+    borderRadius: '6px',
+    fontSize: '0.9rem',
+    width: '100%',
+    boxSizing: 'border-box',
   };
 
-  const startEditUser = (u) => {
-    setEditUserId(u.id);
-    setEditUsername(u.username);
-    setEditPassword('');
-    setEditRole(u.role);
-    setEditCompanyId(u.assigned_company?.id ? String(u.assigned_company.id) : (companies[0]?.id ? String(companies[0].id) : ''));
-    setEditError(null);
+  const btn = (active, disabled = false) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    padding: '0.55rem 1rem',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? 'white' : 'var(--text-main)',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    borderRadius: '6px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight: 600,
+    fontSize: '0.88rem',
+    opacity: disabled ? 0.5 : 1,
+  });
+
+  const card = {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: '12px',
+    overflow: 'hidden',
   };
 
-  const cancelEditUser = () => {
-    setEditUserId(null);
-    setEditUsername('');
-    setEditPassword('');
-    setEditRole('utente');
-    setEditCompanyId('');
-    setEditError(null);
+  const companyLabel = (u) => {
+    if (u.role === 'amministratore') return 'Tutte le aziende';
+    return u.assigned_company?.denominazione || '—';
   };
-
-  const handleUpdateUser = (id) => {
-    if (!editUsername.trim()) return;
-    if (editRole === 'utente' && !editCompanyId) {
-      setEditError('Seleziona un\'azienda per l\'operatore.');
-      return;
-    }
-    setUpdatingUser(true);
-    setEditError(null);
-    const payload = {
-      username: editUsername.trim(),
-      password: editPassword,
-      role: editRole,
-    };
-    if (editRole === 'utente') payload.company_id = Number(editCompanyId);
-
-    apiFetch(`/api/users/${id}/update/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'success') {
-          cancelEditUser();
-          fetchUsers();
-        } else {
-          setEditError(d.error || 'Errore aggiornamento utente');
-        }
-      })
-      .catch(() => setEditError('Errore di rete'))
-      .finally(() => setUpdatingUser(false));
-  };
-
-  const inp = { padding: '0.55rem 0.75rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '6px', fontSize: '0.9rem' };
-
-  const RoleBadge = ({ role }) => (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-      padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600,
-      background: role === 'amministratore' ? 'rgba(59,130,246,0.15)' : 'rgba(148,163,184,0.1)',
-      color: role === 'amministratore' ? 'var(--accent)' : 'var(--text-muted)',
-      border: `1px solid ${role === 'amministratore' ? 'var(--accent)' : 'var(--border)'}`,
-    }}>
-      {role === 'amministratore' ? <Shield size={11} /> : <User size={11} />}
-      {role === 'amministratore' ? 'Amministratore' : 'Utente'}
-    </span>
-  );
-
-  const CompanySelect = ({ value, onChange, id }) => (
-    <select id={id} value={value} onChange={onChange} style={{ ...inp, width: '100%' }}>
-      <option value="">Seleziona azienda...</option>
-      {companies.map(c => (
-        <option key={c.id} value={c.id}>{c.denominazione || `Azienda #${c.id}`}</option>
-      ))}
-    </select>
-  );
 
   return (
-    <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '860px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Gestione Utenti</h1>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
-        Crea operatori associati a un&apos;azienda. Gli amministratori possono vedere tutte le aziende e selezionare quella attiva.
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+        Seleziona un operatore dall&apos;elenco e modifica i dati, oppure creane uno nuovo.
       </p>
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <h2 style={{ margin: '0 0 1.25rem', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Plus size={18} color="var(--accent)" /> Nuovo Operatore
-        </h2>
+      {error && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+          {error}
+        </div>
+      )}
 
-        {createError && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-            {createError}
-          </div>
-        )}
-
-        <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Username</label>
-              <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} style={{ ...inp, width: '100%', boxSizing: 'border-box' }} placeholder="mario.rossi" />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Password</label>
-              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ ...inp, width: '100%', boxSizing: 'border-box' }} placeholder="••••••••" />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '0.75rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Ruolo</label>
-              <select value={newRole} onChange={e => setNewRole(e.target.value)} style={{ ...inp, width: '100%' }}>
-                <option value="utente">Utente</option>
-                <option value="amministratore">Amministratore</option>
-              </select>
-            </div>
-            {newRole === 'utente' && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Azienda *</label>
-                <CompanySelect value={newCompanyId} onChange={e => setNewCompanyId(e.target.value)} />
-              </div>
-            )}
-          </div>
-          <div>
-            <button type="submit" disabled={creating || !newUsername.trim() || !newPassword.trim() || (newRole === 'utente' && !newCompanyId)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.25rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>
-              {creating ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
-              Crea Operatore
-            </button>
-          </div>
-        </form>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        <button type="button" onClick={handleNuovo} style={btn(panelMode === 'new')}>
+          <Plus size={16} /> Nuovo
+        </button>
+        <button
+          type="button"
+          onClick={handleModifica}
+          disabled={!selectedUser || panelMode === 'new'}
+          style={btn(panelMode === 'edit', !selectedUser || panelMode === 'new')}
+        >
+          <Pencil size={16} /> Modifica
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={!selectedUser || selectedUser?.id === me?.id}
+          style={{
+            ...btn(false, !selectedUser || selectedUser?.id === me?.id),
+            color: 'var(--danger)',
+            borderColor: 'var(--danger)',
+          }}
+        >
+          <Trash2 size={16} /> Elimina
+        </button>
       </div>
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem' }}>Operatori Registrati</h2>
+      {panelMode && (
+        <div style={{ ...card, marginBottom: '1.25rem' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1rem' }}>
+              {panelMode === 'new' ? 'Nuovo operatore' : `Modifica: ${selectedUser?.username || ''}`}
+            </h2>
+            <button type="button" onClick={resetPanel} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+              <X size={16} /> Chiudi
+            </button>
+          </div>
+
+          <div style={{ padding: '1.25rem', display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(220px, 0.9fr)', gap: '1.25rem' }}>
+            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              {formError && (
+                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', fontSize: '0.85rem' }}>
+                  {formError}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Username *</label>
+                  <input type="text" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} style={inp} placeholder="mario.rossi" />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                    {panelMode === 'new' ? 'Password *' : 'Nuova password'}
+                  </label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                    style={inp}
+                    placeholder={panelMode === 'new' ? '••••••••' : 'Lascia vuoto per non cambiarla'}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Ruolo</label>
+                  <select
+                    value={form.role}
+                    onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                    style={inp}
+                  >
+                    <option value="utente">Utente</option>
+                    <option value="amministratore">Amministratore</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Azienda operativa</label>
+                  {form.role === 'amministratore' ? (
+                    <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: 0.9 }}>
+                      <Building2 size={15} color="var(--accent)" />
+                      Tutte le aziende
+                    </div>
+                  ) : (
+                    <select
+                      value={form.companyId}
+                      onChange={e => setForm(f => ({ ...f, companyId: e.target.value }))}
+                      style={inp}
+                    >
+                      <option value="">Seleziona azienda...</option>
+                      {companies.map(c => (
+                        <option key={c.id} value={c.id}>{c.denominazione || `Azienda #${c.id}`}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <button type="submit" disabled={saving} style={{ ...btn(true), border: 'none' }}>
+                  {saving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                  Salva
+                </button>
+                <button type="button" onClick={resetPanel} style={btn(false)}>
+                  Annulla
+                </button>
+              </div>
+            </form>
+
+            <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.9rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.75rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                <Menu size={15} color="var(--accent)" />
+                Menu laterale visibile
+              </div>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Anteprima delle voci disponibili per il ruolo <strong style={{ color: 'var(--text-main)' }}>{form.role === 'amministratore' ? 'Amministratore' : 'Utente'}</strong>.
+              </p>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {visibleNavItems.map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <li
+                      key={item.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        padding: '0.45rem 0.55rem',
+                        borderRadius: '6px',
+                        background: 'rgba(79,141,247,0.08)',
+                        border: '1px solid rgba(79,141,247,0.15)',
+                        fontSize: '0.8rem',
+                        color: 'var(--text-main)',
+                      }}
+                    >
+                      <Icon size={15} color="var(--accent)" />
+                      {item.label}
+                    </li>
+                  );
+                })}
+              </ul>
+              {form.role === 'utente' && form.companyId && (
+                <p style={{ margin: '0.75rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Dati limitati a: <strong style={{ color: 'var(--text-main)' }}>{companies.find(c => String(c.id) === form.companyId)?.denominazione || '—'}</strong>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={card}>
+        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ margin: 0, fontSize: '1rem' }}>Operatori registrati</h2>
         </div>
 
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento...</div>
-        ) : error ? (
-          <div style={{ padding: '1.5rem', color: 'var(--danger)', fontSize: '0.9rem' }}>{error}</div>
         ) : users.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun utente.</div>
         ) : (
-          <div>
-            {users.map((u, idx) => (
-              <div key={u.id} style={{
-                padding: '1rem 1.5rem',
-                borderBottom: idx < users.length - 1 ? '1px solid var(--border)' : 'none',
-                display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
-              }}>
-                <div style={{ flex: 1, minWidth: '160px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>
-                    {editUserId === u.id ? 'Modifica operatore' : u.username}
-                    {u.id === me?.id && editUserId !== u.id && <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>(tu)</span>}
-                  </div>
-                  {editUserId === u.id ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem', alignItems: 'end' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Username</label>
-                        <input type="text" value={editUsername} onChange={e => setEditUsername(e.target.value)} autoFocus style={{ ...inp, width: '100%' }} />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Nuova password</label>
-                        <input type="password" value={editPassword} onChange={e => setEditPassword(e.target.value)} placeholder="Lascia vuoto per non cambiarla" style={{ ...inp, width: '100%' }} />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Ruolo</label>
-                        <select value={editRole} onChange={e => setEditRole(e.target.value)} style={{ ...inp, width: '100%' }}>
-                          <option value="utente">Utente</option>
-                          <option value="amministratore">Amministratore</option>
-                        </select>
-                      </div>
-                      {editRole === 'utente' && (
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Azienda *</label>
-                          <CompanySelect value={editCompanyId} onChange={e => setEditCompanyId(e.target.value)} />
-                        </div>
-                      )}
-                      {editError && (
-                        <div style={{ gridColumn: '1 / -1', color: 'var(--danger)', fontSize: '0.82rem' }}>
-                          {editError}
-                        </div>
-                      )}
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: '360px', overflowY: 'auto' }}>
+            {users.map((u, idx) => {
+              const selected = u.id === selectedUserId;
+              return (
+                <li key={u.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUserId(u.id);
+                      if (panelMode === 'edit' && selectedUserId !== u.id) {
+                        setPanelMode(null);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '0.85rem 1.25rem',
+                      border: 'none',
+                      borderBottom: idx < users.length - 1 ? '1px solid var(--border)' : 'none',
+                      background: selected ? 'rgba(79,141,247,0.12)' : 'transparent',
+                      color: 'var(--text-main)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.95rem', minWidth: '120px' }}>
+                        {u.username}
+                        {u.id === me?.id && <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>(tu)</span>}
+                      </span>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                        padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600,
+                        background: u.role === 'amministratore' ? 'rgba(59,130,246,0.15)' : 'rgba(148,163,184,0.1)',
+                        color: u.role === 'amministratore' ? 'var(--accent)' : 'var(--text-muted)',
+                        border: `1px solid ${u.role === 'amministratore' ? 'var(--accent)' : 'var(--border)'}`,
+                      }}>
+                        {u.role === 'amministratore' ? <Shield size={11} /> : <User size={11} />}
+                        {u.role === 'amministratore' ? 'Amministratore' : 'Utente'}
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <Building2 size={12} /> {companyLabel(u)}
+                      </span>
                     </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                      <RoleBadge role={u.role} />
-                      {u.role === 'utente' && u.assigned_company && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          <Building2 size={12} /> {u.assigned_company.denominazione}
-                        </span>
-                      )}
-                      {u.role === 'amministratore' && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tutte le aziende</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {editUserId === u.id ? (
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button onClick={() => handleUpdateUser(u.id)} disabled={updatingUser || !editUsername.trim()}
-                      style={{ padding: '0.5rem 0.875rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      {updatingUser ? <Loader2 size={14} className="spin" /> : 'Salva'}
-                    </button>
-                    <button onClick={cancelEditUser}
-                      style={{ padding: '0.5rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      Annulla
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={() => startEditUser(u)}
-                      title="Modifica username, password, ruolo e azienda"
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}>
-                      <Pencil size={14} /> Modifica
-                    </button>
-                    <button
-                      onClick={() => handleDelete(u.id, u.username)}
-                      disabled={u.id === me?.id}
-                      title={u.id === me?.id ? 'Non puoi eliminare te stesso' : 'Elimina utente'}
-                      style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0.6rem', background: 'transparent', color: u.id === me?.id ? 'var(--border)' : 'var(--danger)', border: `1px solid ${u.id === me?.id ? 'var(--border)' : 'var(--danger)'}`, borderRadius: '6px', cursor: u.id === me?.id ? 'not-allowed' : 'pointer' }}>
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </div>
