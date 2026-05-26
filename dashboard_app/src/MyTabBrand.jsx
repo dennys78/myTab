@@ -8,7 +8,7 @@ export default function MyTabBrand({ onClick, className = '' }) {
       onClick={onClick}
       title="Vai alla dashboard"
     >
-      <Cigarette size={28} color="var(--accent)" aria-hidden />
+      <Cigarette size={32} color="var(--accent)" aria-hidden />
       <span>myTab</span>
     </button>
   );

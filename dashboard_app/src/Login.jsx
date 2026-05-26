@@ -52,8 +52,8 @@ export default function Login() {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.55rem', marginBottom: '0.5rem' }}>
-            <Cigarette size={36} color="var(--accent)" />
-            <span style={{ fontSize: '1.95rem', fontWeight: '700', color: 'var(--text-main)' }}>myTab</span>
+            <Cigarette size={40} color="var(--accent)" />
+            <span style={{ fontSize: '2.1rem', fontWeight: '700', color: 'var(--text-main)' }}>myTab</span>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
             Gestione Chiusure Cassa
