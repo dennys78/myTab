@@ -29,14 +29,9 @@ export function getDefaultSidebarMenu(role) {
     .map(item => item.id);
 }
 
-export function getConfigurableNavItems(role) {
-  const isAdmin = role === 'amministratore';
-  return SIDEBAR_ITEMS.filter(item => isAdmin || !item.adminOnly);
-}
-
 export function normalizeSidebarMenu(role, menuIds) {
-  const allowed = new Set(getDefaultSidebarMenu(role));
-  const selected = (menuIds || []).filter(id => allowed.has(id));
+  const allIds = new Set(SIDEBAR_ITEMS.map(item => item.id));
+  const selected = (menuIds || []).filter(id => allIds.has(id));
   if (!selected.length) return getDefaultSidebarMenu(role);
   return SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
 }

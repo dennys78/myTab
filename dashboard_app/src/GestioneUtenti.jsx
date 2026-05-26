@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
-import { getConfigurableNavItems, getDefaultSidebarMenu, getVisibleNavItems, normalizeSidebarMenu } from './navConfig';
+import { SIDEBAR_ITEMS, getDefaultSidebarMenu, getVisibleNavItems, normalizeSidebarMenu } from './navConfig';
 
 const EMPTY_FORM = {
   username: '',
@@ -32,10 +32,6 @@ export default function GestioneUtenti() {
     [users, selectedUserId],
   );
 
-  const configurableItems = useMemo(
-    () => getConfigurableNavItems(form.role),
-    [form.role],
-  );
 
   const visibleNavItems = useMemo(
     () => getVisibleNavItems(form.role, form.sidebarMenu),
@@ -364,10 +360,10 @@ export default function GestioneUtenti() {
                 Menu laterale visibile
               </div>
               <p style={{ margin: '0 0 0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                Seleziona le voci visibili nel menu laterale per il ruolo <strong style={{ color: 'var(--text-main)' }}>{form.role === 'amministratore' ? 'Amministratore' : 'Utente'}</strong>.
+                Tutte le voci del menu sono disponibili: seleziona quali mostrare a questo operatore.
               </p>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                {configurableItems.map(item => {
+                {SIDEBAR_ITEMS.map(item => {
                   const Icon = item.icon;
                   const checked = form.sidebarMenu.includes(item.id);
                   return (
