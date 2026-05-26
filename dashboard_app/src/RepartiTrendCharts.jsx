@@ -1,6 +1,12 @@
-import { useMemo, useState } from 'react';
-import { STORICO_PERIOD_OPTIONS } from './dateFilters';
+import { useEffect, useMemo, useState } from 'react';
+import { REPARTI_CHART_PERIOD_OPTIONS, getRepartiChartPeriodLabel } from './dateFilters';
 import { getFilteredClosureSeries, isGrattaEVinci, isTabacchi } from './repartiChartUtils';
+import { useAuth } from './auth';
+import { loadUserPreference, saveUserPreference } from './userPreferences';
+
+const REPARTI_PERIOD_VALUES = REPARTI_CHART_PERIOD_OPTIONS.map((o) => o.value);
+const DEFAULT_REPARTI_PERIOD = 'month';
+const PREF_REPARTI_PERIOD = 'repartiChartPeriod';
 
 const CHART_W = 400;
 const CHART_H = 160;
@@ -117,7 +123,23 @@ function MiniLineChart({ title, subtitle, color, series }) {
 }
 
 export default function RepartiTrendCharts({ closures }) {
-  const [period, setPeriod] = useState('month');
+  const { user } = useAuth();
+  const username = user?.username;
+
+  const [period, setPeriod] = useState(() =>
+    loadUserPreference(username, PREF_REPARTI_PERIOD, REPARTI_PERIOD_VALUES, DEFAULT_REPARTI_PERIOD),
+  );
+
+  useEffect(() => {
+    setPeriod(loadUserPreference(username, PREF_REPARTI_PERIOD, REPARTI_PERIOD_VALUES, DEFAULT_REPARTI_PERIOD));
+  }, [username]);
+
+  const handlePeriodChange = (next) => {
+    setPeriod(next);
+    saveUserPreference(username, PREF_REPARTI_PERIOD, next);
+  };
+
+  const periodLabel = getRepartiChartPeriodLabel(period);
 
   const tabacchiSeries = useMemo(
     () => getFilteredClosureSeries(closures, period, isTabacchi),
@@ -133,7 +155,10 @@ export default function RepartiTrendCharts({ closures }) {
       <div className="reparti-charts-section__header">
         <div>
           <h2 id="reparti-charts-heading" className="reparti-charts-section__title">Andamento reparti</h2>
-          <p className="reparti-charts-section__hint">Saldo giornaliero da chiusure cassa (Tabacchi e Gratta e Vinci).</p>
+          <p className="reparti-charts-section__hint">
+            Andamento del {periodLabel} — saldo giornaliero da chiusure (Tabacchi e Gratta e Vinci).
+            La scelta del periodo viene ricordata su questo dispositivo.
+          </p>
         </div>
         <div className="reparti-charts-section__filter">
           <label htmlFor="reparti-chart-period" className="reparti-charts-section__filter-label">Periodo</label>
@@ -141,9 +166,9 @@ export default function RepartiTrendCharts({ closures }) {
             id="reparti-chart-period"
             className="storico-period-select"
             value={period}
-            onChange={(e) => setPeriod(e.target.value)}
+            onChange={(e) => handlePeriodChange(e.target.value)}
           >
-            {STORICO_PERIOD_OPTIONS.map((o) => (
+            {REPARTI_CHART_PERIOD_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
