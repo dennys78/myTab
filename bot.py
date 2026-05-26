@@ -14,7 +14,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Messa
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cash_manager.settings')
 django.setup()
 
-from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting
+from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting, Company
 
 
 def _initial_session():
@@ -41,33 +41,47 @@ def _money_text(value):
     return f"€ {value:.2f}".replace('.', ',')
 
 
+def _company_for_token(token):
+    if token:
+        setting = AppSetting.objects.filter(
+            key='telegram_bot_token',
+            value=token,
+        ).select_related('company').first()
+        if setting:
+            return setting.company
+    return Company.objects.order_by('id').first()
+
+
 def _get_telegram_token():
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     if token:
         return token
+    setting = AppSetting.objects.filter(key='telegram_bot_token').exclude(value='').select_related('company').first()
+    return setting.value.strip() if setting else ''
+
+
+def _get_setting_sync(company, key, default=''):
+    if not company:
+        return default
     try:
-        return AppSetting.objects.get(key='telegram_bot_token').value.strip()
+        return AppSetting.objects.get(company=company, key=key).value
     except AppSetting.DoesNotExist:
-        return ''
+        return default
 
 
-def _get_reset_marker_sync():
+def _get_reset_marker_sync(company):
+    return _get_setting_sync(company, 'telegram_reset_sessions_at', '')
+
+
+def _get_restart_marker_sync(company):
+    return _get_setting_sync(company, 'telegram_bot_restart_requested_at', '')
+
+
+def _remember_chat_sync(company, chat_id):
+    if not company:
+        return
     try:
-        return AppSetting.objects.get(key='telegram_reset_sessions_at').value
-    except AppSetting.DoesNotExist:
-        return ''
-
-
-def _get_restart_marker_sync():
-    try:
-        return AppSetting.objects.get(key='telegram_bot_restart_requested_at').value
-    except AppSetting.DoesNotExist:
-        return ''
-
-
-def _remember_chat_sync(chat_id):
-    try:
-        setting = AppSetting.objects.get(key='telegram_chat_ids')
+        setting = AppSetting.objects.get(company=company, key='telegram_chat_ids')
         chat_ids = set(json.loads(setting.value))
     except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
         chat_ids = set()
@@ -79,15 +93,16 @@ def _remember_chat_sync(chat_id):
         setting.value = value
         setting.save(update_fields=['value'])
     else:
-        AppSetting.objects.create(key='telegram_chat_ids', value=value)
+        AppSetting.objects.create(company=company, key='telegram_chat_ids', value=value)
 
 
 async def _prepare_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    company = context.application.bot_data.get('company')
     chat_id = update.effective_chat.id if update.effective_chat else None
-    if chat_id is not None:
-        await sync_to_async(_remember_chat_sync)(chat_id)
+    if chat_id is not None and company:
+        await sync_to_async(_remember_chat_sync)(company, chat_id)
 
-    reset_marker = await sync_to_async(_get_reset_marker_sync)()
+    reset_marker = await sync_to_async(_get_reset_marker_sync)(company)
     seen_marker = context.user_data.get('telegram_reset_seen')
     current_session = context.user_data.get('draft_session')
     has_open_session = bool(current_session and current_session.get('photos'))
@@ -104,8 +119,11 @@ async def _prepare_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return False
 
 
-def _save_draft_sync(operator, chat_id, photos, totale_scassettato):
+def _save_draft_sync(company, operator, chat_id, photos, totale_scassettato):
+    if not company:
+        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
     draft = AcquisitionDraft.objects.create(
+        company=company,
         source='telegram',
         operator=operator,
         telegram_chat_id=str(chat_id),
@@ -120,13 +138,14 @@ def _save_draft_sync(operator, chat_id, photos, totale_scassettato):
 
 
 async def _watch_restart_requests(app):
+    company = app.bot_data.get('company')
     initial_token = app.bot_data.get('telegram_token')
     initial_restart_marker = app.bot_data.get('restart_marker', '')
 
     while True:
         await asyncio.sleep(10)
         token = await sync_to_async(_get_telegram_token)()
-        restart_marker = await sync_to_async(_get_restart_marker_sync)()
+        restart_marker = await sync_to_async(_get_restart_marker_sync)(company)
         if (token and token != initial_token) or (restart_marker and restart_marker != initial_restart_marker):
             print("Riavvio bot Telegram richiesto.")
             os._exit(0)
@@ -188,7 +207,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.message.from_user
     operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
     draft_id = await sync_to_async(_save_draft_sync)(
+        company,
         operator,
         update.message.chat_id,
         session['photos'],
@@ -213,15 +234,22 @@ def run_bot():
             time.sleep(30)
             continue
 
+        company = _company_for_token(token)
+        if not company:
+            print("Nessuna azienda disponibile per il bot Telegram. Nuovo controllo tra 30 secondi.")
+            time.sleep(30)
+            continue
+
         app = ApplicationBuilder().token(token).post_init(_post_init).build()
         app.bot_data['telegram_token'] = token
-        app.bot_data['restart_marker'] = _get_restart_marker_sync()
+        app.bot_data['company'] = company
+        app.bot_data['restart_marker'] = _get_restart_marker_sync(company)
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("annulla", cancel))
         app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-        print("Telegram bot myTab avviato.")
+        print(f"Telegram bot myTab avviato per azienda: {company.denominazione}.")
         app.run_polling()
 
 

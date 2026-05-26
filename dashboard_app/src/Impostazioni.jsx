@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2 } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2 } from 'lucide-react';
 import { apiFetch } from './api';
 
 export default function Impostazioni() {
@@ -31,6 +31,15 @@ export default function Impostazioni() {
   const [purgingImages, setPurgingImages] = useState(false);
   const [imagePurgeResult, setImagePurgeResult] = useState(null);
 
+  const [denominazione, setDenominazione] = useState('');
+  const [indirizzo, setIndirizzo] = useState('');
+  const [piva, setPiva] = useState('');
+  const [companies, setCompanies] = useState([]);
+  const [activeCompanyId, setActiveCompanyId] = useState(null);
+  const [savingCompany, setSavingCompany] = useState(false);
+  const [companySaved, setCompanySaved] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+
   useEffect(() => {
     apiFetch('/api/settings/')
       .then(r => r.json())
@@ -42,10 +51,92 @@ export default function Impostazioni() {
           setTelegramConfigured(d.data.telegram_token_configured);
           setSaldoCassa(Number(d.data.saldo_cassa ?? 0).toFixed(2));
           setFondoCassa(Number(d.data.fondo_cassa ?? 0).toFixed(2));
+          setDenominazione(d.data.denominazione || '');
+          setIndirizzo(d.data.indirizzo || '');
+          setPiva(d.data.piva || '');
+          setCompanies(d.data.companies || []);
+          setActiveCompanyId(d.data.active_company_id || null);
         }
       })
       .catch(() => {});
   }, []);
+
+  const handleSwitchCompany = (companyId) => {
+    if (!companyId || Number(companyId) === Number(activeCompanyId)) return;
+    setError(null);
+    apiFetch('/api/companies/switch/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: Number(companyId) }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          window.location.reload();
+        } else {
+          setError(d.error || 'Errore cambio azienda.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'));
+  };
+
+  const handleSaveCompany = () => {
+    if (!denominazione.trim()) {
+      setError('La denominazione aziendale è obbligatoria.');
+      return;
+    }
+    setSavingCompany(true);
+    setError(null);
+    setCompanySaved(false);
+    apiFetch('/api/settings/save/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        denominazione: denominazione.trim(),
+        indirizzo: indirizzo.trim(),
+        piva: piva.trim(),
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setCompanySaved(true);
+          setDenominazione(d.data.denominazione || '');
+          setIndirizzo(d.data.indirizzo || '');
+          setPiva(d.data.piva || '');
+          setCompanies(d.data.companies || []);
+          setActiveCompanyId(d.data.active_company_id || null);
+          setTimeout(() => setCompanySaved(false), 3000);
+        } else {
+          setError(d.error || 'Errore salvataggio dati azienda.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingCompany(false));
+  };
+
+  const handleCreateCompany = () => {
+    const name = newCompanyName.trim();
+    if (!name) return;
+    setSavingCompany(true);
+    setError(null);
+    apiFetch('/api/companies/create/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ denominazione: name }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setNewCompanyName('');
+          window.location.reload();
+        } else {
+          setError(d.error || 'Errore creazione azienda.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingCompany(false));
+  };
 
   const handleSave = () => {
     setSaving(true);
@@ -218,8 +309,86 @@ export default function Impostazioni() {
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-        Configura le integrazioni esterne utilizzate dall'applicazione.
+        Configura i dati aziendali e le integrazioni esterne utilizzate dall'applicazione.
       </p>
+
+      {error && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+          <AlertCircle size={15} /> {error}
+        </div>
+      )}
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Building2 size={20} color="var(--accent)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Dati aziendali</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+          Ogni azienda ha chiusure, versamenti e impostazioni separate. I dati qui sotto riguardano l&apos;azienda attiva.
+        </p>
+
+        {companies.length > 1 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Azienda attiva</label>
+            <select
+              value={activeCompanyId || ''}
+              onChange={(e) => handleSwitchCompany(e.target.value)}
+              style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
+            >
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>{c.denominazione || `Azienda #${c.id}`}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Denominazione *</label>
+            <input type="text" value={denominazione} onChange={e => setDenominazione(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%' }} placeholder="es. Tabaccheria Rossi" />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Indirizzo</label>
+            <textarea value={indirizzo} onChange={e => setIndirizzo(e.target.value)} rows={2} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', resize: 'vertical' }} placeholder="Via, CAP, Città" />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>PIVA</label>
+            <input type="text" value={piva} onChange={e => setPiva(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', maxWidth: '280px' }} placeholder="IT12345678901" />
+          </div>
+        </div>
+
+        {companySaved && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Dati aziendali salvati.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+          <button
+            onClick={handleSaveCompany}
+            disabled={savingCompany}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+          >
+            {savingCompany ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+            Salva dati azienda
+          </button>
+          <input
+            type="text"
+            value={newCompanyName}
+            onChange={e => setNewCompanyName(e.target.value)}
+            placeholder="Nuova azienda..."
+            style={{ ...inputStyle, fontFamily: 'inherit', minWidth: '180px', flex: '1 1 180px' }}
+          />
+          <button
+            type="button"
+            onClick={handleCreateCompany}
+            disabled={savingCompany || !newCompanyName.trim()}
+            style={{ padding: '0.6rem 1rem', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '6px', cursor: newCompanyName.trim() ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}
+          >
+            Aggiungi azienda
+          </button>
+        </div>
+      </div>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
@@ -232,12 +401,6 @@ export default function Impostazioni() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
           Scegli il motore usato da "Acquisisci con IA". Groq usa Llama 4 Scout Vision; Gemini usa gemini-2.0-flash, economico e adatto alle immagini.
         </p>
-
-        {error && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-            <AlertCircle size={15} /> {error}
-          </div>
-        )}
 
         {saved && (
           <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>

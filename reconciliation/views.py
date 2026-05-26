@@ -24,11 +24,22 @@ from .models import (
     CashClosure,
     CashClosureImage,
     CashClosureItem,
+    Company,
     Department,
     AppSetting,
     Versamento,
     MovimentoCassa,
     FondoCassaMovimento,
+)
+from .company_scope import (
+    bind_company,
+    create_company_for_user,
+    ensure_user_membership,
+    get_active_company,
+    provision_default_membership,
+    serialize_company,
+    set_active_company,
+    user_companies,
 )
 from .ocr_parser import parse_closure_receipt
 import pytesseract
@@ -56,12 +67,17 @@ def _money_number(value):
 def _is_admin(user):
     return user.is_staff or user.is_superuser
 
-def _user_info(user):
-    return {
+def _user_info(user, request=None):
+    info = {
         'id': user.id,
         'username': user.username,
         'role': 'amministratore' if _is_admin(user) else 'utente',
     }
+    if request is not None:
+        company = get_active_company(request)
+        info['company'] = serialize_company(company)
+        info['companies'] = [serialize_company(c) for c in user_companies(user)]
+    return info
 
 def require_auth(view_func):
     @wraps(view_func)
@@ -95,7 +111,8 @@ def api_login(request):
         if user is None:
             return JsonResponse({'status': 'error', 'error': 'Username o password errati'}, status=401)
         auth_login(request, user)
-        return JsonResponse({'status': 'success', 'data': _user_info(user)})
+        get_active_company(request)
+        return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
@@ -107,7 +124,7 @@ def api_logout(request):
 def api_me(request):
     if not request.user.is_authenticated:
         return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
-    return JsonResponse({'status': 'success', 'data': _user_info(request.user)})
+    return JsonResponse({'status': 'success', 'data': _user_info(request.user, request)})
 
 
 # ── GESTIONE UTENTI (solo amministratori) ────────────────────────────────────
@@ -135,7 +152,11 @@ def api_user_create(request):
         user = User(username=username, is_staff=(role == 'amministratore'))
         user.set_password(password)
         user.save()
-        return JsonResponse({'status': 'success', 'data': _user_info(user)})
+        provision_default_membership(user)
+        company, err = bind_company(request)
+        if company:
+            ensure_user_membership(user, company)
+        return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
@@ -194,9 +215,62 @@ def api_user_update(request, user_id):
         user.save()
         if user.id == request.user.id and password:
             update_session_auth_hash(request, user)
-        return JsonResponse({'status': 'success', 'data': _user_info(user)})
+        return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except User.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Utente non trovato'}, status=404)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+# ── AZIENDE ───────────────────────────────────────────────────────────────────
+
+@require_auth
+def api_companies_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    companies = user_companies(request.user)
+    active = get_active_company(request)
+    return JsonResponse({
+        'status': 'success',
+        'active_company_id': active.id if active else None,
+        'data': [serialize_company(c) for c in companies],
+    })
+
+
+@require_auth
+def api_companies_switch(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body or '{}')
+        company_id = data.get('company_id')
+        if not company_id or not set_active_company(request, int(company_id)):
+            return JsonResponse({'status': 'error', 'error': 'Azienda non valida'}, status=400)
+        company = get_active_company(request)
+        return JsonResponse({'status': 'success', 'data': serialize_company(company)})
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'error': 'Azienda non valida'}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@require_admin
+def api_companies_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body or '{}')
+        denominazione = data.get('denominazione', '').strip()
+        if not denominazione:
+            return JsonResponse({'status': 'error', 'error': 'Denominazione obbligatoria'})
+        company = create_company_for_user(
+            request.user,
+            denominazione=denominazione,
+            indirizzo=data.get('indirizzo', '').strip(),
+            piva=data.get('piva', '').strip(),
+        )
+        set_active_company(request, company.id)
+        return JsonResponse({'status': 'success', 'data': serialize_company(company)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
@@ -235,7 +309,7 @@ def _dept_name(value):
     return re.sub(r'\s+', ' ', str(value or '').strip()).upper()
 
 
-def _department_for_import(raw_name, known_depts, create_missing=False):
+def _department_for_import(raw_name, known_depts, company, create_missing=False):
     dept_name = _dept_name(raw_name)
     if not dept_name or dept_name == 'REPARTO SCONOSCIUTO':
         return 'REPARTO SCONOSCIUTO'
@@ -245,7 +319,7 @@ def _department_for_import(raw_name, known_depts, create_missing=False):
         return resolved
 
     if create_missing:
-        Department.objects.get_or_create(name=dept_name)
+        Department.objects.get_or_create(company=company, name=dept_name)
         known_depts.append(dept_name)
     return dept_name
 
@@ -267,8 +341,9 @@ def _copy_draft_images_to_closure(draft, closure):
         draft_image.delete()
 
 
-def _create_upload_draft(request, source='web'):
+def _create_upload_draft(request, company, source='web'):
     draft = AcquisitionDraft.objects.create(
+        company=company,
         source=source,
         operator=request.user.username,
     )
@@ -284,6 +359,9 @@ def _create_upload_draft(request, source='web'):
 @require_auth
 def api_insert_closure(request):
     if request.method == 'POST':
+        company, err = bind_company(request)
+        if err:
+            return err
         try:
             data = json.loads(request.body)
             
@@ -303,10 +381,11 @@ def api_insert_closure(request):
                 draft = None
                 draft_id = data.get('draft_id')
                 if draft_id:
-                    draft = AcquisitionDraft.objects.prefetch_related('images').filter(id=draft_id, status='pending').first()
+                    draft = AcquisitionDraft.objects.prefetch_related('images').filter(id=draft_id, company=company, status='pending').first()
 
                 # Inserimento Master
                 closure = CashClosure.objects.create(
+                    company=company,
                     date=parsed_date,
                     operator=operator,
                     submitted_by=draft.operator if draft else '',
@@ -322,11 +401,12 @@ def api_insert_closure(request):
                 )
 
                 # Auto-popola archivio reparti e inserisce le righe
-                known_depts = list(Department.objects.values_list('name', flat=True))
+                known_depts = list(Department.objects.filter(company=company).values_list('name', flat=True))
                 for item in items:
                     dept_name = _department_for_import(
                         item.get('descrizione', ''),
                         known_depts,
+                        company,
                         create_missing=True,
                     )
 
@@ -361,12 +441,15 @@ def api_insert_closure(request):
 @require_admin
 def api_extract_closure(request):
     if request.method == 'POST':
+        company, err = bind_company(request)
+        if err:
+            return err
         if not request.FILES:
             return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
             
         try:
             full_text = ""
-            draft = AcquisitionDraft.objects.create(source='web', operator=request.user.username)
+            draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
             for file_key in request.FILES:
                 uploaded = request.FILES[file_key]
                 file_bytes = uploaded.read()
@@ -382,7 +465,7 @@ def api_extract_closure(request):
             date_str = parsed_data['date'].isoformat() if parsed_data['date'] else ""
 
             # Risolve nomi reparti contro archivio (exact → prefix → fuzzy)
-            known = list(Department.objects.values_list('name', flat=True))
+            known = list(Department.objects.filter(company=company).values_list('name', flat=True))
             for item in parsed_data['items']:
                 resolved = _resolve_dept(item['descrizione'], known)
                 if resolved:
@@ -431,7 +514,10 @@ def api_extract_closure(request):
 @require_admin
 def api_list_closures(request):
     if request.method == 'GET':
-        closures = CashClosure.objects.all().prefetch_related('items', 'images')
+        company, err = bind_company(request)
+        if err:
+            return err
+        closures = CashClosure.objects.filter(company=company).prefetch_related('items', 'images')
         data = []
         for c in closures:
             items = []
@@ -477,7 +563,10 @@ def api_list_closures(request):
 def api_update_closure(request, closure_id):
     if request.method in ['POST', 'PUT']:
         try:
-            closure = CashClosure.objects.get(id=closure_id)
+            company, err = bind_company(request)
+            if err:
+                return err
+            closure = CashClosure.objects.get(id=closure_id, company=company)
             data = json.loads(request.body)
             
             # Aggiorna solo se presenti nel payload
@@ -527,7 +616,10 @@ def api_update_closure(request, closure_id):
 def api_delete_closure(request, closure_id):
     if request.method == 'DELETE':
         try:
-            closure = CashClosure.objects.get(id=closure_id)
+            company, err = bind_company(request)
+            if err:
+                return err
+            closure = CashClosure.objects.get(id=closure_id, company=company)
             for image in closure.images.all():
                 image.image.delete(save=False)
             closure.delete()
@@ -542,8 +634,11 @@ def api_delete_closure(request, closure_id):
 
 @require_auth
 def api_closure_image_view(request, image_id):
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
-        image = CashClosureImage.objects.get(id=image_id)
+        image = CashClosureImage.objects.get(id=image_id, closure__company=company)
     except CashClosureImage.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Immagine non trovata'}, status=404)
     return FileResponse(image.image.open('rb'))
@@ -553,8 +648,11 @@ def api_closure_image_view(request, image_id):
 def api_closure_images_upload(request, closure_id):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
-        closure = CashClosure.objects.get(id=closure_id)
+        closure = CashClosure.objects.get(id=closure_id, company=company)
     except CashClosure.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Chiusura non trovata'}, status=404)
     if not request.FILES:
@@ -581,8 +679,11 @@ def api_closure_images_upload(request, closure_id):
 def api_closure_image_delete(request, image_id):
     if request.method != 'DELETE':
         return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
-        image = CashClosureImage.objects.get(id=image_id)
+        image = CashClosureImage.objects.get(id=image_id, closure__company=company)
     except CashClosureImage.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Immagine non trovata'}, status=404)
     image.image.delete(save=False)
@@ -592,8 +693,11 @@ def api_closure_image_delete(request, image_id):
 
 @require_auth
 def api_acquisition_draft_image_view(request, image_id):
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
-        image = AcquisitionDraftImage.objects.get(id=image_id, draft__status='pending')
+        image = AcquisitionDraftImage.objects.get(id=image_id, draft__company=company, draft__status='pending')
     except AcquisitionDraftImage.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Immagine bozza non trovata'}, status=404)
     return FileResponse(image.image.open('rb'))
@@ -604,7 +708,10 @@ def api_acquisition_draft_image_view(request, image_id):
 @require_admin
 def api_list_departments(request):
     if request.method == 'GET':
-        data = [{'id': d.id, 'name': _dept_name(d.name)} for d in Department.objects.all()]
+        company, err = bind_company(request)
+        if err:
+            return err
+        data = [{'id': d.id, 'name': _dept_name(d.name)} for d in Department.objects.filter(company=company)]
         return JsonResponse({'status': 'success', 'data': data})
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
@@ -616,7 +723,10 @@ def api_create_department(request):
             name = _dept_name(json.loads(request.body).get('name', ''))
             if not name:
                 return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
-            dept, created = Department.objects.get_or_create(name=name)
+            company, err = bind_company(request)
+            if err:
+                return err
+            dept, created = Department.objects.get_or_create(company=company, name=name)
             return JsonResponse({'status': 'success', 'id': dept.id, 'name': dept.name},
                                 status=201 if created else 200)
         except Exception as e:
@@ -628,7 +738,10 @@ def api_create_department(request):
 def api_update_department(request, dept_id):
     if request.method in ['POST', 'PUT']:
         try:
-            dept = Department.objects.get(id=dept_id)
+            company, err = bind_company(request)
+            if err:
+                return err
+            dept = Department.objects.get(id=dept_id, company=company)
             name = _dept_name(json.loads(request.body).get('name', ''))
             if not name:
                 return JsonResponse({'error': 'Nome obbligatorio.'}, status=400)
@@ -646,7 +759,10 @@ def api_update_department(request, dept_id):
 def api_delete_department(request, dept_id):
     if request.method == 'DELETE':
         try:
-            Department.objects.get(id=dept_id).delete()
+            company, err = bind_company(request)
+            if err:
+                return err
+            Department.objects.get(id=dept_id, company=company).delete()
             return JsonResponse({'status': 'success'})
         except Department.DoesNotExist:
             return JsonResponse({'error': 'Reparto non trovato.'}, status=404)
@@ -657,9 +773,9 @@ def api_delete_department(request, dept_id):
 
 # ── IMPOSTAZIONI ─────────────────────────────────────────────────────────────
 
-def _get_groq_key():
+def _get_groq_key(company):
     try:
-        key = AppSetting.objects.get(key='groq_api_key').value.strip()
+        key = AppSetting.objects.get(company=company, key='groq_api_key').value.strip()
         if key:
             return key
     except AppSetting.DoesNotExist:
@@ -667,9 +783,9 @@ def _get_groq_key():
     return os.environ.get('GROQ_API_KEY', '').strip()
 
 
-def _get_gemini_key():
+def _get_gemini_key(company):
     try:
-        key = AppSetting.objects.get(key='gemini_api_key').value.strip()
+        key = AppSetting.objects.get(company=company, key='gemini_api_key').value.strip()
         if key:
             return key
     except AppSetting.DoesNotExist:
@@ -677,56 +793,59 @@ def _get_gemini_key():
     return os.environ.get('GEMINI_API_KEY', '').strip()
 
 
-def _get_ai_provider():
+def _get_ai_provider(company):
     try:
-        provider = AppSetting.objects.get(key='ai_acquisition_provider').value.strip().lower()
+        provider = AppSetting.objects.get(company=company, key='ai_acquisition_provider').value.strip().lower()
     except AppSetting.DoesNotExist:
         provider = ''
     return provider if provider in {'groq', 'gemini'} else 'groq'
 
 
-def _set_ai_provider(provider):
+def _set_ai_provider(company, provider):
     provider = str(provider or '').strip().lower()
     if provider not in {'groq', 'gemini'}:
         raise ValueError('Provider IA non valido.')
     AppSetting.objects.update_or_create(
+        company=company,
         key='ai_acquisition_provider',
         defaults={'value': provider},
     )
 
 
-def _get_telegram_token():
+def _get_telegram_token(company):
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     if not token:
         try:
-            token = AppSetting.objects.get(key='telegram_bot_token').value.strip()
+            token = AppSetting.objects.get(company=company, key='telegram_bot_token').value.strip()
         except AppSetting.DoesNotExist:
             pass
     return token
 
 
-def _get_setting_money(key):
+def _get_setting_money(key, company):
     try:
-        return _money(AppSetting.objects.get(key=key).value)
+        return _money(AppSetting.objects.get(company=company, key=key).value)
     except AppSetting.DoesNotExist:
         return MONEY_ZERO
 
 
-def _set_setting_money(key, value):
+def _set_setting_money(key, value, company):
     AppSetting.objects.update_or_create(
+        company=company,
         key=key,
         defaults={'value': str(_money(value))},
     )
 
 
-def _get_telegram_chat_ids():
+def _get_telegram_chat_ids(company):
     chat_ids = set(
         AcquisitionDraft.objects
+        .filter(company=company)
         .exclude(telegram_chat_id='')
         .values_list('telegram_chat_id', flat=True)
     )
     try:
-        raw = AppSetting.objects.get(key='telegram_chat_ids').value
+        raw = AppSetting.objects.get(company=company, key='telegram_chat_ids').value
         chat_ids.update(str(chat_id) for chat_id in json.loads(raw))
     except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
         pass
@@ -759,15 +878,23 @@ def _delete_image_objects(images):
 @require_admin
 def api_get_settings(request):
     if request.method == 'GET':
+        company, err = bind_company(request)
+        if err:
+            return err
         return JsonResponse({
             'status': 'success',
             'data': {
-                'groq_key_configured': bool(_get_groq_key()),
-                'gemini_key_configured': bool(_get_gemini_key()),
-                'ai_acquisition_provider': _get_ai_provider(),
-                'telegram_token_configured': bool(_get_telegram_token()),
-                'saldo_cassa': float(_get_saldo_cassa()),
-                'fondo_cassa': float(_get_fondo_cassa()),
+                'groq_key_configured': bool(_get_groq_key(company)),
+                'gemini_key_configured': bool(_get_gemini_key(company)),
+                'ai_acquisition_provider': _get_ai_provider(company),
+                'telegram_token_configured': bool(_get_telegram_token(company)),
+                'saldo_cassa': float(_get_saldo_cassa(company)),
+                'fondo_cassa': float(_get_fondo_cassa(company)),
+                'denominazione': company.denominazione,
+                'indirizzo': company.indirizzo,
+                'piva': company.piva,
+                'active_company_id': company.id,
+                'companies': [serialize_company(c) for c in user_companies(request.user)],
             },
         })
     return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
@@ -776,11 +903,15 @@ def api_get_settings(request):
 @require_admin
 def api_save_settings(request):
     if request.method == 'POST':
+        company, err = bind_company(request)
+        if err:
+            return err
         try:
             data = json.loads(request.body)
             key = data.get('groq_api_key', '').strip()
             if key:
                 AppSetting.objects.update_or_create(
+                    company=company,
                     key='groq_api_key',
                     defaults={'value': key},
                 )
@@ -788,29 +919,44 @@ def api_save_settings(request):
             gemini_key = data.get('gemini_api_key', '').strip()
             if gemini_key:
                 AppSetting.objects.update_or_create(
+                    company=company,
                     key='gemini_api_key',
                     defaults={'value': gemini_key},
                 )
 
             if 'ai_acquisition_provider' in data:
-                _set_ai_provider(data.get('ai_acquisition_provider'))
+                _set_ai_provider(company, data.get('ai_acquisition_provider'))
 
             telegram_token = data.get('telegram_bot_token', '').strip()
             if telegram_token:
                 AppSetting.objects.update_or_create(
+                    company=company,
                     key='telegram_bot_token',
                     defaults={'value': telegram_token},
                 )
 
             if 'saldo_cassa' in data:
                 target_saldo = _money(data['saldo_cassa'])
-                _set_setting_money('saldo_cassa_adjustment', target_saldo - _get_saldo_cassa_base())
+                _set_setting_money('saldo_cassa_adjustment', target_saldo - _get_saldo_cassa_base(company), company)
+
+            if any(k in data for k in ('denominazione', 'indirizzo', 'piva')):
+                if 'denominazione' in data:
+                    denominazione = data.get('denominazione', '').strip()
+                    if not denominazione:
+                        return JsonResponse({'error': 'Denominazione obbligatoria'}, status=400)
+                    company.denominazione = denominazione
+                if 'indirizzo' in data:
+                    company.indirizzo = data.get('indirizzo', '').strip()
+                if 'piva' in data:
+                    company.piva = data.get('piva', '').strip()
+                company.save()
 
             if 'fondo_cassa' in data:
                 target_fondo = _money(data['fondo_cassa'])
-                delta = target_fondo - _get_fondo_cassa()
+                delta = target_fondo - _get_fondo_cassa(company)
                 if delta != MONEY_ZERO:
                     FondoCassaMovimento.objects.create(
+                        company=company,
                         date=timezone.localdate(),
                         tipo=FondoCassaMovimento.TIPO_ENTRATA if delta > 0 else FondoCassaMovimento.TIPO_USCITA,
                         importo=abs(delta),
@@ -820,8 +966,13 @@ def api_save_settings(request):
             return JsonResponse({
                 'status': 'success',
                 'data': {
-                    'saldo_cassa': float(_get_saldo_cassa()),
-                    'fondo_cassa': float(_get_fondo_cassa()),
+                    'saldo_cassa': float(_get_saldo_cassa(company)),
+                    'fondo_cassa': float(_get_fondo_cassa(company)),
+                    'denominazione': company.denominazione,
+                    'indirizzo': company.indirizzo,
+                    'piva': company.piva,
+                    'active_company_id': company.id,
+                    'companies': [serialize_company(c) for c in user_companies(request.user)],
                 },
             })
         except Exception as e:
@@ -834,14 +985,19 @@ def api_reset_telegram_sessions(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
+    company, err = bind_company(request)
+    if err:
+        return err
+
     reset_at = timezone.now().isoformat()
     AppSetting.objects.update_or_create(
+        company=company,
         key='telegram_reset_sessions_at',
         defaults={'value': reset_at},
     )
 
-    token = _get_telegram_token()
-    chat_ids = _get_telegram_chat_ids()
+    token = _get_telegram_token(company)
+    chat_ids = _get_telegram_chat_ids(company)
     sent = 0
     failed = 0
     if token:
@@ -872,8 +1028,13 @@ def api_restart_telegram_bot(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
 
+    company, err = bind_company(request)
+    if err:
+        return err
+
     restart_at = timezone.now().isoformat()
     AppSetting.objects.update_or_create(
+        company=company,
         key='telegram_bot_restart_requested_at',
         defaults={'value': restart_at},
     )
@@ -891,13 +1052,16 @@ def api_restart_telegram_bot(request):
 def api_purge_images(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
         data = json.loads(request.body or '{}')
         scope = data.get('scope', 'month')
         month = data.get('month', '')
 
-        closure_images = CashClosureImage.objects.all()
-        draft_images = AcquisitionDraftImage.objects.all()
+        closure_images = CashClosureImage.objects.filter(closure__company=company)
+        draft_images = AcquisitionDraftImage.objects.filter(draft__company=company)
 
         if scope == 'month':
             if not re.fullmatch(r'\d{4}-\d{2}', month):
@@ -983,7 +1147,7 @@ def _json_from_ai_text(raw_json):
     return json.loads(raw_json)
 
 
-def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, operator='IA'):
+def _parse_ai_closure_payload(parsed, company, totale_scassettato=None, draft_id=None, operator='IA'):
     items = []
     for item in parsed.get('items', []):
         entrate = _money(item.get('entrate'))
@@ -995,7 +1159,7 @@ def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, op
             'saldo': float(_money(entrate - uscite)),
         })
 
-    known = list(Department.objects.values_list('name', flat=True))
+    known = list(Department.objects.filter(company=company).values_list('name', flat=True))
     for item in items:
         resolved = _resolve_dept(item['descrizione'], known)
         if resolved:
@@ -1043,8 +1207,8 @@ def _parse_ai_closure_payload(parsed, totale_scassettato=None, draft_id=None, op
     return data
 
 
-def _extract_ai_with_groq(images):
-    api_key = _get_groq_key()
+def _extract_ai_with_groq(images, company):
+    api_key = _get_groq_key(company)
     if not api_key:
         raise ValueError('Chiave API Groq non configurata. Vai su Impostazioni per inserirla.')
 
@@ -1068,8 +1232,8 @@ def _extract_ai_with_groq(images):
     return _json_from_ai_text(response.choices[0].message.content)
 
 
-def _extract_ai_with_gemini(images):
-    api_key = _get_gemini_key()
+def _extract_ai_with_gemini(images, company):
+    api_key = _get_gemini_key(company)
     if not api_key:
         raise ValueError('Chiave API Gemini non configurata. Vai su Impostazioni per inserirla.')
 
@@ -1104,11 +1268,11 @@ def _extract_ai_with_gemini(images):
     return _json_from_ai_text(raw_json)
 
 
-def _extract_ai_payload(images):
-    provider = _get_ai_provider()
+def _extract_ai_payload(images, company):
+    provider = _get_ai_provider(company)
     if provider == 'gemini':
-        return _extract_ai_with_gemini(images), 'IA Gemini'
-    return _extract_ai_with_groq(images), 'IA Groq'
+        return _extract_ai_with_gemini(images, company), 'IA Gemini'
+    return _extract_ai_with_groq(images, company), 'IA Groq'
 
 
 @require_auth
@@ -1116,12 +1280,16 @@ def api_extract_closure_ai(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
+    company, err = bind_company(request)
+    if err:
+        return err
+
     if not request.FILES:
         return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
 
     try:
         images = []
-        draft = AcquisitionDraft.objects.create(source='web', operator=request.user.username)
+        draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
         for file_key in request.FILES:
             f = request.FILES[file_key]
             mime = f.content_type or 'image/jpeg'
@@ -1133,8 +1301,8 @@ def api_extract_closure_ai(request):
             b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             images.append({'mime': mime, 'b64': b64})
 
-        parsed, operator = _extract_ai_payload(images)
-        data = _parse_ai_closure_payload(parsed, operator=operator)
+        parsed, operator = _extract_ai_payload(images, company)
+        data = _parse_ai_closure_payload(parsed, company, operator=operator)
         data['draft_id'] = draft.id
         data['images'] = [{
             'id': image.id,
@@ -1142,7 +1310,7 @@ def api_extract_closure_ai(request):
         } for image in draft.images.all()]
         return JsonResponse({
             'status': 'success',
-            'provider': _get_ai_provider(),
+            'provider': _get_ai_provider(company),
             'data': data,
         })
 
@@ -1158,7 +1326,10 @@ def api_extract_closure_ai(request):
 def api_acquisition_drafts_list(request):
     if request.method != 'GET':
         return JsonResponse({'status': 'error'}, status=405)
-    drafts = AcquisitionDraft.objects.filter(status='pending', source='telegram').prefetch_related('images')[:20]
+    company, err = bind_company(request)
+    if err:
+        return err
+    drafts = AcquisitionDraft.objects.filter(company=company, status='pending', source='telegram').prefetch_related('images')[:20]
     return JsonResponse({
         'status': 'success',
         'data': [{
@@ -1177,7 +1348,10 @@ def api_acquisition_draft_extract(request, draft_id):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
     try:
-        draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, status='pending')
+        company, err = bind_company(request)
+        if err:
+            return err
+        draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, company=company, status='pending')
     except AcquisitionDraft.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
 
@@ -1196,14 +1370,15 @@ def api_acquisition_draft_extract(request, draft_id):
         if not images:
             return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
 
-        parsed, operator = _extract_ai_payload(images)
+        parsed, operator = _extract_ai_payload(images, company)
 
         return JsonResponse({
             'status': 'success',
-            'provider': _get_ai_provider(),
+            'provider': _get_ai_provider(company),
             'data': {
                 **_parse_ai_closure_payload(
                     parsed,
+                    company,
                     totale_scassettato=draft.totale_scassettato,
                     draft_id=draft.id,
                     operator=operator,
@@ -1222,7 +1397,10 @@ def api_acquisition_draft_extract(request, draft_id):
 def api_acquisition_draft_cancel(request, draft_id):
     if request.method not in ['POST', 'DELETE']:
         return JsonResponse({'status': 'error'}, status=405)
-    updated = AcquisitionDraft.objects.filter(id=draft_id, status='pending').update(
+    company, err = bind_company(request)
+    if err:
+        return err
+    updated = AcquisitionDraft.objects.filter(id=draft_id, company=company, status='pending').update(
         status='cancelled',
         completed_at=timezone.now(),
     )
@@ -1233,33 +1411,36 @@ def api_acquisition_draft_cancel(request, draft_id):
 
 # ── VERSAMENTI ────────────────────────────────────────────────────────────────
 
-def _get_movimenti_cassa_net():
+def _get_movimenti_cassa_net(company):
     from django.db.models import Sum
-    entrate = MovimentoCassa.objects.filter(tipo=MovimentoCassa.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
-    uscite = MovimentoCassa.objects.filter(tipo=MovimentoCassa.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
+    entrate = MovimentoCassa.objects.filter(company=company, tipo=MovimentoCassa.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
+    uscite = MovimentoCassa.objects.filter(company=company, tipo=MovimentoCassa.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
     return _money(entrate) - _money(uscite)
 
 
-def _get_saldo_cassa_base():
+def _get_saldo_cassa_base(company):
     from django.db.models import Sum
-    tc   = CashClosure.objects.aggregate(s=Sum('totale_cassetto'))['s'] or 0
-    diff = CashClosure.objects.aggregate(s=Sum('differenza'))['s'] or 0
-    vers = Versamento.objects.aggregate(s=Sum('importo_versato'))['s'] or 0
-    return _money(tc) + _money(diff) - _money(vers) + _get_movimenti_cassa_net()
+    tc   = CashClosure.objects.filter(company=company).aggregate(s=Sum('totale_cassetto'))['s'] or 0
+    diff = CashClosure.objects.filter(company=company).aggregate(s=Sum('differenza'))['s'] or 0
+    vers = Versamento.objects.filter(company=company).aggregate(s=Sum('importo_versato'))['s'] or 0
+    return _money(tc) + _money(diff) - _money(vers) + _get_movimenti_cassa_net(company)
 
 
-def _get_saldo_cassa():
-    return _get_saldo_cassa_base() + _get_setting_money('saldo_cassa_adjustment')
+def _get_saldo_cassa(company):
+    return _get_saldo_cassa_base(company) + _get_setting_money('saldo_cassa_adjustment', company)
 
 
 @require_auth
 def api_versamenti_list(request):
     if request.method != 'GET':
         return JsonResponse({'status': 'error'}, status=405)
-    items = Versamento.objects.all()
+    company, err = bind_company(request)
+    if err:
+        return err
+    items = Versamento.objects.filter(company=company)
     return JsonResponse({
         'status': 'success',
-        'saldo_cassa': float(_get_saldo_cassa()),
+        'saldo_cassa': float(_get_saldo_cassa(company)),
         'data': [{
             'id': v.id,
             'date': v.date.isoformat(),
@@ -1277,6 +1458,9 @@ def api_versamenti_list(request):
 def api_versamenti_create(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
         data = json.loads(request.body)
         date_str = data.get('date', '')
@@ -1289,9 +1473,10 @@ def api_versamenti_create(request):
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
         if accantonamento < 0 or accantonamento > importo:
             return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
-        saldo_prec = _get_saldo_cassa()
+        saldo_prec = _get_saldo_cassa(company)
         ricorda = bool(data.get('ricorda_promemoria'))
         v = Versamento.objects.create(
+            company=company,
             date=parsed_date,
             operator=data.get('operator', ''),
             importo_versato=importo,
@@ -1302,6 +1487,7 @@ def api_versamenti_create(request):
         )
         if accantonamento > 0:
             FondoCassaMovimento.objects.create(
+                company=company,
                 date=parsed_date,
                 tipo=FondoCassaMovimento.TIPO_ENTRATA,
                 importo=accantonamento,
@@ -1318,7 +1504,10 @@ def api_versamenti_delete(request, vers_id):
     if request.method != 'DELETE':
         return JsonResponse({'status': 'error'}, status=405)
     try:
-        versamento = Versamento.objects.get(id=vers_id)
+        company, err = bind_company(request)
+        if err:
+            return err
+        versamento = Versamento.objects.get(id=vers_id, company=company)
         FondoCassaMovimento.objects.filter(versamento=versamento).delete()
         versamento.delete()
         return JsonResponse({'status': 'success'})
@@ -1332,7 +1521,10 @@ def api_versamenti_update(request, vers_id):
         return JsonResponse({'status': 'error'}, status=405)
     try:
         data = json.loads(request.body)
-        v = Versamento.objects.get(id=vers_id)
+        company, err = bind_company(request)
+        if err:
+            return err
+        v = Versamento.objects.get(id=vers_id, company=company)
         if 'date' in data:
             parsed = parse_date(data['date'])
             if not parsed:
@@ -1363,6 +1555,7 @@ def api_versamenti_update(request, vers_id):
                 fondo_qs.update(importo=v.accantonamento, date=v.date, descrizione=descrizione)
             else:
                 FondoCassaMovimento.objects.create(
+                    company=company,
                     date=v.date,
                     tipo=FondoCassaMovimento.TIPO_ENTRATA,
                     importo=v.accantonamento,
@@ -1398,10 +1591,13 @@ def _serialize_movimento_cassa(m):
 def api_movimenti_cassa_list(request):
     if request.method != 'GET':
         return JsonResponse({'status': 'error'}, status=405)
-    items = MovimentoCassa.objects.all()
+    company, err = bind_company(request)
+    if err:
+        return err
+    items = MovimentoCassa.objects.filter(company=company)
     return JsonResponse({
         'status': 'success',
-        'saldo_cassa': float(_get_saldo_cassa()),
+        'saldo_cassa': float(_get_saldo_cassa(company)),
         'data': [_serialize_movimento_cassa(m) for m in items],
     })
 
@@ -1410,6 +1606,9 @@ def api_movimenti_cassa_list(request):
 def api_movimenti_cassa_create(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
         data = json.loads(request.body)
         parsed_date = parse_date(data.get('date', ''))
@@ -1421,8 +1620,9 @@ def api_movimenti_cassa_create(request):
         importo = _money(data.get('importo'))
         if importo <= 0:
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
-        saldo_prec = _get_saldo_cassa()
+        saldo_prec = _get_saldo_cassa(company)
         m = MovimentoCassa.objects.create(
+            company=company,
             date=parsed_date,
             operator=data.get('operator', '').strip(),
             tipo=tipo,
@@ -1441,7 +1641,10 @@ def api_movimenti_cassa_delete(request, mov_id):
     if request.method != 'DELETE':
         return JsonResponse({'status': 'error'}, status=405)
     try:
-        MovimentoCassa.objects.get(id=mov_id).delete()
+        company, err = bind_company(request)
+        if err:
+            return err
+        MovimentoCassa.objects.get(id=mov_id, company=company).delete()
         return JsonResponse({'status': 'success'})
     except MovimentoCassa.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
@@ -1453,7 +1656,10 @@ def api_movimenti_cassa_update(request, mov_id):
         return JsonResponse({'status': 'error'}, status=405)
     try:
         data = json.loads(request.body)
-        m = MovimentoCassa.objects.get(id=mov_id)
+        company, err = bind_company(request)
+        if err:
+            return err
+        m = MovimentoCassa.objects.get(id=mov_id, company=company)
         if 'date' in data:
             parsed = parse_date(data['date'])
             if not parsed:
@@ -1485,10 +1691,10 @@ def api_movimenti_cassa_update(request, mov_id):
 
 # ── FONDO CASSA ───────────────────────────────────────────────────────────────
 
-def _get_fondo_cassa():
+def _get_fondo_cassa(company):
     from django.db.models import Sum
-    entrate = FondoCassaMovimento.objects.filter(tipo=FondoCassaMovimento.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
-    uscite = FondoCassaMovimento.objects.filter(tipo=FondoCassaMovimento.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
+    entrate = FondoCassaMovimento.objects.filter(company=company, tipo=FondoCassaMovimento.TIPO_ENTRATA).aggregate(s=Sum('importo'))['s'] or 0
+    uscite = FondoCassaMovimento.objects.filter(company=company, tipo=FondoCassaMovimento.TIPO_USCITA).aggregate(s=Sum('importo'))['s'] or 0
     return _money(entrate) - _money(uscite)
 
 
@@ -1507,10 +1713,13 @@ def _serialize_fondo_cassa_movimento(m):
 def api_fondo_cassa_list(request):
     if request.method != 'GET':
         return JsonResponse({'status': 'error'}, status=405)
-    movimenti = FondoCassaMovimento.objects.select_related('versamento').all()
+    company, err = bind_company(request)
+    if err:
+        return err
+    movimenti = FondoCassaMovimento.objects.filter(company=company).select_related('versamento')
     return JsonResponse({
         'status': 'success',
-        'totale': float(_get_fondo_cassa()),
+        'totale': float(_get_fondo_cassa(company)),
         'data': [_serialize_fondo_cassa_movimento(m) for m in movimenti],
     })
 
@@ -1519,6 +1728,9 @@ def api_fondo_cassa_list(request):
 def api_fondo_cassa_create(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
     try:
         data = json.loads(request.body)
         parsed_date = parse_date(data.get('date', ''))
@@ -1531,6 +1743,7 @@ def api_fondo_cassa_create(request):
         if importo <= 0:
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
         m = FondoCassaMovimento.objects.create(
+            company=company,
             date=parsed_date,
             tipo=tipo,
             importo=importo,
@@ -1546,7 +1759,10 @@ def api_fondo_cassa_delete(request, mov_id):
     if request.method != 'DELETE':
         return JsonResponse({'status': 'error'}, status=405)
     try:
-        FondoCassaMovimento.objects.get(id=mov_id).delete()
+        company, err = bind_company(request)
+        if err:
+            return err
+        FondoCassaMovimento.objects.get(id=mov_id, company=company).delete()
         return JsonResponse({'status': 'success'})
     except FondoCassaMovimento.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)
@@ -1558,7 +1774,10 @@ def api_fondo_cassa_update(request, mov_id):
         return JsonResponse({'status': 'error'}, status=405)
     try:
         data = json.loads(request.body)
-        m = FondoCassaMovimento.objects.get(id=mov_id)
+        company, err = bind_company(request)
+        if err:
+            return err
+        m = FondoCassaMovimento.objects.get(id=mov_id, company=company)
         if m.versamento_id:
             return JsonResponse({'status': 'error', 'error': 'Movimento da versamento: modifica dal versamento collegato'}, status=400)
         if 'date' in data:

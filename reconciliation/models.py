@@ -1,7 +1,38 @@
 from django.db import models
+from django.contrib.auth.models import User
 from django.utils import timezone
 
+
+class Company(models.Model):
+    denominazione = models.CharField(max_length=200, verbose_name='Denominazione')
+    indirizzo = models.TextField(blank=True, verbose_name='Indirizzo')
+    piva = models.CharField(max_length=16, blank=True, verbose_name='PIVA')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Azienda'
+        verbose_name_plural = 'Aziende'
+        ordering = ['denominazione', 'id']
+
+    def __str__(self):
+        return self.denominazione or f'Azienda #{self.pk}'
+
+
+class CompanyMembership(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='company_memberships')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='memberships')
+
+    class Meta:
+        unique_together = [('user', 'company')]
+        verbose_name = 'Appartenenza azienda'
+        verbose_name_plural = 'Appartenenze azienda'
+
+    def __str__(self):
+        return f'{self.user.username} → {self.company}'
+
+
 class CashClosure(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='closures', verbose_name='Azienda')
     date = models.DateField(default=timezone.now, verbose_name="Data Chiusura")
     operator = models.CharField(max_length=100, verbose_name="Operatore")
     submitted_by = models.CharField(max_length=100, blank=True, verbose_name="Inviato da")
@@ -58,12 +89,14 @@ class CashClosureImage(models.Model):
         return f"Foto chiusura {self.closure_id}"
 
 class Department(models.Model):
-    name = models.CharField(max_length=150, unique=True, verbose_name="Nome Reparto")
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='departments', verbose_name='Azienda')
+    name = models.CharField(max_length=150, verbose_name="Nome Reparto")
 
     class Meta:
         ordering = ['name']
         verbose_name = 'Reparto'
         verbose_name_plural = 'Reparti'
+        unique_together = [('company', 'name')]
 
     def __str__(self):
         return self.name
@@ -74,18 +107,21 @@ class Department(models.Model):
 
 
 class AppSetting(models.Model):
-    key = models.CharField(max_length=100, unique=True)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='settings', verbose_name='Azienda')
+    key = models.CharField(max_length=100)
     value = models.TextField(blank=True)
 
     class Meta:
         verbose_name = 'Impostazione'
         verbose_name_plural = 'Impostazioni'
+        unique_together = [('company', 'key')]
 
     def __str__(self):
         return self.key
 
 
 class Versamento(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='versamenti', verbose_name='Azienda')
     date = models.DateField(verbose_name="Data Versamento")
     operator = models.CharField(max_length=100, verbose_name="Operatore")
     importo_versato = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Importo Versato")
@@ -108,6 +144,7 @@ class Versamento(models.Model):
 
 
 class MovimentoCassa(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='movimenti_cassa', verbose_name='Azienda')
     TIPO_ENTRATA = 'ENTRATA'
     TIPO_USCITA = 'USCITA'
     TIPO_CHOICES = [
@@ -138,6 +175,7 @@ class MovimentoCassa(models.Model):
 
 
 class FondoCassaMovimento(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='fondo_movimenti', verbose_name='Azienda')
     TIPO_ENTRATA = 'ENTRATA'
     TIPO_USCITA = 'USCITA'
     TIPO_CHOICES = [
@@ -166,6 +204,7 @@ class FondoCassaMovimento(models.Model):
 
 
 class AcquisitionDraft(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='acquisition_drafts', verbose_name='Azienda')
     STATUS_CHOICES = [
         ('pending', 'Da verificare'),
         ('completed', 'Registrata'),
@@ -200,6 +239,7 @@ class AcquisitionDraftImage(models.Model):
 
 
 class BankTransaction(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bank_transactions', verbose_name='Azienda')
     TRANSACTION_TYPES = [
         ('VERSAMENTO', 'Versamento Contanti'),
         ('ESTRATTO_CONTO', 'Movimento Estratto Conto'),

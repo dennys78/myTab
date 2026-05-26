@@ -52,6 +52,10 @@ urlpatterns = [
     path('api/fondo-cassa/<int:mov_id>/delete/',    views.api_fondo_cassa_delete),
     path('api/fondo-cassa/<int:mov_id>/update/',    views.api_fondo_cassa_update),
 
+    path('api/companies/',                           views.api_companies_list),
+    path('api/companies/switch/',                    views.api_companies_switch),
+    path('api/companies/create/',                    views.api_companies_create),
+
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),
     path('api/settings/',                           views.api_get_settings),
