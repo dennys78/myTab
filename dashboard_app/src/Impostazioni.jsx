@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2 } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2, Plus, Pencil } from 'lucide-react';
 import { apiFetch } from './api';
 
 export default function Impostazioni() {
@@ -36,9 +36,36 @@ export default function Impostazioni() {
   const [piva, setPiva] = useState('');
   const [companies, setCompanies] = useState([]);
   const [activeCompanyId, setActiveCompanyId] = useState(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [companyMode, setCompanyMode] = useState(null); // null | 'new' | 'edit'
   const [savingCompany, setSavingCompany] = useState(false);
   const [companySaved, setCompanySaved] = useState(false);
-  const [newCompanyName, setNewCompanyName] = useState('');
+
+  const loadCompanyIntoForm = (company) => {
+    if (!company) {
+      setDenominazione('');
+      setIndirizzo('');
+      setPiva('');
+      return;
+    }
+    setDenominazione(company.denominazione || '');
+    setIndirizzo(company.indirizzo || '');
+    setPiva(company.piva || '');
+  };
+
+  const applyCompaniesFromSettings = (data) => {
+    const list = data.companies || [];
+    setCompanies(list);
+    setActiveCompanyId(data.active_company_id || null);
+    const activeId = data.active_company_id;
+    const active = list.find(c => c.id === activeId) || list[0];
+    if (active) {
+      setSelectedCompanyId(active.id);
+      loadCompanyIntoForm(active);
+    }
+  };
+
+  const formEditable = companyMode === 'new' || companyMode === 'edit';
 
   useEffect(() => {
     apiFetch('/api/settings/')
@@ -51,17 +78,83 @@ export default function Impostazioni() {
           setTelegramConfigured(d.data.telegram_token_configured);
           setSaldoCassa(Number(d.data.saldo_cassa ?? 0).toFixed(2));
           setFondoCassa(Number(d.data.fondo_cassa ?? 0).toFixed(2));
-          setDenominazione(d.data.denominazione || '');
-          setIndirizzo(d.data.indirizzo || '');
-          setPiva(d.data.piva || '');
-          setCompanies(d.data.companies || []);
-          setActiveCompanyId(d.data.active_company_id || null);
+          applyCompaniesFromSettings(d.data);
         }
       })
       .catch(() => {});
   }, []);
 
-  const handleSwitchCompany = (companyId) => {
+  const handleSelectCompany = (company) => {
+    setSelectedCompanyId(company.id);
+    loadCompanyIntoForm(company);
+    setCompanyMode(null);
+    setCompanySaved(false);
+  };
+
+  const handleNuovoCompany = () => {
+    setCompanyMode('new');
+    setSelectedCompanyId(null);
+    loadCompanyIntoForm(null);
+    setCompanySaved(false);
+    setError(null);
+  };
+
+  const handleModificaCompany = () => {
+    if (!selectedCompanyId) return;
+    setCompanyMode('edit');
+    setCompanySaved(false);
+    setError(null);
+  };
+
+  const handleSalvaCompany = () => {
+    if (!denominazione.trim()) {
+      setError('La denominazione aziendale è obbligatoria.');
+      return;
+    }
+    setSavingCompany(true);
+    setError(null);
+    setCompanySaved(false);
+
+    const payload = {
+      denominazione: denominazione.trim(),
+      indirizzo: indirizzo.trim(),
+      piva: piva.trim(),
+    };
+
+    const url = companyMode === 'new'
+      ? '/api/companies/create/'
+      : `/api/companies/${selectedCompanyId}/update/`;
+
+    const wasNew = companyMode === 'new';
+
+    apiFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setCompanies(d.companies || []);
+          setActiveCompanyId(d.active_company_id ?? activeCompanyId);
+          const saved = d.data;
+          setSelectedCompanyId(saved.id);
+          loadCompanyIntoForm(saved);
+          setCompanyMode(null);
+          setCompanySaved(true);
+          setTimeout(() => setCompanySaved(false), 3000);
+          if (wasNew) {
+            window.location.reload();
+          }
+        } else {
+          setError(d.error || 'Errore salvataggio dati azienda.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingCompany(false));
+  };
+
+  const handleAttivaCompany = (companyId) => {
     if (!companyId || Number(companyId) === Number(activeCompanyId)) return;
     setError(null);
     apiFetch('/api/companies/switch/', {
@@ -78,64 +171,6 @@ export default function Impostazioni() {
         }
       })
       .catch(() => setError('Errore di rete.'));
-  };
-
-  const handleSaveCompany = () => {
-    if (!denominazione.trim()) {
-      setError('La denominazione aziendale è obbligatoria.');
-      return;
-    }
-    setSavingCompany(true);
-    setError(null);
-    setCompanySaved(false);
-    apiFetch('/api/settings/save/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        denominazione: denominazione.trim(),
-        indirizzo: indirizzo.trim(),
-        piva: piva.trim(),
-      }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'success') {
-          setCompanySaved(true);
-          setDenominazione(d.data.denominazione || '');
-          setIndirizzo(d.data.indirizzo || '');
-          setPiva(d.data.piva || '');
-          setCompanies(d.data.companies || []);
-          setActiveCompanyId(d.data.active_company_id || null);
-          setTimeout(() => setCompanySaved(false), 3000);
-        } else {
-          setError(d.error || 'Errore salvataggio dati azienda.');
-        }
-      })
-      .catch(() => setError('Errore di rete.'))
-      .finally(() => setSavingCompany(false));
-  };
-
-  const handleCreateCompany = () => {
-    const name = newCompanyName.trim();
-    if (!name) return;
-    setSavingCompany(true);
-    setError(null);
-    apiFetch('/api/companies/create/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ denominazione: name }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'success') {
-          setNewCompanyName('');
-          window.location.reload();
-        } else {
-          setError(d.error || 'Errore creazione azienda.');
-        }
-      })
-      .catch(() => setError('Errore di rete.'))
-      .finally(() => setSavingCompany(false));
   };
 
   const handleSave = () => {
@@ -324,70 +359,124 @@ export default function Impostazioni() {
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Dati aziendali</h2>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Ogni azienda ha chiusure, versamenti e impostazioni separate. I dati qui sotto riguardano l&apos;azienda attiva.
+          Seleziona un&apos;azienda dall&apos;elenco per visualizzarla e modificarla, oppure creane una nuova.
         </p>
 
-        {companies.length > 1 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Azienda attiva</label>
-            <select
-              value={activeCompanyId || ''}
-              onChange={(e) => handleSwitchCompany(e.target.value)}
-              style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
-            >
-              {companies.map(c => (
-                <option key={c.id} value={c.id}>{c.denominazione || `Azienda #${c.id}`}</option>
-              ))}
-            </select>
+        {companies.length > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Aziende registrate</label>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden', maxHeight: '200px', overflowY: 'auto' }}>
+              {companies.map(c => {
+                const selected = c.id === selectedCompanyId;
+                const active = c.id === activeCompanyId;
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectCompany(c)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '0.65rem 0.85rem',
+                        border: 'none',
+                        borderBottom: '1px solid var(--border)',
+                        background: selected ? 'rgba(79,141,247,0.12)' : 'var(--bg-elevated)',
+                        color: 'var(--text-main)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      <span style={{ flex: 1, fontWeight: selected ? 600 : 400 }}>
+                        {c.denominazione || `Azienda #${c.id}`}
+                      </span>
+                      {active && (
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', background: 'rgba(79,141,247,0.15)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                          Attiva
+                        </span>
+                      )}
+                      {!active && selected && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => { e.stopPropagation(); handleAttivaCompany(c.id); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleAttivaCompany(c.id); } }}
+                          style={{ fontSize: '0.72rem', color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}
+                        >
+                          Rendi attiva
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <button
+            type="button"
+            onClick={handleNuovoCompany}
+            disabled={savingCompany || companyMode === 'new'}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: companyMode === 'new' ? 'var(--accent)' : 'transparent', color: companyMode === 'new' ? 'white' : 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '6px', cursor: savingCompany ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+          >
+            <Plus size={16} /> Nuovo
+          </button>
+          <button
+            type="button"
+            onClick={handleModificaCompany}
+            disabled={savingCompany || !selectedCompanyId || companyMode === 'new'}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: companyMode === 'edit' ? 'var(--accent)' : 'transparent', color: companyMode === 'edit' ? 'white' : 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '6px', cursor: (!selectedCompanyId || companyMode === 'new') ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.88rem', opacity: (!selectedCompanyId || companyMode === 'new') ? 0.5 : 1 }}
+          >
+            <Pencil size={16} /> Modifica
+          </button>
+          {formEditable && (
+            <button
+              type="button"
+              onClick={handleSalvaCompany}
+              disabled={savingCompany}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+            >
+              {savingCompany ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+              Salva
+            </button>
+          )}
+        </div>
+
+        {companyMode === 'new' && (
+          <p style={{ color: 'var(--accent)', fontSize: '0.82rem', marginBottom: '1rem', marginTop: '-0.5rem' }}>
+            Inserisci i dati della nuova azienda e premi Salva.
+          </p>
+        )}
+        {companyMode === 'edit' && (
+          <p style={{ color: 'var(--accent)', fontSize: '0.82rem', marginBottom: '1rem', marginTop: '-0.5rem' }}>
+            Modifica i campi e premi Salva.
+          </p>
         )}
 
         <div style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Denominazione *</label>
-            <input type="text" value={denominazione} onChange={e => setDenominazione(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%' }} placeholder="es. Tabaccheria Rossi" />
+            <input type="text" value={denominazione} onChange={e => setDenominazione(e.target.value)} disabled={!formEditable} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', opacity: formEditable ? 1 : 0.7 }} placeholder="es. Tabaccheria Rossi" />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Indirizzo</label>
-            <textarea value={indirizzo} onChange={e => setIndirizzo(e.target.value)} rows={2} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', resize: 'vertical' }} placeholder="Via, CAP, Città" />
+            <textarea value={indirizzo} onChange={e => setIndirizzo(e.target.value)} disabled={!formEditable} rows={2} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', resize: 'vertical', opacity: formEditable ? 1 : 0.7 }} placeholder="Via, CAP, Città" />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>PIVA</label>
-            <input type="text" value={piva} onChange={e => setPiva(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', maxWidth: '280px' }} placeholder="IT12345678901" />
+            <input type="text" value={piva} onChange={e => setPiva(e.target.value)} disabled={!formEditable} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', maxWidth: '280px', opacity: formEditable ? 1 : 0.7 }} placeholder="IT12345678901" />
           </div>
         </div>
 
         {companySaved && (
-          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
             <CheckCircle size={15} /> Dati aziendali salvati.
           </div>
         )}
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
-          <button
-            onClick={handleSaveCompany}
-            disabled={savingCompany}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
-          >
-            {savingCompany ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-            Salva dati azienda
-          </button>
-          <input
-            type="text"
-            value={newCompanyName}
-            onChange={e => setNewCompanyName(e.target.value)}
-            placeholder="Nuova azienda..."
-            style={{ ...inputStyle, fontFamily: 'inherit', minWidth: '180px', flex: '1 1 180px' }}
-          />
-          <button
-            type="button"
-            onClick={handleCreateCompany}
-            disabled={savingCompany || !newCompanyName.trim()}
-            style={{ padding: '0.6rem 1rem', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '6px', cursor: newCompanyName.trim() ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}
-          >
-            Aggiungi azienda
-          </button>
-        </div>
       </div>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>

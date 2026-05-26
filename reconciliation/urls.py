@@ -55,6 +55,7 @@ urlpatterns = [
     path('api/companies/',                           views.api_companies_list),
     path('api/companies/switch/',                    views.api_companies_switch),
     path('api/companies/create/',                    views.api_companies_create),
+    path('api/companies/<int:company_id>/update/',   views.api_companies_update),
 
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),

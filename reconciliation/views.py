@@ -270,7 +270,39 @@ def api_companies_create(request):
             piva=data.get('piva', '').strip(),
         )
         set_active_company(request, company.id)
-        return JsonResponse({'status': 'success', 'data': serialize_company(company)})
+        return JsonResponse({
+            'status': 'success',
+            'data': serialize_company(company),
+            'active_company_id': company.id,
+            'companies': [serialize_company(c) for c in user_companies(request.user)],
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
+@require_admin
+def api_companies_update(request, company_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        company = user_companies(request.user).filter(id=company_id).first()
+        if not company:
+            return JsonResponse({'status': 'error', 'error': 'Azienda non trovata'}, status=404)
+        data = json.loads(request.body or '{}')
+        denominazione = data.get('denominazione', '').strip()
+        if not denominazione:
+            return JsonResponse({'status': 'error', 'error': 'Denominazione obbligatoria'})
+        company.denominazione = denominazione
+        company.indirizzo = data.get('indirizzo', '').strip()
+        company.piva = data.get('piva', '').strip()
+        company.save()
+        active = get_active_company(request)
+        return JsonResponse({
+            'status': 'success',
+            'data': serialize_company(company),
+            'active_company_id': active.id if active else None,
+            'companies': [serialize_company(c) for c in user_companies(request.user)],
+        })
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
