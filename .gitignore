@@ -19,6 +19,9 @@ media/
 .env.local
 .env.*.local
 !.env.local.example
+firebase-service-account.json
+**/firebase-*.json
+secrets/
 
 # Node / React
 dashboard_app/node_modules/
