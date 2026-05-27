@@ -70,7 +70,14 @@ def _extract_department_items(doc_data: dict) -> list[dict]:
         uscite = _money(payload.get('uscite'))
         if entrate == 0 and uscite == 0:
             return
-        dept = _dept_label_from_field(label).strip().upper()
+        raw_label = (
+            payload.get('descrizioneReparto')
+            or payload.get('descrizione')
+            or payload.get('nome')
+            or payload.get('label')
+            or label
+        )
+        dept = _dept_label_from_field(str(raw_label)).strip().upper()
         if not dept:
             return
         current = by_dept.get(dept)
@@ -94,7 +101,13 @@ def _extract_department_items(doc_data: dict) -> list[dict]:
         elif isinstance(value, list):
             for row in value:
                 if isinstance(row, dict):
-                    row_label = row.get('descrizione') or row.get('nome') or row.get('label') or label_hint
+                    row_label = (
+                        row.get('descrizioneReparto')
+                        or row.get('descrizione')
+                        or row.get('nome')
+                        or row.get('label')
+                        or label_hint
+                    )
                     walk(row, str(row_label))
 
     for key, raw in doc_data.items():
@@ -123,7 +136,13 @@ def debug_department_candidates(doc_data: dict) -> list[dict]:
         if isinstance(value, dict):
             has_amounts = 'entrate' in value or 'uscite' in value
             if has_amounts:
-                label = value.get('descrizione') or value.get('nome') or value.get('label') or label_hint
+                label = (
+                    value.get('descrizioneReparto')
+                    or value.get('descrizione')
+                    or value.get('nome')
+                    or value.get('label')
+                    or label_hint
+                )
                 out.append({
                     'path': path,
                     'label': str(label),
