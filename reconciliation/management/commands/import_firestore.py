@@ -18,8 +18,8 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             '--company',
-            default='Tabaccheria del corso',
-            help='Denominazione azienda myTaba di destinazione',
+            default=os.environ.get('FIREBASE_IMPORT_COMPANY', 'Parrot caffè'),
+            help='Denominazione azienda myTaba di destinazione (default: Parrot caffè)',
         )
         parser.add_argument(
             '--collection',
@@ -51,7 +51,11 @@ class Command(BaseCommand):
         if not company:
             company = Company.objects.filter(denominazione__icontains=company_name).first()
         if not company:
-            raise CommandError(f'Azienda non trovata: "{company_name}"')
+            available = ', '.join(Company.objects.values_list('denominazione', flat=True)[:10])
+            raise CommandError(
+                f'Azienda non trovata: "{company_name}". '
+                f'Aziende presenti: {available or "(nessuna)"}'
+            )
 
         try:
             import firebase_admin
