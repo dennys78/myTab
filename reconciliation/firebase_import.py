@@ -57,21 +57,56 @@ def _dept_label_from_field(field_name: str) -> str:
 
 
 def _extract_department_items(doc_data: dict) -> list[dict]:
-    items = []
-    for key, raw in doc_data.items():
-        if not key.startswith('dati') or not isinstance(raw, dict):
-            continue
-        entrate = _money(raw.get('entrate'))
-        uscite = _money(raw.get('uscite'))
+    """
+    Estrae reparti da strutture Firestore variabili:
+    - chiavi tipo `datiGV`, `datiSisal`, ...
+    - mappe top-level con campi `entrate`/`uscite`
+    - liste top-level con elementi {descrizione,nome,label}+entrate/uscite
+    """
+    by_dept = {}
+
+    def add_item(label: str, payload: dict):
+        entrate = _money(payload.get('entrate'))
+        uscite = _money(payload.get('uscite'))
         if entrate == 0 and uscite == 0:
-            continue
-        items.append({
-            'descrizione': _dept_label_from_field(key),
-            'entrate': entrate,
-            'uscite': uscite,
-            'balance': entrate - uscite,
+            return
+        dept = _dept_label_from_field(label).strip().upper()
+        if not dept:
+            return
+        current = by_dept.get(dept)
+        if not current:
+            by_dept[dept] = {
+                'descrizione': dept,
+                'entrate': entrate,
+                'uscite': uscite,
+            }
+            return
+        current['entrate'] += entrate
+        current['uscite'] += uscite
+
+    for key, raw in doc_data.items():
+        if isinstance(raw, dict):
+            if key.startswith('dati') or ('entrate' in raw and 'uscite' in raw):
+                add_item(key, raw)
+        elif isinstance(raw, list):
+            for row in raw:
+                if not isinstance(row, dict):
+                    continue
+                if 'entrate' not in row and 'uscite' not in row:
+                    continue
+                label = row.get('descrizione') or row.get('nome') or row.get('label') or key
+                add_item(str(label), row)
+
+    ordered = []
+    for dept in sorted(by_dept.keys()):
+        item = by_dept[dept]
+        ordered.append({
+            'descrizione': item['descrizione'],
+            'entrate': item['entrate'],
+            'uscite': item['uscite'],
+            'balance': item['entrate'] - item['uscite'],
         })
-    return items
+    return ordered
 
 
 def map_registrazione_document(doc_id: str, doc_data: dict) -> dict | None:
