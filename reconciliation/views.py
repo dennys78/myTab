@@ -21,6 +21,7 @@ from difflib import get_close_matches
 from .models import (
     AcquisitionDraft,
     AcquisitionDraftImage,
+    BankTransaction,
     CashClosure,
     CashClosureImage,
     CashClosureItem,
