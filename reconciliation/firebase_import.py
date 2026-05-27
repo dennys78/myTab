@@ -112,6 +112,36 @@ def _extract_department_items(doc_data: dict) -> list[dict]:
     return ordered
 
 
+def debug_department_candidates(doc_data: dict) -> list[dict]:
+    """
+    Restituisce i candidati reparto individuati nel documento con path e valori
+    entrate/uscite per debugging struttura Firestore.
+    """
+    out = []
+
+    def visit(value, path, label_hint):
+        if isinstance(value, dict):
+            has_amounts = 'entrate' in value or 'uscite' in value
+            if has_amounts:
+                label = value.get('descrizione') or value.get('nome') or value.get('label') or label_hint
+                out.append({
+                    'path': path,
+                    'label': str(label),
+                    'entrate': value.get('entrate'),
+                    'uscite': value.get('uscite'),
+                    'keys': list(value.keys())[:15],
+                })
+            for k, child in value.items():
+                child_path = f'{path}.{k}' if path else k
+                visit(child, child_path, k)
+        elif isinstance(value, list):
+            for idx, row in enumerate(value):
+                visit(row, f'{path}[{idx}]', label_hint)
+
+    visit(doc_data, '', 'REPARTO')
+    return out
+
+
 def map_registrazione_document(doc_id: str, doc_data: dict) -> dict | None:
     """Converte un documento Firestore in payload per CashClosure + items."""
     closure_date = _parse_firestore_date(doc_data.get('dataIncasso'))

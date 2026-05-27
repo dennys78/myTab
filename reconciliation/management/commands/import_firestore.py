@@ -3,7 +3,11 @@ import os
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from reconciliation.firebase_import import map_registrazione_document, import_mapped_closure
+from reconciliation.firebase_import import (
+    debug_department_candidates,
+    import_mapped_closure,
+    map_registrazione_document,
+)
 from reconciliation.models import Company
 
 
@@ -41,6 +45,17 @@ class Command(BaseCommand):
             '--update-existing',
             action='store_true',
             help='Aggiorna chiusure già importate da Firebase (rigenera i reparti)',
+        )
+        parser.add_argument(
+            '--debug-doc',
+            default='',
+            help='ID documento Firestore da ispezionare (stampa struttura reparti e termina)',
+        )
+        parser.add_argument(
+            '--debug-limit',
+            type=int,
+            default=3,
+            help='Numero max righe diagnostiche da mostrare per --debug-doc',
         )
 
     def handle(self, *args, **options):
@@ -84,6 +99,8 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         limit = options['limit']
         update_existing = options['update_existing']
+        debug_doc = (options.get('debug_doc') or '').strip()
+        debug_limit = max(1, int(options.get('debug_limit') or 3))
 
         self.stdout.write(
             f'Lettura Firestore → collection "{collection_name}" → azienda "{company.denominazione}"'
@@ -100,6 +117,28 @@ class Command(BaseCommand):
             'dry_run_updated': 0,
         }
         processed = 0
+
+        if debug_doc:
+            snap = db.collection(collection_name).document(debug_doc).get()
+            if not snap.exists:
+                raise CommandError(f'Documento non trovato: {debug_doc}')
+            data = snap.to_dict() or {}
+            mapped = map_registrazione_document(snap.id, data)
+            candidates = debug_department_candidates(data)
+
+            self.stdout.write(self.style.WARNING(f'Debug documento: {debug_doc}'))
+            self.stdout.write(f'Chiavi top-level: {sorted(list(data.keys()))}')
+            self.stdout.write(f'Reparti mappati dallo script: {len(mapped["items"]) if mapped else 0}')
+            if mapped:
+                for item in mapped['items']:
+                    self.stdout.write(f'  - {item["descrizione"]}: entrate={item["entrate"]} uscite={item["uscite"]}')
+            self.stdout.write(f'Candidati trovati (max {debug_limit}): {len(candidates)}')
+            for row in candidates[:debug_limit]:
+                self.stdout.write(
+                    f'  path={row["path"]} | label={row["label"]} | '
+                    f'entrate={row["entrate"]} | uscite={row["uscite"]} | keys={row["keys"]}'
+                )
+            return
 
         docs = db.collection(collection_name).stream()
         with transaction.atomic():
