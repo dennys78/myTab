@@ -7,6 +7,7 @@ services:
     volumes:
       - sqlite_data:/app/db_data
       - media_data:/app/media
+      - ./secrets:/run/secrets:ro
     environment:
       - DJANGO_SETTINGS_MODULE=cash_manager.settings
       - DOCKER_ENV=1
@@ -21,6 +22,8 @@ services:
       - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - FIREBASE_CREDENTIALS_PATH=${FIREBASE_CREDENTIALS_PATH:-/run/secrets/firebase-service-account.json}
+      - FIREBASE_IMPORT_COMPANY=${FIREBASE_IMPORT_COMPANY:-Parrot caffè}
     # The database file must be mounted properly if it's placed in /app directly, 
     # but usually it's better to store it in a subfolder like /app/db_data.
     # To keep it simple without changing Django settings, we just map the whole app dir,

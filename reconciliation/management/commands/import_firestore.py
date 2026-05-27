@@ -39,11 +39,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        cred_path = (options['credentials'] or '').strip()
-        if not cred_path or not os.path.isfile(cred_path):
+        cred_path = (options['credentials'] or os.environ.get('FIREBASE_CREDENTIALS_PATH', '')).strip()
+        if not cred_path:
+            cred_path = '/run/secrets/firebase-service-account.json'
+        if not os.path.isfile(cred_path):
             raise CommandError(
-                'Specifica --credentials /path/to/serviceAccount.json '
-                'oppure imposta FIREBASE_CREDENTIALS_PATH nel file .env'
+                f'File credenziali Firebase non trovato: {cred_path}\n'
+                '1. Firebase Console → Impostazioni progetto → Account di servizio → Genera nuova chiave privata\n'
+                '2. Salva il file come secrets/firebase-service-account.json nella cartella myTab sul Mac\n'
+                '3. Riavvia: docker compose up -d --build\n'
+                'Oppure: --credentials /percorso/reale/file.json'
             )
 
         company_name = options['company'].strip()
