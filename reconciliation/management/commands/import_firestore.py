@@ -37,6 +37,11 @@ class Command(BaseCommand):
             default=0,
             help='Importa al massimo N documenti (0 = tutti)',
         )
+        parser.add_argument(
+            '--update-existing',
+            action='store_true',
+            help='Aggiorna chiusure già importate da Firebase (rigenera i reparti)',
+        )
 
     def handle(self, *args, **options):
         cred_path = (options['credentials'] or os.environ.get('FIREBASE_CREDENTIALS_PATH', '')).strip()
@@ -78,6 +83,7 @@ class Command(BaseCommand):
         collection_name = options['collection']
         dry_run = options['dry_run']
         limit = options['limit']
+        update_existing = options['update_existing']
 
         self.stdout.write(
             f'Lettura Firestore → collection "{collection_name}" → azienda "{company.denominazione}"'
@@ -85,7 +91,14 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING('Modalità dry-run: nessuna scrittura.'))
 
-        stats = {'created': 0, 'skipped': 0, 'invalid': 0, 'dry_run': 0}
+        stats = {
+            'created': 0,
+            'updated': 0,
+            'skipped': 0,
+            'invalid': 0,
+            'dry_run': 0,
+            'dry_run_updated': 0,
+        }
         processed = 0
 
         docs = db.collection(collection_name).stream()
@@ -101,9 +114,14 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.WARNING(f'  Saltato {snap.id}: dataIncasso mancante o non valida'))
                     continue
 
-                result = import_mapped_closure(company, mapped, dry_run=dry_run)
+                result = import_mapped_closure(
+                    company,
+                    mapped,
+                    dry_run=dry_run,
+                    update_existing=update_existing,
+                )
                 stats[result] = stats.get(result, 0) + 1
-                if processed <= 5 or result == 'created':
+                if processed <= 5 or result in ('created', 'updated'):
                     self.stdout.write(
                         f'  {snap.id} → {mapped["date"]} | reparti: {len(mapped["items"])} | {result}'
                     )
@@ -112,7 +130,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f'Fine. Processati: {processed} | '
             f'creati: {stats.get("created", 0)} | '
+            f'aggiornati: {stats.get("updated", 0)} | '
             f'già presenti: {stats.get("skipped", 0)} | '
             f'non validi: {stats.get("invalid", 0)} | '
-            f'dry-run: {stats.get("dry_run", 0)}'
+            f'dry-run nuovi: {stats.get("dry_run", 0)} | '
+            f'dry-run aggiornati: {stats.get("dry_run_updated", 0)}'
         ))

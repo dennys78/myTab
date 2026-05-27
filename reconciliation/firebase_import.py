@@ -84,18 +84,21 @@ def _extract_department_items(doc_data: dict) -> list[dict]:
         current['entrate'] += entrate
         current['uscite'] += uscite
 
+    def walk(value, label_hint):
+        if isinstance(value, dict):
+            if 'entrate' in value and 'uscite' in value:
+                add_item(label_hint, value)
+            for child_key, child_value in value.items():
+                child_label = child_key if child_key not in ('entrate', 'uscite') else label_hint
+                walk(child_value, child_label)
+        elif isinstance(value, list):
+            for row in value:
+                if isinstance(row, dict):
+                    row_label = row.get('descrizione') or row.get('nome') or row.get('label') or label_hint
+                    walk(row, str(row_label))
+
     for key, raw in doc_data.items():
-        if isinstance(raw, dict):
-            if key.startswith('dati') or ('entrate' in raw and 'uscite' in raw):
-                add_item(key, raw)
-        elif isinstance(raw, list):
-            for row in raw:
-                if not isinstance(row, dict):
-                    continue
-                if 'entrate' not in row and 'uscite' not in row:
-                    continue
-                label = row.get('descrizione') or row.get('nome') or row.get('label') or key
-                add_item(str(label), row)
+        walk(raw, key)
 
     ordered = []
     for dept in sorted(by_dept.keys()):
@@ -161,35 +164,58 @@ def map_registrazione_document(doc_id: str, doc_data: dict) -> dict | None:
     }
 
 
-def import_mapped_closure(company: Company, mapped: dict, *, dry_run: bool = False) -> str:
+def import_mapped_closure(
+    company: Company,
+    mapped: dict,
+    *,
+    dry_run: bool = False,
+    update_existing: bool = False,
+) -> str:
     """
     Importa una chiusura. Ritorna: created | skipped | dry_run
     """
     firebase_key = mapped['submitted_by']
-    if CashClosure.objects.filter(company=company, submitted_by=firebase_key).exists():
+    existing = CashClosure.objects.filter(company=company, submitted_by=firebase_key).first()
+    if existing and not update_existing:
         return 'skipped'
 
     if dry_run:
-        return 'dry_run'
+        return 'dry_run_updated' if existing else 'dry_run'
 
     known_depts = list(Department.objects.filter(company=company).values_list('name', flat=True))
     summary = mapped['summary']
 
-    closure = CashClosure.objects.create(
-        company=company,
-        date=mapped['date'],
-        operator=mapped['operator'],
-        submitted_by=firebase_key,
-        contanti=summary['contanti'],
-        pag_pos=summary['pag_pos'],
-        cassa_auto=summary['cassa_auto'],
-        reso_cont=summary['reso_cont'],
-        reso_auto=summary['reso_auto'],
-        distrib=summary['distrib'],
-        totale_generale=summary['totale_generale'],
-        totale_cassetto=summary['totale_cassetto'],
-        differenza=summary['differenza'],
-    )
+    if existing:
+        closure = existing
+        closure.date = mapped['date']
+        closure.operator = mapped['operator']
+        closure.contanti = summary['contanti']
+        closure.pag_pos = summary['pag_pos']
+        closure.cassa_auto = summary['cassa_auto']
+        closure.reso_cont = summary['reso_cont']
+        closure.reso_auto = summary['reso_auto']
+        closure.distrib = summary['distrib']
+        closure.totale_generale = summary['totale_generale']
+        closure.totale_cassetto = summary['totale_cassetto']
+        closure.differenza = summary['differenza']
+        closure.save()
+        closure.items.all().delete()
+    else:
+        closure = CashClosure.objects.create(
+            company=company,
+            date=mapped['date'],
+            operator=mapped['operator'],
+            submitted_by=firebase_key,
+            contanti=summary['contanti'],
+            pag_pos=summary['pag_pos'],
+            cassa_auto=summary['cassa_auto'],
+            reso_cont=summary['reso_cont'],
+            reso_auto=summary['reso_auto'],
+            distrib=summary['distrib'],
+            totale_generale=summary['totale_generale'],
+            totale_cassetto=summary['totale_cassetto'],
+            differenza=summary['differenza'],
+        )
 
     for item in mapped['items']:
         dept_name = item['descrizione'].strip().upper()
@@ -204,4 +230,4 @@ def import_mapped_closure(company: Company, mapped: dict, *, dry_run: bool = Fal
             balance=item['balance'],
         )
 
-    return 'created'
+    return 'updated' if existing else 'created'

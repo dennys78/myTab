@@ -1194,6 +1194,62 @@ def api_purge_images(request):
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
 
+@require_admin
+def api_purge_company_data(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito.'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    try:
+        data = json.loads(request.body or '{}')
+        confirm_name = str(data.get('confirm_company_name', '')).strip()
+        if confirm_name.lower() != (company.denominazione or '').strip().lower():
+            return JsonResponse({
+                'status': 'error',
+                'error': f'Conferma non valida. Inserisci esattamente "{company.denominazione}".',
+            }, status=400)
+
+        closure_images = CashClosureImage.objects.filter(closure__company=company)
+        draft_images = AcquisitionDraftImage.objects.filter(draft__company=company)
+        deleted_closure_images = _delete_image_objects(closure_images)
+        deleted_draft_images = _delete_image_objects(draft_images)
+
+        stats = {
+            'closures_deleted': CashClosure.objects.filter(company=company).count(),
+            'drafts_deleted': AcquisitionDraft.objects.filter(company=company).count(),
+            'departments_deleted': Department.objects.filter(company=company).count(),
+            'versamenti_deleted': Versamento.objects.filter(company=company).count(),
+            'movimenti_deleted': MovimentoCassa.objects.filter(company=company).count(),
+            'fondo_movimenti_deleted': FondoCassaMovimento.objects.filter(company=company).count(),
+            'bank_transactions_deleted': BankTransaction.objects.filter(company=company).count(),
+            'settings_deleted': AppSetting.objects.filter(company=company).count(),
+            'closure_images_deleted': deleted_closure_images,
+            'draft_images_deleted': deleted_draft_images,
+        }
+
+        with transaction.atomic():
+            CashClosure.objects.filter(company=company).delete()
+            AcquisitionDraft.objects.filter(company=company).delete()
+            Department.objects.filter(company=company).delete()
+            Versamento.objects.filter(company=company).delete()
+            MovimentoCassa.objects.filter(company=company).delete()
+            FondoCassaMovimento.objects.filter(company=company).delete()
+            BankTransaction.objects.filter(company=company).delete()
+            AppSetting.objects.filter(company=company).delete()
+
+        return JsonResponse({
+            'status': 'success',
+            'data': {
+                'company_id': company.id,
+                'company_name': company.denominazione,
+                **stats,
+            },
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
+
+
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
 
 AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.

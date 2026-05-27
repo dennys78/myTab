@@ -30,6 +30,8 @@ export default function Impostazioni() {
   const [imagePurgeMonth, setImagePurgeMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [purgingImages, setPurgingImages] = useState(false);
   const [imagePurgeResult, setImagePurgeResult] = useState(null);
+  const [purgingCompanyData, setPurgingCompanyData] = useState(false);
+  const [companyPurgeResult, setCompanyPurgeResult] = useState(null);
 
   const [denominazione, setDenominazione] = useState('');
   const [indirizzo, setIndirizzo] = useState('');
@@ -66,6 +68,7 @@ export default function Impostazioni() {
   };
 
   const formEditable = companyMode === 'new' || companyMode === 'edit';
+  const activeCompanyName = companies.find(c => c.id === activeCompanyId)?.denominazione || 'Azienda attiva';
 
   useEffect(() => {
     apiFetch('/api/settings/')
@@ -327,6 +330,36 @@ export default function Impostazioni() {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setPurgingImages(false));
+  };
+
+  const handlePurgeCompanyData = () => {
+    if (!activeCompanyId) {
+      setError('Nessuna azienda attiva selezionata.');
+      return;
+    }
+    const message = `Confermi l'eliminazione di tutti i dati dell'azienda "${activeCompanyName}"?\n\nQuesta azione è irreversibile.`;
+    if (!window.confirm(message)) return;
+
+    setPurgingCompanyData(true);
+    setCompanyPurgeResult(null);
+    setError(null);
+
+    apiFetch('/api/settings/company/purge/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm_company_name: activeCompanyName }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setCompanyPurgeResult(d.data);
+          setTimeout(() => setCompanyPurgeResult(null), 10000);
+        } else {
+          setError(d.error || 'Errore durante eliminazione dati azienda.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setPurgingCompanyData(false));
   };
 
   const inputStyle = {
@@ -708,6 +741,35 @@ export default function Impostazioni() {
         >
           {purgingImages ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
           Elimina immagini
+        </button>
+      </div>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Trash2 size={20} color="var(--danger)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Elimina Dati Azienda Attiva</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.9rem' }}>
+          Questa azione elimina chiusure, reparti, bozze, versamenti, movimenti e impostazioni dell&apos;azienda attiva.
+        </p>
+        <p style={{ color: 'var(--danger)', fontSize: '0.82rem', marginTop: 0, marginBottom: '1rem', fontWeight: 600 }}>
+          Azienda coinvolta: {activeCompanyName}
+        </p>
+
+        {companyPurgeResult && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} />
+            Dati eliminati per "{companyPurgeResult.company_name}".
+          </div>
+        )}
+
+        <button
+          onClick={handlePurgeCompanyData}
+          disabled={purgingCompanyData || !activeCompanyId}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+        >
+          {purgingCompanyData ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+          Elimina tutti i dati azienda attiva
         </button>
       </div>
 
