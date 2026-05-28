@@ -24,13 +24,14 @@ Regole:
 - uscite = totale "Premi pagati nel giorno" (o Premi pagati / totale premi pagati)
 - Numero float positivo; se non leggibile usa 0.00"""
 
-SISAL_PROMPT = """Questa immagine è un report Sisal "Movimento contanti" o riepilogo PDV Sisal.
+SISAL_PROMPT = """Questa immagine è un report Sisal "Movimento contanti" BORDERÒ o riepilogo PDV Sisal.
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = "Totale vendite" (vendite contanti)
-- uscite = "Pagamenti"
+- entrate = riga "Totale vendite" / "Vendite" nel riquadro TOTALE (es. 77,00)
+- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -5,21 → 5.21)
+- Ignora il netto finale; usa solo vendite e pagamenti.
 - Numeri float positivi; se non leggibile usa 0.00"""
 
 REPORT_PROMPTS = {
@@ -39,13 +40,25 @@ REPORT_PROMPTS = {
     'sisal': SISAL_PROMPT,
 }
 
+CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
+Restituisci SOLO JSON: {"type": "main_closure"|"lottomatica"|"gratta"|"sisal"|"other"}
 
-def split_acquisition_images(images: list) -> tuple[list, dict[str, dict]]:
-    """
-    Con 4+ immagini: le ultime 3 sono Lottomatica, Gratta, Sisal (in ordine).
-    Le precedenti sono il riepilogo cassa POS.
-  Con 3 immagini: [0]=cassa, [1]=Lottomatica, [2]=Gratta.
-    """
+- main_closure: tabella "Riepilogo Chiusure di Cassa" con reparti (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, ecc.)
+- lottomatica: Contabile Giornaliero / Prospetto con "Entrate Gioco" e "Uscite Gioco"
+- gratta: "Premi pagati nel giorno" / prospetto Gratta e Vinci
+- sisal: BORDERÒ "Movimento contanti" con Totale vendite e Pagamenti (Sisal / ricariche)
+- other: anteprima generica non classificabile"""
+
+VALID_IMAGE_TYPES = frozenset({'main_closure', 'lottomatica', 'gratta', 'sisal', 'other'})
+
+
+def normalize_image_type(raw: str) -> str:
+    value = str(raw or '').strip().lower()
+    return value if value in VALID_IMAGE_TYPES else 'other'
+
+
+def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, dict]]:
+    """Fallback se la classificazione IA non è disponibile."""
     n = len(images)
     if n >= 4:
         main = images[:-3]
@@ -54,6 +67,34 @@ def split_acquisition_images(images: list) -> tuple[list, dict[str, dict]]:
     if n == 3:
         return images[:1], {'lottomatica': images[1], 'gratta': images[2]}
     return images, {}
+
+
+def split_acquisition_images(images: list, image_types: list[str] | None = None) -> tuple[list, dict[str, dict]]:
+    """
+    Separa riepilogo cassa e report giochi.
+    Con image_types (da classificazione IA) non dipende dall'ordine di upload.
+    """
+    if not image_types or len(image_types) != len(images):
+        return split_acquisition_images_by_position(images)
+
+    main: list = []
+    slots: dict[str, dict] = {}
+
+    for image, img_type in zip(images, image_types):
+        img_type = normalize_image_type(img_type)
+        if img_type == 'main_closure':
+            main.append(image)
+        elif img_type in REPORT_SLOT_ORDER and img_type not in slots:
+            slots[img_type] = image
+
+    if not main:
+        slot_images = set(slots.values())
+        main = [img for img in images if img not in slot_images]
+
+    if not main and images:
+        main = [images[0]]
+
+    return main, slots
 
 
 def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict]) -> list[dict]:

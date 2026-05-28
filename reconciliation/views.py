@@ -1340,8 +1340,10 @@ Regole:
 - Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
   verranno dal report premi separato.
 - Unisci le righe reparto visibili senza duplicarle.
-- Includi in "items" OGNI riga della tabella reparti che abbia una descrizione e almeno un importo numerico
-  in Entrate, Uscite o Saldo Cassa.
+- Includi in "items" TUTTE le righe della tabella reparti con descrizione e importi (anche solo entrate o solo uscite).
+  Non omettere nessun reparto: Tabacchi, Caffè, Pasticceria, Bibite, Rosticceria, Pastigliaggi, Cartine,
+  Valori bollati, Sigarette elettroniche, Gratta e Vinci, Pag fornitori, Altre uscite, Lottomatica, Mooney, Sisal, ecc.
+- Includi anche la sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI" (Lottomatica, Mooney, Sisal).
 - NON usare la colonna "Reparto" come filtro: il codice reparto può mancare. Righe come
   "VECCHIA GESTIONE GESTORI DI GIOCHI E SERVIZI" e "SISAL" vanno incluse se hanno importi.
 - Includi anche righe con uscite e saldo negativo, ad esempio "ALTRE USCITE".
@@ -1397,10 +1399,16 @@ def _parse_ai_closure_payload(
     seen: dict = {}
     for item in items:
         name = item['descrizione']
+        if not name or name == 'REPARTO SCONOSCIUTO':
+            continue
         if name not in seen:
             seen[name] = item
-        elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
-            seen[name] = item
+        else:
+            prev = seen[name]
+            prev_score = prev['entrate'] + prev['uscite']
+            new_score = item['entrate'] + item['uscite']
+            if new_score > prev_score:
+                seen[name] = item
     items = list(seen.values())
 
     if report_overlays:
@@ -1460,7 +1468,7 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
         try:
             response = client.chat.completions.create(
                 model='meta-llama/llama-4-scout-17b-16e-instruct',
-                max_tokens=2048,
+                max_tokens=4096,
                 response_format={'type': 'json_object'},
                 messages=[{'role': 'user', 'content': content}],
             )
@@ -1552,11 +1560,26 @@ def _extract_report_overlays(report_slots, company, provider):
     return overlays
 
 
+def _classify_acquisition_image(image, company, provider):
+    from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
+
+    try:
+        parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT)
+        return normalize_image_type(parsed.get('type'))
+    except Exception:
+        return 'other'
+
+
 def _extract_closure_with_reports(images, company, provider):
     from .ai_acquisition import split_acquisition_images
 
-    main_images, report_slots = split_acquisition_images(images)
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
+
+    image_types = []
+    if len(images) >= 3:
+        image_types = [_classify_acquisition_image(img, company, provider) for img in images]
+
+    main_images, report_slots = split_acquisition_images(images, image_types or None)
 
     if main_images:
         parsed = _extract_ai_json(main_images, company, provider, MAIN_CLOSURE_AI_PROMPT)
@@ -1566,6 +1589,7 @@ def _extract_closure_with_reports(images, company, provider):
         parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
 
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
+    parsed['image_types'] = image_types
     return parsed, operator_label, overlays
 
 

@@ -444,7 +444,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
         Carica fino a {MAX_ACQUISITION_FILES} immagini nell&apos;ordine indicato sotto.
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
-        Foto 1–2: riepilogo cassa · Foto 3: Lottomatica · Foto 4: Gratta e Vinci · Foto 5: Sisal
+        Includi il riepilogo chiusura cassa (tutti i reparti) più i report Lottomatica, Gratta e Vinci, Sisal.
+        L&apos;ordine delle foto viene riconosciuto automaticamente.
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
         Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>
@@ -564,13 +565,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <div style={{ marginBottom: '1.5rem' }}>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
             {files.length}/{MAX_ACQUISITION_FILES} {files.length === 1 ? 'foto selezionata' : 'foto selezionate'}
-            {files.length >= 3 && (
-              <span style={{ display: 'block', marginTop: '0.35rem', fontSize: '0.75rem' }}>
-                {files.length >= 3 && 'Foto 3 = Lottomatica · '}
-                {files.length >= 4 && 'Foto 4 = Gratta · '}
-                {files.length >= 5 && 'Foto 5 = Sisal'}
-              </span>
-            )}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {files.map((file, i) => (
