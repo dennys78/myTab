@@ -59,6 +59,7 @@ def split_acquisition_images(images: list) -> tuple[list, dict[str, dict]]:
 def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict]) -> list[dict]:
     """I report esterni (foto 3–5) sovrascrivono i reparti gioco."""
     by_name = {item['descrizione']: item for item in items}
+    gratta_dept = REPORT_DEPARTMENTS['gratta']
 
     for key, amounts in overlays.items():
         if not amounts:
@@ -66,6 +67,22 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
         dept = REPORT_DEPARTMENTS.get(key)
         if not dept:
             continue
+
+        # Gratta e Vinci: entrate dal riepilogo cassa (foto 1), uscite dal report premi (foto 4)
+        if key == 'gratta':
+            existing = by_name.get(gratta_dept, {})
+            entrate = float(parse_amount(existing.get('entrate', 0)))
+            uscite = float(parse_amount(amounts.get('uscite', 0)))
+            if entrate == 0 and uscite == 0:
+                continue
+            by_name[gratta_dept] = {
+                'descrizione': gratta_dept,
+                'entrate': entrate,
+                'uscite': uscite,
+                'saldo': round(entrate - uscite, 2),
+            }
+            continue
+
         entrate = float(parse_amount(amounts.get('entrate', 0)))
         uscite = float(parse_amount(amounts.get('uscite', 0)))
         if entrate == 0 and uscite == 0:
@@ -87,7 +104,8 @@ def normalize_report_overlay(key: str, parsed: dict) -> dict | None:
         uscite = parse_amount(parsed.get('uscite', 0))
         if uscite == 0:
             return None
-        return {'entrate': 0, 'uscite': float(uscite)}
+        # Solo uscite dal report; le entrate restano dal riepilogo cassa (foto 1)
+        return {'uscite': float(uscite)}
     entrate = parse_amount(parsed.get('entrate', 0))
     uscite = parse_amount(parsed.get('uscite', 0))
     if entrate == 0 and uscite == 0:

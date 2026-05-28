@@ -1336,8 +1336,9 @@ Regole:
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
-- Per LOTTOMATICA, SISAL e GRATTA E VINCI usa i valori del riepilogo solo se sono righe dettagliate;
-  se compaiono solo come totali di servizio, metti 0.00 (verranno corretti dai report dedicati).
+- Per LOTTOMATICA e SISAL: se compaiono solo come totali di servizio, metti 0.00 (verranno dai report dedicati).
+- Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
+  verranno dal report premi separato.
 - Unisci le righe reparto visibili senza duplicarle.
 - Includi in "items" OGNI riga della tabella reparti che abbia una descrizione e almeno un importo numerico
   in Entrate, Uscite o Saldo Cassa.
