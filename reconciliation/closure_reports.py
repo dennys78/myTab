@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 
@@ -18,12 +18,23 @@ REPORT_DEPARTMENTS = {
 }
 
 
-def _money(value, default=Decimal('0.00')) -> Decimal:
+def parse_amount(value, default: Decimal | None = None) -> Decimal:
+    """Accetta 378.00 e 378,00 (formato italiano)."""
+    if default is None:
+        default = Decimal('0.00')
     if value in (None, ''):
         return default
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value).replace(',', '.')).quantize(Decimal('0.01'))
+        except (InvalidOperation, ValueError):
+            return default
+    s = str(value).strip().replace(' ', '').replace(',', '.')
+    if not s:
+        return default
     try:
-        return Decimal(str(value)).quantize(Decimal('0.01'))
-    except Exception:
+        return Decimal(s).quantize(Decimal('0.01'))
+    except (InvalidOperation, ValueError):
         return default
 
 
@@ -96,8 +107,8 @@ def apply_overlays_for_date(
         closure = get_or_create_closure(company, closure_date, operator=operator)
         for key, amounts in overlays.items():
             dept = _dept_name(key)
-            entrate = _money(amounts.get('entrate', 0))
-            uscite = _money(amounts.get('uscite', 0))
+            entrate = parse_amount(amounts.get('entrate', 0))
+            uscite = parse_amount(amounts.get('uscite', 0))
             if entrate == 0 and uscite == 0:
                 continue
             apply_department_overlay(closure, dept, entrate, uscite)

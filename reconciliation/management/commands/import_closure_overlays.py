@@ -1,12 +1,22 @@
 import json
 
-from datetime import datetime
-
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.dateparse import parse_date
 
-from reconciliation.closure_reports import apply_overlays_for_date
+from reconciliation.closure_reports import apply_overlays_for_date, parse_amount
 from reconciliation.models import Company
+
+
+# (nome opzione CLI, reparto, campo)
+OVERLAY_ARGS = (
+    ('lottomatica_entrate', 'lottomatica', 'entrate'),
+    ('lottomatica_uscite', 'lottomatica', 'uscite'),
+    ('gratta_uscite', 'gratta', 'uscite'),
+    ('sisal_entrate', 'sisal', 'entrate'),
+    ('sisal_uscite', 'sisal', 'uscite'),
+    ('mooney_entrate', 'mooney', 'entrate'),
+    ('mooney_uscite', 'mooney', 'uscite'),
+)
 
 
 class Command(BaseCommand):
@@ -58,34 +68,32 @@ class Command(BaseCommand):
                 block = data.get(key)
                 if isinstance(block, dict):
                     overlays[key] = {
-                        'entrate': block.get('entrate', 0),
-                        'uscite': block.get('uscite', 0),
+                        'entrate': parse_amount(block.get('entrate', 0)),
+                        'uscite': parse_amount(block.get('uscite', 0)),
                     }
 
-        for arg, key in (
-            ('lottomatica-entrate', 'lottomatica'),
-            ('lottomatica-uscite', 'lottomatica'),
-            ('gratta-uscite', 'gratta'),
-            ('sisal-entrate', 'sisal'),
-            ('sisal-uscite', 'sisal'),
-            ('mooney-entrate', 'mooney'),
-            ('mooney-uscite', 'mooney'),
-        ):
-            val = options.get(arg, '').strip()
-            if val:
-                dept_key, field = key.split('-', 1)[0]
-                if dept_key not in overlays:
-                    overlays[dept_key] = {'entrate': 0, 'uscite': 0}
-                if field == 'entrate':
-                    overlays[dept_key]['entrate'] = val
-                else:
-                    overlays[dept_key]['uscite'] = val
+        for opt_key, dept_key, field in OVERLAY_ARGS:
+            val = (options.get(opt_key) or '').strip()
+            if not val:
+                continue
+            if dept_key not in overlays:
+                overlays[dept_key] = {'entrate': parse_amount(0), 'uscite': parse_amount(0)}
+            overlays[dept_key][field] = parse_amount(val)
 
         if not overlays:
-            self.stdout.write(self.style.WARNING('Nessun overlay da applicare.'))
+            self.stdout.write(self.style.WARNING(
+                'Nessun valore passato. Esempio: --lottomatica-entrate 378.00 '
+                '(virgola o punto decimale).'
+            ))
             return
 
-        closure = apply_overlays_for_date(company, closure_date, overlays)
+        self.stdout.write(f'Azienda: {company.denominazione} | Data: {closure_date}')
+        for key, block in overlays.items():
+            self.stdout.write(
+                f'  {key.upper()}: entrate={block["entrate"]} uscite={block["uscite"]}'
+            )
+
+        apply_overlays_for_date(company, closure_date, overlays)
         self.stdout.write(self.style.SUCCESS(
             f'Overlay applicati su chiusura {closure_date} ({company.denominazione}). '
             f'Reparti aggiornati: {", ".join(sorted(overlays.keys()))}'
