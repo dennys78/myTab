@@ -903,6 +903,43 @@ def _get_ai_provider(company):
     return provider if provider in {'groq', 'gemini'} else 'groq'
 
 
+def _get_user_ai_provider(user):
+    try:
+        provider = user.profile.ai_acquisition_provider.strip().lower()
+    except UserProfile.DoesNotExist:
+        provider = ''
+    return provider if provider in {'groq', 'gemini'} else ''
+
+
+def _set_user_ai_provider(user, provider):
+    provider = str(provider or '').strip().lower()
+    if provider not in {'groq', 'gemini'}:
+        raise ValueError('Provider IA non valido.')
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.ai_acquisition_provider = provider
+    profile.save(update_fields=['ai_acquisition_provider'])
+
+
+def _resolve_ai_provider(user, company, override=None):
+    chosen = str(override or '').strip().lower()
+    if chosen in {'groq', 'gemini'}:
+        return chosen
+    user_pref = _get_user_ai_provider(user)
+    if user_pref:
+        return user_pref
+    return _get_ai_provider(company)
+
+
+def _ai_provider_options(user, company):
+    return {
+        'provider': _resolve_ai_provider(user, company),
+        'user_provider': _get_user_ai_provider(user) or None,
+        'company_default': _get_ai_provider(company),
+        'groq_configured': bool(_get_groq_key(company)),
+        'gemini_configured': bool(_get_gemini_key(company)),
+    }
+
+
 def _set_ai_provider(company, provider):
     provider = str(provider or '').strip().lower()
     if provider not in {'groq', 'gemini'}:
@@ -1427,11 +1464,38 @@ def _extract_ai_with_gemini(images, company):
     return _json_from_ai_text(raw_json)
 
 
-def _extract_ai_payload(images, company):
-    provider = _get_ai_provider(company)
-    if provider == 'gemini':
+def _extract_ai_payload(images, company, provider=None):
+    chosen = provider or _get_ai_provider(company)
+    if chosen == 'gemini':
         return _extract_ai_with_gemini(images, company), 'IA Gemini'
     return _extract_ai_with_groq(images, company), 'IA Groq'
+
+
+@require_auth
+def api_acquisition_ai_provider(request):
+    """Preferenza modello IA per l'operatore (persiste tra le acquisizioni)."""
+    company, err = bind_company(request)
+    if err:
+        return err
+
+    if request.method == 'GET':
+        return JsonResponse({'status': 'success', 'data': _ai_provider_options(request.user, company)})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or '{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+        provider = str(data.get('ai_acquisition_provider', '')).strip().lower()
+        if provider not in {'groq', 'gemini'}:
+            return JsonResponse({'status': 'error', 'error': 'Modello non valido'}, status=400)
+        try:
+            _set_user_ai_provider(request.user, provider)
+        except ValueError as exc:
+            return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
+        return JsonResponse({'status': 'success', 'data': _ai_provider_options(request.user, company)})
+
+    return JsonResponse({'status': 'error', 'error': 'Metodo non consentito'}, status=405)
 
 
 @require_auth
@@ -1460,7 +1524,16 @@ def api_extract_closure_ai(request):
             b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             images.append({'mime': mime, 'b64': b64})
 
-        parsed, operator = _extract_ai_payload(images, company)
+        posted_provider = request.POST.get('ai_provider', '').strip().lower()
+        if posted_provider in {'groq', 'gemini'}:
+            _set_user_ai_provider(request.user, posted_provider)
+        provider = _resolve_ai_provider(request.user, company, posted_provider or None)
+        if provider == 'gemini' and not _get_gemini_key(company):
+            return JsonResponse({'error': 'Chiave API Gemini non configurata. Chiedi all\'amministratore.'}, status=400)
+        if provider == 'groq' and not _get_groq_key(company):
+            return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
+
+        parsed, operator = _extract_ai_payload(images, company, provider=provider)
         data = _parse_ai_closure_payload(parsed, company, operator=operator)
         data['draft_id'] = draft.id
         data['images'] = [{
@@ -1469,7 +1542,7 @@ def api_extract_closure_ai(request):
         } for image in draft.images.all()]
         return JsonResponse({
             'status': 'success',
-            'provider': _get_ai_provider(company),
+            'provider': provider,
             'data': data,
         })
 
@@ -1529,11 +1602,24 @@ def api_acquisition_draft_extract(request, draft_id):
         if not images:
             return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
 
-        parsed, operator = _extract_ai_payload(images, company)
+        try:
+            body = json.loads(request.body or '{}') if request.body else {}
+        except json.JSONDecodeError:
+            body = {}
+        posted_provider = str(body.get('ai_provider', '')).strip().lower()
+        if posted_provider in {'groq', 'gemini'}:
+            _set_user_ai_provider(request.user, posted_provider)
+        provider = _resolve_ai_provider(request.user, company, posted_provider or None)
+        if provider == 'gemini' and not _get_gemini_key(company):
+            return JsonResponse({'status': 'error', 'error': 'Chiave API Gemini non configurata.'}, status=400)
+        if provider == 'groq' and not _get_groq_key(company):
+            return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
+
+        parsed, operator = _extract_ai_payload(images, company, provider=provider)
 
         return JsonResponse({
             'status': 'success',
-            'provider': _get_ai_provider(company),
+            'provider': provider,
             'data': {
                 **_parse_ai_closure_payload(
                     parsed,

@@ -521,7 +521,7 @@ export default function Impostazioni() {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Scegli il motore usato da "Acquisisci con IA". Groq usa Llama 4 Scout Vision; Gemini usa gemini-2.0-flash, economico e adatto alle immagini.
+          Modello predefinito per l&apos;azienda (per operatori che non hanno ancora scelto un modello in Acquisisci con IA). Groq usa Llama 4 Scout Vision; Gemini usa gemini-2.0-flash.
         </p>
 
         {saved && (
@@ -532,7 +532,7 @@ export default function Impostazioni() {
 
         <div style={{ marginBottom: '1rem' }}>
           <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Modello acquisizione attivo
+            Modello predefinito azienda
           </label>
           <select value={aiProvider} onChange={e => setAiProvider(e.target.value)} style={{ ...inputStyle, width: '260px', fontFamily: 'inherit' }}>
             <option value="groq">Groq - Llama 4 Scout Vision</option>

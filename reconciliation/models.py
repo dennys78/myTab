@@ -34,6 +34,12 @@ class CompanyMembership(models.Model):
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     sidebar_menu = models.JSONField(default=list, blank=True, verbose_name='Menu laterale')
+    ai_acquisition_provider = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        verbose_name='Modello IA acquisizione (preferenza operatore)',
+    )
 
     class Meta:
         verbose_name = 'Profilo utente'

@@ -59,6 +59,7 @@ urlpatterns = [
 
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),
+    path('api/acquisition/ai-provider/',            views.api_acquisition_ai_provider),
     path('api/settings/',                           views.api_get_settings),
     path('api/settings/save/',                      views.api_save_settings),
     path('api/settings/telegram/reset-sessions/',   views.api_reset_telegram_sessions),
