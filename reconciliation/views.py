@@ -1308,8 +1308,8 @@ def api_purge_company_data(request):
 
 # ── ACQUISIZIONE IA (Groq — Llama 4 Scout Vision) ────────────────────────────
 
-AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
-Analizza queste immagini di un riepilogo di chiusura cassa ed estrai i dati.
+MAIN_CLOSURE_AI_PROMPT = """Sei un assistente per la gestione di una tabaccheria italiana.
+Analizza queste immagini del RIEPILOGO CHIUSURA CASSA (POS) ed estrai i dati.
 
 Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessun testo aggiuntivo) con questa struttura esatta:
 
@@ -1335,8 +1335,10 @@ Regole:
 - "entrate" e "uscite" devono essere sempre importi positivi o 0. Non mettere mai il segno meno nella colonna "uscite".
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
-- Puoi ricevere fino a 5 immagini (riepilogo cassa, report Lottomatica, Gratta e Vinci, Sisal, Mooney, ecc.):
-  unisci tutte le righe reparto visibili senza duplicarle.
+- Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
+- Per LOTTOMATICA, SISAL e GRATTA E VINCI usa i valori del riepilogo solo se sono righe dettagliate;
+  se compaiono solo come totali di servizio, metti 0.00 (verranno corretti dai report dedicati).
+- Unisci le righe reparto visibili senza duplicarle.
 - Includi in "items" OGNI riga della tabella reparti che abbia una descrizione e almeno un importo numerico
   in Entrate, Uscite o Saldo Cassa.
 - NON usare la colonna "Reparto" come filtro: il codice reparto può mancare. Righe come
@@ -1346,6 +1348,9 @@ Regole:
 - Mappa le colonne del summary: contanti→Contanti, pag_pos→Pag.Pos, cassa_auto→Cassa Auto,
   reso_cont→Reso Cont., reso_auto→Reso Auto, distrib→Distrib., totale→TOTALE.
 - Se un valore non è leggibile usa 0.00."""
+
+# Retrocompatibilità
+AI_PROMPT = MAIN_CLOSURE_AI_PROMPT
 
 
 def _json_from_ai_text(raw_json):
@@ -1361,7 +1366,14 @@ def _json_from_ai_text(raw_json):
     return json.loads(raw_json)
 
 
-def _parse_ai_closure_payload(parsed, company, totale_scassettato=None, draft_id=None, operator='IA'):
+def _parse_ai_closure_payload(
+    parsed,
+    company,
+    totale_scassettato=None,
+    draft_id=None,
+    operator='IA',
+    report_overlays=None,
+):
     items = []
     for item in parsed.get('items', []):
         entrate = _money(item.get('entrate'))
@@ -1389,6 +1401,10 @@ def _parse_ai_closure_payload(parsed, company, totale_scassettato=None, draft_id
         elif seen[name]['entrate'] == 0 and seen[name]['uscite'] == 0:
             seen[name] = item
     items = list(seen.values())
+
+    if report_overlays:
+        from .ai_acquisition import merge_report_overlays_into_items
+        items = merge_report_overlays_into_items(items, report_overlays)
 
     summary = parsed.get('summary', {})
     totale = _money(summary.get('totale'))
@@ -1421,20 +1437,21 @@ def _parse_ai_closure_payload(parsed, company, totale_scassettato=None, draft_id
     return data
 
 
-def _extract_ai_with_groq(images, company=None):
+def _extract_ai_with_groq(images, company=None, prompt=None):
     api_key = _get_groq_key()
     if not api_key:
         raise ValueError('Chiave API Groq non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     from openai import OpenAI
 
+    text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
     content = []
     for image in images:
         content.append({
             'type': 'image_url',
             'image_url': {'url': f"data:{image['mime']};base64,{image['b64']}"},
         })
-    content.append({'type': 'text', 'text': AI_PROMPT})
+    content.append({'type': 'text', 'text': text_prompt})
 
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
@@ -1456,11 +1473,12 @@ def _extract_ai_with_groq(images, company=None):
     raise last_exc
 
 
-def _extract_ai_with_gemini(images, company=None):
+def _extract_ai_with_gemini(images, company=None, prompt=None):
     api_key = _get_gemini_key()
     if not api_key:
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
+    text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
     parts = []
     for image in images:
         parts.append({
@@ -1469,7 +1487,7 @@ def _extract_ai_with_gemini(images, company=None):
                 'data': image['b64'],
             },
         })
-    parts.append({'text': AI_PROMPT})
+    parts.append({'text': text_prompt})
 
     payload = {
         'contents': [{'role': 'user', 'parts': parts}],
@@ -1508,11 +1526,58 @@ def _extract_ai_with_gemini(images, company=None):
     raise last_exc
 
 
-def _extract_ai_payload(images, company, provider=None):
+def _extract_ai_json(images, company, provider, prompt):
     chosen = provider or 'groq'
     if chosen == 'gemini':
-        return _extract_ai_with_gemini(images, company), 'IA Gemini'
-    return _extract_ai_with_groq(images, company), 'IA Groq'
+        return _extract_ai_with_gemini(images, company, prompt=prompt)
+    return _extract_ai_with_groq(images, company, prompt=prompt)
+
+
+def _extract_report_overlays(report_slots, company, provider):
+    from .ai_acquisition import REPORT_PROMPTS, normalize_report_overlay
+
+    overlays = {}
+    for key, image in report_slots.items():
+        prompt = REPORT_PROMPTS.get(key)
+        if not prompt or not image:
+            continue
+        try:
+            parsed = _extract_ai_json([image], company, provider, prompt)
+            normalized = normalize_report_overlay(key, parsed)
+            if normalized:
+                overlays[key] = normalized
+        except Exception:
+            continue
+    return overlays
+
+
+def _extract_closure_with_reports(images, company, provider):
+    from .ai_acquisition import split_acquisition_images
+
+    main_images, report_slots = split_acquisition_images(images)
+    operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
+
+    if main_images:
+        parsed = _extract_ai_json(main_images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+    elif report_slots:
+        parsed = {'date': '', 'summary': {}, 'items': []}
+    else:
+        parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+
+    overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
+    return parsed, operator_label, overlays
+
+
+def _extract_ai_payload(images, company, provider=None):
+    parsed, operator, _overlays = _extract_closure_with_reports(images, company, provider)
+    return parsed, operator
+
+
+def _sort_upload_file_keys(file_keys):
+    def order_key(name):
+        match = re.search(r'(\d+)', name or '')
+        return int(match.group(1)) if match else 0
+    return sorted(file_keys, key=order_key)
 
 
 @require_auth
@@ -1557,7 +1622,7 @@ def api_extract_closure_ai(request):
     try:
         images = []
         draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
-        for file_key in request.FILES:
+        for file_key in _sort_upload_file_keys(request.FILES.keys()):
             f = request.FILES[file_key]
             mime = f.content_type or 'image/jpeg'
             file_bytes = f.read()
@@ -1574,8 +1639,12 @@ def api_extract_closure_ai(request):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
 
-        parsed, operator = _extract_ai_payload(images, company, provider=provider)
-        data = _parse_ai_closure_payload(parsed, company, operator=operator)
+        parsed, operator, report_overlays = _extract_closure_with_reports(images, company, provider)
+        data = _parse_ai_closure_payload(
+            parsed, company, operator=operator, report_overlays=report_overlays,
+        )
+        if report_overlays:
+            data['report_overlays_applied'] = list(report_overlays.keys())
         data['draft_id'] = draft.id
         data['images'] = [{
             'id': image.id,
@@ -1633,7 +1702,7 @@ def api_acquisition_draft_extract(request, draft_id):
 
     try:
         images = []
-        for draft_image in draft.images.all():
+        for draft_image in draft.images.order_by('id'):
             try:
                 with draft_image.image.open('rb') as img:
                     b64 = base64.standard_b64encode(img.read()).decode('utf-8')
@@ -1652,19 +1721,24 @@ def api_acquisition_draft_extract(request, draft_id):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
 
-        parsed, operator = _extract_ai_payload(images, company, provider=provider)
+        parsed, operator, report_overlays = _extract_closure_with_reports(images, company, provider)
+
+        payload = _parse_ai_closure_payload(
+            parsed,
+            company,
+            totale_scassettato=draft.totale_scassettato,
+            draft_id=draft.id,
+            operator=operator,
+            report_overlays=report_overlays,
+        )
+        if report_overlays:
+            payload['report_overlays_applied'] = list(report_overlays.keys())
 
         return JsonResponse({
             'status': 'success',
             'provider': provider,
             'data': {
-                **_parse_ai_closure_payload(
-                    parsed,
-                    company,
-                    totale_scassettato=draft.totale_scassettato,
-                    draft_id=draft.id,
-                    operator=operator,
-                ),
+                **payload,
                 'images': [{
                     'id': image.id,
                     'url': f'/api/acquisition-draft-images/{image.id}/view/',
