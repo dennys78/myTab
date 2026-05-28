@@ -143,38 +143,46 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const calcItemSaldo = (item) => Math.round(((Number(item.entrate) || 0) - Math.abs(Number(item.uscite) || 0)) * 100) / 100;
 
   const handleItemChange = (id, field, value) => {
-    setPreviewData(prev => ({
-      ...prev,
-      items: prev.items.map(item => {
+    setPreviewData(prev => {
+      const items = prev.items.map(item => {
         if (item.id !== id) return item;
         const upd = { ...item, [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0) };
         if (field === 'uscite') upd.uscite = Math.abs(upd.uscite);
         if (field === 'entrate' || field === 'uscite') upd.saldo = calcItemSaldo(upd);
         return upd;
-      }),
-    }));
+      });
+      return {
+        ...prev,
+        items,
+        summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) },
+      };
+    });
   };
 
-  const calcDifferenza = (s) => {
-    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
-    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
-  };
+  // Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
+  const calcSaldoReparti = (items) =>
+    Math.round((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0) * 100) / 100;
+  const calcDifferenza = (s, items) =>
+    Math.round(((s.totale || 0) - calcSaldoReparti(items)) * 100) / 100;
 
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
     setPreviewData(prev => {
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      updated.differenza = calcDifferenza(updated);
+      updated.differenza = calcDifferenza(updated, prev.items);
       return { ...prev, summary: updated };
     });
   };
 
-  const addItem = () => setPreviewData(prev => ({
-    ...prev,
-    items: [...prev.items, { id: `n${Date.now()}`, descrizione: '', entrate: 0, uscite: 0, saldo: 0 }],
-  }));
+  const addItem = () => setPreviewData(prev => {
+    const items = [...prev.items, { id: `n${Date.now()}`, descrizione: '', entrate: 0, uscite: 0, saldo: 0 }];
+    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) } };
+  });
 
-  const removeItem = (id) => setPreviewData(prev => ({ ...prev, items: prev.items.filter(i => i.id !== id) }));
+  const removeItem = (id) => setPreviewData(prev => {
+    const items = prev.items.filter(i => i.id !== id);
+    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) } };
+  });
 
   const handleAcquire = () => {
     const cleanItems = previewData.items.map(item => {
@@ -182,6 +190,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
       delete cleanItem.id;
       return cleanItem;
     });
+    const summaryPayload = {
+      ...previewData.summary,
+      totale_cassetto: 0,
+      differenza: calcDifferenza(previewData.summary, previewData.items),
+    };
     setSaving(true);
     setError(null);
     apiFetch('/api/closures/insert/', {
@@ -190,7 +203,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       body: JSON.stringify({
         date: previewData.date,
         operator: user?.username || 'IA Groq',
-        summary: previewData.summary,
+        summary: summaryPayload,
         items: cleanItems,
         draft_id: previewData.draft_id,
       }),
@@ -225,9 +238,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const regularSummaryEntries = Object.entries(previewData.summary).filter(
       ([key]) => !['totale_cassetto', 'differenza'].includes(key)
     );
-    const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
-    const differenza = previewData.summary.differenza ?? 0;
     const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + calcItemSaldo(item), 0);
+    const totaleCassa = previewData.summary.totale ?? 0;
+    const differenza = Math.round((totaleCassa - saldoTotaleReparti) * 100) / 100;
     const previewImages = previewData.images?.length
       ? previewData.images
       : previews.map((url, index) => ({ id: `local_${index}`, url }));
@@ -288,16 +301,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
           }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Totale scassettato
+                Somma algebrica saldi reparti
               </label>
-              <input
-                type="number"
-                name="totale_cassetto"
-                value={totaleScassettato === 0 ? '' : totaleScassettato}
-                onChange={handleSummaryChange}
-                placeholder="0.00"
-                style={{ ...inp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
-              />
+              <div style={{
+                padding: '0.62rem 0.75rem',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '1.1rem',
+                border: '1px solid var(--border-strong)',
+                background: 'var(--bg-dark)',
+                color: 'var(--text-main)',
+              }}>
+                {saldoTotaleReparti.toFixed(2)}
+              </div>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -316,6 +332,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
               </div>
             </div>
           </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.6rem 0 0' }}>
+            Differenza = Totale riportato da cassa − Somma algebrica saldi reparti
+          </p>
         </div>
 
         {previewImages.length > 0 && (

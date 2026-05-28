@@ -1421,9 +1421,13 @@ def _parse_ai_closure_payload(
     distrib = _money(summary.get('distrib'))
     reso_auto = _money(summary.get('reso_auto'))
     reso_cont = _money(summary.get('reso_cont'))
-    cassetto = _money(totale_scassettato) if totale_scassettato is not None else MONEY_ZERO
-    atteso = totale - pag_pos - distrib - reso_auto - reso_cont
-    differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
+
+    # Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
+    saldo_reparti = sum(
+        (_money(it.get('entrate')) - _money(it.get('uscite')) for it in items),
+        MONEY_ZERO,
+    )
+    differenza = _money(totale - saldo_reparti)
 
     data = {
         'date': parsed.get('date', ''),
@@ -1436,7 +1440,7 @@ def _parse_ai_closure_payload(
             'reso_auto': float(reso_auto),
             'distrib': float(distrib),
             'totale': float(totale),
-            'totale_cassetto': float(cassetto),
+            'totale_cassetto': 0.0,
             'differenza': float(differenza),
         },
         'items': items,
