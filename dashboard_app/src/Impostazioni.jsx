@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2, Plus, Pencil } from 'lucide-react';
 import { apiFetch } from './api';
+import { useAuth } from './auth';
 
 export default function Impostazioni() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'amministratore';
   const [groqKey, setGroqKey] = useState('');
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -21,6 +24,8 @@ export default function Impostazioni() {
   const [telegramBotRestarted, setTelegramBotRestarted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savingUserModel, setSavingUserModel] = useState(false);
+  const [userModelSaved, setUserModelSaved] = useState(false);
   const [error, setError] = useState(null);
   const [saldoCassa, setSaldoCassa] = useState('');
   const [fondoCassa, setFondoCassa] = useState('');
@@ -71,13 +76,23 @@ export default function Impostazioni() {
   const activeCompanyName = companies.find(c => c.id === activeCompanyId)?.denominazione || 'Azienda attiva';
 
   useEffect(() => {
+    apiFetch('/api/acquisition/ai-provider/')
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setAiProvider(d.data.provider || 'groq');
+          setKeyConfigured(d.data.groq_configured);
+          setGeminiConfigured(d.data.gemini_configured);
+        }
+      })
+      .catch(() => {});
+
+    if (!isAdmin) return;
+
     apiFetch('/api/settings/')
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
-          setKeyConfigured(d.data.groq_key_configured);
-          setGeminiConfigured(d.data.gemini_key_configured);
-          setAiProvider(d.data.ai_acquisition_provider || 'groq');
           setTelegramConfigured(d.data.telegram_token_configured);
           setSaldoCassa(Number(d.data.saldo_cassa ?? 0).toFixed(2));
           setFondoCassa(Number(d.data.fondo_cassa ?? 0).toFixed(2));
@@ -85,7 +100,7 @@ export default function Impostazioni() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [isAdmin]);
 
   const handleSelectCompany = (company) => {
     setSelectedCompanyId(company.id);
@@ -176,14 +191,45 @@ export default function Impostazioni() {
       .catch(() => setError('Errore di rete.'));
   };
 
-  const handleSave = () => {
+  const handleSaveUserModel = () => {
+    setSavingUserModel(true);
+    setError(null);
+    setUserModelSaved(false);
+
+    apiFetch('/api/acquisition/ai-provider/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ai_acquisition_provider: aiProvider }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setAiProvider(d.data.provider || aiProvider);
+          setKeyConfigured(d.data.groq_configured);
+          setGeminiConfigured(d.data.gemini_configured);
+          setUserModelSaved(true);
+          setTimeout(() => setUserModelSaved(false), 3000);
+        } else {
+          setError(d.error || 'Errore durante il salvataggio del modello.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingUserModel(false));
+  };
+
+  const handleSaveApiKeys = () => {
+    if (!isAdmin) return;
     setSaving(true);
     setError(null);
     setSaved(false);
 
-    const payload = { ai_acquisition_provider: aiProvider };
+    const payload = {};
     if (groqKey.trim()) payload.groq_api_key = groqKey.trim();
     if (geminiKey.trim()) payload.gemini_api_key = geminiKey.trim();
+    if (!Object.keys(payload).length) {
+      setError('Inserisci almeno una chiave API da salvare.');
+      return;
+    }
 
     apiFetch('/api/settings/save/', {
       method: 'POST',
@@ -377,7 +423,9 @@ export default function Impostazioni() {
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-        Configura i dati aziendali e le integrazioni esterne utilizzate dall'applicazione.
+        {isAdmin
+          ? "Configura i dati aziendali, le chiavi API e il modello IA per le tue acquisizioni."
+          : "Scegli il modello IA usato quando acquisisci le chiusure con le foto."}
       </p>
 
       {error && (
@@ -386,6 +434,51 @@ export default function Impostazioni() {
         </div>
       )}
 
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Zap size={20} color="var(--accent)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Il tuo modello IA</h2>
+          <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>
+            {aiProvider === 'gemini' ? 'Gemini' : 'Groq'}
+          </span>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Ogni utente ha la propria preferenza, salvata sul profilo. Le chiavi API sono condivise tra tutte le aziende.
+        </p>
+
+        {userModelSaved && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Modello salvato per il tuo account.
+          </div>
+        )}
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+            Modello per Acquisisci con IA
+          </label>
+          <select
+            value={aiProvider}
+            onChange={e => setAiProvider(e.target.value)}
+            style={{ ...inputStyle, width: '100%', maxWidth: '320px', fontFamily: 'inherit' }}
+          >
+            <option value="groq" disabled={!keyConfigured}>Groq - Llama 4 Scout Vision{!keyConfigured ? ' (non configurato)' : ''}</option>
+            <option value="gemini" disabled={!geminiConfigured}>Gemini - gemini-2.0-flash{!geminiConfigured ? ' (non configurato)' : ''}</option>
+          </select>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveUserModel}
+          disabled={savingUserModel}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+        >
+          {savingUserModel ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+          Salva il mio modello
+        </button>
+      </div>
+
+      {isAdmin && (
+      <>
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Building2 size={20} color="var(--accent)" />
@@ -515,30 +608,17 @@ export default function Impostazioni() {
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Zap size={20} color="var(--accent)" />
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Acquisizione IA</h2>
-          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>
-            Provider attivo: {aiProvider === 'gemini' ? 'Gemini' : 'Groq'}
-          </span>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Chiavi API IA (tutte le aziende)</h2>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Modello predefinito per l&apos;azienda (per operatori che non hanno ancora scelto un modello in Acquisisci con IA). Groq usa Llama 4 Scout Vision; Gemini usa gemini-2.0-flash.
+          Le chiavi Groq e Gemini valgono per Parrot caffè e per ogni altra azienda registrata.
         </p>
 
         {saved && (
           <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-            <CheckCircle size={15} /> Impostazioni IA salvate correttamente.
+            <CheckCircle size={15} /> Chiavi API salvate per tutte le aziende.
           </div>
         )}
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Modello predefinito azienda
-          </label>
-          <select value={aiProvider} onChange={e => setAiProvider(e.target.value)} style={{ ...inputStyle, width: '260px', fontFamily: 'inherit' }}>
-            <option value="groq">Groq - Llama 4 Scout Vision</option>
-            <option value="gemini">Gemini - gemini-2.0-flash</option>
-          </select>
-        </div>
 
         <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
           {keyConfigured ? 'Chiave API Groq configurata - inseriscine una nuova per sostituirla' : 'Chiave API Groq'}
@@ -548,7 +628,7 @@ export default function Impostazioni() {
             type={showKey ? 'text' : 'password'}
             value={groqKey}
             onChange={e => setGroqKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            onKeyDown={e => e.key === 'Enter' && handleSaveApiKeys()}
             placeholder="gsk_..."
             style={inputStyle}
           />
@@ -574,7 +654,7 @@ export default function Impostazioni() {
             type={showGeminiKey ? 'text' : 'password'}
             value={geminiKey}
             onChange={e => setGeminiKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            onKeyDown={e => e.key === 'Enter' && handleSaveApiKeys()}
             placeholder="AIza..."
             style={inputStyle}
           />
@@ -594,12 +674,12 @@ export default function Impostazioni() {
 
         <div>
           <button
-            onClick={handleSave}
+            onClick={handleSaveApiKeys}
             disabled={saving}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
           >
             {saving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-            Salva impostazioni IA
+            Salva chiavi API
           </button>
         </div>
 
@@ -824,6 +904,8 @@ export default function Impostazioni() {
           Salva Rettifiche
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

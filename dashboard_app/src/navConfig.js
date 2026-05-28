@@ -19,7 +19,7 @@ export const SIDEBAR_ITEMS = [
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
   { id: 'reparti', label: 'Reparti', icon: Tag, adminOnly: true },
   { id: 'utenti', label: 'Utenti', icon: Users, adminOnly: true },
-  { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: true, pushToBottom: true },
+  { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: false, pushToBottom: true },
 ];
 
 export function getDefaultSidebarMenu(role) {

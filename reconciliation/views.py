@@ -5,6 +5,8 @@ import base64
 import io
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -875,24 +877,37 @@ def api_delete_department(request, dept_id):
 
 # ── IMPOSTAZIONI ─────────────────────────────────────────────────────────────
 
-def _get_groq_key(company):
-    try:
-        key = AppSetting.objects.get(company=company, key='groq_api_key').value.strip()
-        if key:
-            return key
-    except AppSetting.DoesNotExist:
-        pass
-    return os.environ.get('GROQ_API_KEY', '').strip()
+GLOBAL_API_SETTING_KEYS = ('groq_api_key', 'gemini_api_key')
 
 
-def _get_gemini_key(company):
-    try:
-        key = AppSetting.objects.get(company=company, key='gemini_api_key').value.strip()
-        if key:
-            return key
-    except AppSetting.DoesNotExist:
-        pass
-    return os.environ.get('GEMINI_API_KEY', '').strip()
+def _get_global_setting(key):
+    env_map = {
+        'groq_api_key': 'GROQ_API_KEY',
+        'gemini_api_key': 'GEMINI_API_KEY',
+    }
+    env_val = os.environ.get(env_map.get(key, ''), '').strip()
+    if env_val:
+        return env_val
+    row = AppSetting.objects.filter(key=key).exclude(value='').order_by('id').first()
+    return row.value.strip() if row else ''
+
+
+def _set_global_setting(key, value):
+    value = (value or '').strip()
+    for company in Company.objects.all():
+        AppSetting.objects.update_or_create(
+            company=company,
+            key=key,
+            defaults={'value': value},
+        )
+
+
+def _get_groq_key(company=None):
+    return _get_global_setting('groq_api_key')
+
+
+def _get_gemini_key(company=None):
+    return _get_global_setting('gemini_api_key')
 
 
 def _get_ai_provider(company):
@@ -920,24 +935,38 @@ def _set_user_ai_provider(user, provider):
     profile.save(update_fields=['ai_acquisition_provider'])
 
 
-def _resolve_ai_provider(user, company, override=None):
+def _resolve_ai_provider(user, company=None, override=None):
     chosen = str(override or '').strip().lower()
     if chosen in {'groq', 'gemini'}:
         return chosen
     user_pref = _get_user_ai_provider(user)
     if user_pref:
         return user_pref
-    return _get_ai_provider(company)
+    return 'groq'
 
 
-def _ai_provider_options(user, company):
+def _ai_provider_options(user, company=None):
     return {
         'provider': _resolve_ai_provider(user, company),
         'user_provider': _get_user_ai_provider(user) or None,
-        'company_default': _get_ai_provider(company),
-        'groq_configured': bool(_get_groq_key(company)),
-        'gemini_configured': bool(_get_gemini_key(company)),
+        'groq_configured': bool(_get_groq_key()),
+        'gemini_configured': bool(_get_gemini_key()),
     }
+
+
+def _is_rate_limit_error(exc):
+    if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
+        return True
+    msg = str(exc).lower()
+    return '429' in msg or 'too many requests' in msg or 'rate limit' in msg
+
+
+def _rate_limit_message(provider):
+    alt = 'Gemini' if provider == 'groq' else 'Groq'
+    return (
+        f'Limite richieste del servizio {provider.upper()} (errore 429). '
+        f'Attendi uno o due minuti oppure vai in Impostazioni e seleziona {alt} come tuo modello IA.'
+    )
 
 
 def _set_ai_provider(company, provider):
@@ -1025,7 +1054,7 @@ def api_get_settings(request):
             'data': {
                 'groq_key_configured': bool(_get_groq_key(company)),
                 'gemini_key_configured': bool(_get_gemini_key(company)),
-                'ai_acquisition_provider': _get_ai_provider(company),
+                'ai_acquisition_provider': _resolve_ai_provider(request.user, company),
                 'telegram_token_configured': bool(_get_telegram_token(company)),
                 'saldo_cassa': float(_get_saldo_cassa(company)),
                 'fondo_cassa': float(_get_fondo_cassa(company)),
@@ -1049,22 +1078,11 @@ def api_save_settings(request):
             data = json.loads(request.body)
             key = data.get('groq_api_key', '').strip()
             if key:
-                AppSetting.objects.update_or_create(
-                    company=company,
-                    key='groq_api_key',
-                    defaults={'value': key},
-                )
+                _set_global_setting('groq_api_key', key)
 
             gemini_key = data.get('gemini_api_key', '').strip()
             if gemini_key:
-                AppSetting.objects.update_or_create(
-                    company=company,
-                    key='gemini_api_key',
-                    defaults={'value': gemini_key},
-                )
-
-            if 'ai_acquisition_provider' in data:
-                _set_ai_provider(company, data.get('ai_acquisition_provider'))
+                _set_global_setting('gemini_api_key', gemini_key)
 
             telegram_token = data.get('telegram_bot_token', '').strip()
             if telegram_token:
@@ -1403,10 +1421,10 @@ def _parse_ai_closure_payload(parsed, company, totale_scassettato=None, draft_id
     return data
 
 
-def _extract_ai_with_groq(images, company):
-    api_key = _get_groq_key(company)
+def _extract_ai_with_groq(images, company=None):
+    api_key = _get_groq_key()
     if not api_key:
-        raise ValueError('Chiave API Groq non configurata. Vai su Impostazioni per inserirla.')
+        raise ValueError('Chiave API Groq non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     from openai import OpenAI
 
@@ -1419,19 +1437,29 @@ def _extract_ai_with_groq(images, company):
     content.append({'type': 'text', 'text': AI_PROMPT})
 
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
-    response = client.chat.completions.create(
-        model='meta-llama/llama-4-scout-17b-16e-instruct',
-        max_tokens=2048,
-        response_format={'type': 'json_object'},
-        messages=[{'role': 'user', 'content': content}],
-    )
-    return _json_from_ai_text(response.choices[0].message.content)
+    last_exc = None
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model='meta-llama/llama-4-scout-17b-16e-instruct',
+                max_tokens=2048,
+                response_format={'type': 'json_object'},
+                messages=[{'role': 'user', 'content': content}],
+            )
+            return _json_from_ai_text(response.choices[0].message.content)
+        except Exception as exc:
+            last_exc = exc
+            if _is_rate_limit_error(exc) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
+    raise last_exc
 
 
-def _extract_ai_with_gemini(images, company):
-    api_key = _get_gemini_key(company)
+def _extract_ai_with_gemini(images, company=None):
+    api_key = _get_gemini_key()
     if not api_key:
-        raise ValueError('Chiave API Gemini non configurata. Vai su Impostazioni per inserirla.')
+        raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     parts = []
     for image in images:
@@ -1452,20 +1480,36 @@ def _extract_ai_with_gemini(images, company):
     }
     data = json.dumps(payload).encode('utf-8')
     url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={urllib.parse.quote(api_key)}'
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=120) as response:
-        result = json.loads(response.read().decode('utf-8'))
-    raw_json = result['candidates'][0]['content']['parts'][0]['text']
-    return _json_from_ai_text(raw_json)
+    last_exc = None
+    for attempt in range(3):
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as response:
+                result = json.loads(response.read().decode('utf-8'))
+            raw_json = result['candidates'][0]['content']['parts'][0]['text']
+            return _json_from_ai_text(raw_json)
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code == 429 and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
+        except Exception as exc:
+            last_exc = exc
+            if _is_rate_limit_error(exc) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
+    raise last_exc
 
 
 def _extract_ai_payload(images, company, provider=None):
-    chosen = provider or _get_ai_provider(company)
+    chosen = provider or 'groq'
     if chosen == 'gemini':
         return _extract_ai_with_gemini(images, company), 'IA Gemini'
     return _extract_ai_with_groq(images, company), 'IA Groq'
@@ -1524,13 +1568,10 @@ def api_extract_closure_ai(request):
             b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             images.append({'mime': mime, 'b64': b64})
 
-        posted_provider = request.POST.get('ai_provider', '').strip().lower()
-        if posted_provider in {'groq', 'gemini'}:
-            _set_user_ai_provider(request.user, posted_provider)
-        provider = _resolve_ai_provider(request.user, company, posted_provider or None)
-        if provider == 'gemini' and not _get_gemini_key(company):
+        provider = _resolve_ai_provider(request.user, company)
+        if provider == 'gemini' and not _get_gemini_key():
             return JsonResponse({'error': 'Chiave API Gemini non configurata. Chiedi all\'amministratore.'}, status=400)
-        if provider == 'groq' and not _get_groq_key(company):
+        if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
 
         parsed, operator = _extract_ai_payload(images, company, provider=provider)
@@ -1549,6 +1590,9 @@ def api_extract_closure_ai(request):
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Risposta IA non in formato JSON valido: {e}'}, status=500)
     except Exception as e:
+        provider = _resolve_ai_provider(request.user, company) if request.user.is_authenticated else 'groq'
+        if _is_rate_limit_error(e):
+            return JsonResponse({'error': _rate_limit_message(provider)}, status=429)
         return JsonResponse({'error': f'Errore acquisizione IA: {e}'}, status=500)
 
 
@@ -1602,17 +1646,10 @@ def api_acquisition_draft_extract(request, draft_id):
         if not images:
             return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
 
-        try:
-            body = json.loads(request.body or '{}') if request.body else {}
-        except json.JSONDecodeError:
-            body = {}
-        posted_provider = str(body.get('ai_provider', '')).strip().lower()
-        if posted_provider in {'groq', 'gemini'}:
-            _set_user_ai_provider(request.user, posted_provider)
-        provider = _resolve_ai_provider(request.user, company, posted_provider or None)
-        if provider == 'gemini' and not _get_gemini_key(company):
+        provider = _resolve_ai_provider(request.user, company)
+        if provider == 'gemini' and not _get_gemini_key():
             return JsonResponse({'status': 'error', 'error': 'Chiave API Gemini non configurata.'}, status=400)
-        if provider == 'groq' and not _get_groq_key(company):
+        if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
 
         parsed, operator = _extract_ai_payload(images, company, provider=provider)
@@ -1635,6 +1672,9 @@ def api_acquisition_draft_extract(request, draft_id):
             },
         })
     except Exception as e:
+        provider = _resolve_ai_provider(request.user, company)
+        if _is_rate_limit_error(e):
+            return JsonResponse({'status': 'error', 'error': _rate_limit_message(provider)}, status=429)
         return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)
 
 

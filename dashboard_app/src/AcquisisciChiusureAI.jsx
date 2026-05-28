@@ -15,11 +15,6 @@ function useIsMobile() {
   return mobile;
 }
 
-const AI_MODEL_OPTIONS = [
-  { id: 'groq', label: 'Groq — Llama 4 Scout Vision' },
-  { id: 'gemini', label: 'Gemini — gemini-2.0-flash' },
-];
-
 export default function AcquisisciChiusureAI({ onBack }) {
   const isMobile = useIsMobile();
   const { user } = useAuth();
@@ -34,8 +29,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [loadingDraftId, setLoadingDraftId] = useState(null);
   const [deletingDraftId, setDeletingDraftId] = useState(null);
   const [aiProvider, setAiProvider] = useState('groq');
-  const [aiOptions, setAiOptions] = useState(null);
-  const [savingProvider, setSavingProvider] = useState(false);
 
   const fetchDrafts = () => {
     apiFetch('/api/acquisition-drafts/')
@@ -51,40 +44,14 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
-          setAiOptions(d.data);
           setAiProvider(d.data.provider || 'groq');
         }
       })
       .catch(() => {});
   }, [user?.active_company_id]);
 
-  const isProviderConfigured = (provider) => {
-    if (!aiOptions) return true;
-    return provider === 'gemini' ? aiOptions.gemini_configured : aiOptions.groq_configured;
-  };
-
-  const handleProviderChange = (value) => {
-    setAiProvider(value);
-    setSavingProvider(true);
-    apiFetch('/api/acquisition/ai-provider/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ai_acquisition_provider: value }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'success') {
-          setAiOptions(d.data);
-          setAiProvider(d.data.provider || value);
-        } else {
-          setError(d.error || 'Impossibile salvare il modello.');
-        }
-      })
-      .catch(() => setError('Errore di rete nel salvataggio del modello.'))
-      .finally(() => setSavingProvider(false));
-  };
-
   const analyzeButtonLabel = aiProvider === 'gemini' ? 'Analizza con Gemini IA' : 'Analizza con Groq IA';
+  const providerLabel = aiProvider === 'gemini' ? 'Gemini' : 'Groq';
 
   // Rigenera thumbnail ogni volta che cambia la lista file
   useEffect(() => {
@@ -113,19 +80,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const handleExtract = () => {
     if (!filesRef.current.length) return;
-    if (!isProviderConfigured(aiProvider)) {
-      setError(
-        aiProvider === 'gemini'
-          ? 'Gemini non è configurato per questa azienda. Scegli Groq o chiedi all\'amministratore la chiave API.'
-          : 'Groq non è configurato per questa azienda. Scegli Gemini o chiedi all\'amministratore la chiave API.',
-      );
-      return;
-    }
     setLoading(true);
     setError(null);
     const fd = new FormData();
     filesRef.current.forEach((f, i) => fd.append(`file${i}`, f));
-    fd.append('ai_provider', aiProvider);
     apiFetch('/api/closures/extract-ai/', { method: 'POST', body: fd })
       .then(r => r.json())
       .then(d => {
@@ -147,11 +105,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const loadDraft = (draftId) => {
     setLoadingDraftId(draftId);
     setError(null);
-    apiFetch(`/api/acquisition-drafts/${draftId}/extract-ai/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ai_provider: aiProvider }),
-    })
+    apiFetch(`/api/acquisition-drafts/${draftId}/extract-ai/`, { method: 'POST' })
       .then(r => r.json())
       .then(d => {
         if (d.status === 'success') {
@@ -489,46 +443,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         Carica fino a {MAX_ACQUISITION_FILES} immagini (riepilogo cassa e report reparti) — l&apos;IA le analizza insieme.
       </p>
-      <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.25rem' }}>
-        Alta precisione anche con foto sfocate o storte
+      <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
+        Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>
+        {' '}— modificalo in <strong style={{ color: 'var(--text-main)' }}>Impostazioni</strong>
       </p>
-
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-        padding: '1rem 1.1rem',
-        marginBottom: '1.5rem',
-      }}>
-        <label htmlFor="ai-provider-select" style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-          Modello IA per questa acquisizione
-        </label>
-        <select
-          id="ai-provider-select"
-          value={aiProvider}
-          onChange={e => handleProviderChange(e.target.value)}
-          disabled={savingProvider || loading}
-          style={{
-            width: '100%',
-            maxWidth: '100%',
-            padding: '0.65rem 0.75rem',
-            borderRadius: '8px',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-main)',
-            fontSize: '0.95rem',
-          }}
-        >
-          {AI_MODEL_OPTIONS.map(opt => (
-            <option key={opt.id} value={opt.id} disabled={aiOptions && !isProviderConfigured(opt.id)}>
-              {opt.label}{aiOptions && !isProviderConfigured(opt.id) ? ' (non configurato)' : ''}
-            </option>
-          ))}
-        </select>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', margin: '0.6rem 0 0' }}>
-          {savingProvider ? 'Salvataggio preferenza…' : 'La scelta resta salvata per le prossime importazioni.'}
-        </p>
-      </div>
 
       {error && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.9rem 1rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
@@ -673,7 +591,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       )}
 
       {/* Pulsante analisi */}
-      <button onClick={handleExtract} disabled={!files.length || loading || !isProviderConfigured(aiProvider)}
+      <button onClick={handleExtract} disabled={!files.length || loading}
         style={{
           width: '100%', padding: '1rem',
           background: files.length ? 'var(--accent)' : 'var(--bg-card)',

@@ -7,7 +7,7 @@ SIDEBAR_ITEMS = [
     {'id': 'fondo-cassa', 'label': 'Fondo Cassa', 'admin_only': False},
     {'id': 'reparti', 'label': 'Reparti', 'admin_only': True},
     {'id': 'utenti', 'label': 'Utenti', 'admin_only': True},
-    {'id': 'impostazioni', 'label': 'Impostazioni', 'admin_only': True},
+    {'id': 'impostazioni', 'label': 'Impostazioni', 'admin_only': False},
 ]
 
 ALL_MENU_IDS = {item['id'] for item in SIDEBAR_ITEMS}
