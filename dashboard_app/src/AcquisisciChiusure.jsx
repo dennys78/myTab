@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Upload, FileImage, Calculator, Save, AlertCircle, Loader2, X, Plus } from 'lucide-react';
 import { apiFetch } from './api';
+import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
 
 export default function AcquisisciChiusure({ onBack }) {
   const [files, setFiles] = useState([]);
@@ -13,7 +14,7 @@ export default function AcquisisciChiusure({ onBack }) {
 
   const handleFileChange = (e) => {
     if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files).slice(0, 2);
+      const selectedFiles = Array.from(e.target.files).slice(0, MAX_ACQUISITION_FILES);
       setFiles(selectedFiles);
     }
   };
@@ -432,7 +433,7 @@ export default function AcquisisciChiusure({ onBack }) {
     <div style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center' }}>
       <h1>Acquisisci Chiusure</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
-        Carica fino a 2 immagini del riepilogo cassa per estrarre automaticamente i dati.
+        Carica fino a {MAX_ACQUISITION_FILES} immagini (riepilogo cassa e report reparti) per estrarre automaticamente i dati.
       </p>
 
       {error && (
@@ -457,7 +458,7 @@ export default function AcquisisciChiusure({ onBack }) {
       >
         <Upload size={48} color="var(--accent)" />
         <h3 style={{ margin: 0 }}>Seleziona Immagini</h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG (Max 2 file)</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG (Max {MAX_ACQUISITION_FILES} file)</p>
         
         <input 
           type="file" 
@@ -477,7 +478,7 @@ export default function AcquisisciChiusure({ onBack }) {
 
       {files.length > 0 && (
         <div style={{ textAlign: 'left', marginBottom: '2rem' }}>
-          <h4 style={{ marginBottom: '1rem' }}>File Selezionati ({files.length}/2):</h4>
+          <h4 style={{ marginBottom: '1rem' }}>File Selezionati ({files.length}/{MAX_ACQUISITION_FILES}):</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {files.map((file, index) => (
               <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>

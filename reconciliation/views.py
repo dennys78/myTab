@@ -1280,7 +1280,8 @@ Regole:
 - "entrate" e "uscite" devono essere sempre importi positivi o 0. Non mettere mai il segno meno nella colonna "uscite".
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
-- Le immagini possono essere parti diverse dello stesso foglio: unisci le righe visibili senza duplicarle.
+- Puoi ricevere fino a 5 immagini (riepilogo cassa, report Lottomatica, Gratta e Vinci, Sisal, Mooney, ecc.):
+  unisci tutte le righe reparto visibili senza duplicarle.
 - Includi in "items" OGNI riga della tabella reparti che abbia una descrizione e almeno un importo numerico
   in Entrate, Uscite o Saldo Cassa.
 - NON usare la colonna "Reparto" come filtro: il codice reparto può mancare. Righe come

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -46,9 +47,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const addFiles = (e) => {
     if (!e.target.files?.length) return;
-    const incoming = Array.from(e.target.files);
+    const remaining = MAX_ACQUISITION_FILES - filesRef.current.length;
+    if (remaining <= 0) return;
+    const incoming = Array.from(e.target.files).slice(0, remaining);
     // Usa ref per evitare qualsiasi problema di closure stale su iOS
-    const next = [...filesRef.current, ...incoming].slice(0, 2);
+    const next = [...filesRef.current, ...incoming].slice(0, MAX_ACQUISITION_FILES);
     filesRef.current = next;
     setFiles([...next]);
     e.target.value = '';          // permette di ri-selezionare lo stesso file
@@ -415,7 +418,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   }
 
   // ─── UPLOAD ─────────────────────────────────────────────────────────────────
-  const atLimit = files.length >= 2;
+  const atLimit = files.length >= MAX_ACQUISITION_FILES;
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
@@ -423,7 +426,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <Sparkles size={26} color="var(--accent)" /> Acquisisci con IA
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
-        Carica fino a 2 immagini — Groq (Llama 4 Scout) analizza la chiusura e restituisce i dati strutturati.
+        Carica fino a {MAX_ACQUISITION_FILES} immagini (riepilogo cassa e report reparti) — l&apos;IA le analizza insieme.
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '2rem' }}>
         Gratuito · Alta precisione anche con foto sfocate o storte
@@ -511,7 +514,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
           {atLimit && (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              Hai raggiunto il limite di 2 foto. Premi <strong style={{ color: 'white' }}>Analizza</strong> per procedere oppure rimuovi una foto per aggiungerne un'altra.
+              Hai raggiunto il limite di {MAX_ACQUISITION_FILES} foto. Premi <strong style={{ color: 'white' }}>Analizza</strong> per procedere oppure rimuovi una foto per aggiungerne un&apos;altra.
             </p>
           )}
         </div>
@@ -520,7 +523,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <div style={{ border: '2px dashed var(--border)', borderRadius: '12px', padding: '3rem 2rem', background: 'rgba(255,255,255,0.02)', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
           <Sparkles size={48} color="var(--accent)" />
           <h3 style={{ margin: 0 }}>Seleziona Immagini</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG — Max 2 file</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG — Max {MAX_ACQUISITION_FILES} file</p>
           <input type="file" id="ai-file-desktop" multiple accept="image/*" onChange={addFiles} style={{ display: 'none' }} />
           <label htmlFor="ai-file-desktop" style={{
             padding: '0.75rem 1.5rem',
@@ -532,7 +535,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             marginTop: '0.5rem',
             pointerEvents: atLimit ? 'none' : 'auto',
           }}>
-            {atLimit ? 'Limite 2 file raggiunto' : 'Sfoglia File'}
+            {atLimit ? `Limite ${MAX_ACQUISITION_FILES} file raggiunto` : 'Sfoglia File'}
           </label>
         </div>
       )}
@@ -541,7 +544,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       {files.length > 0 && (
         <div style={{ marginBottom: '1.5rem' }}>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-            {files.length}/2 {files.length === 1 ? 'foto selezionata' : 'foto selezionate'}
+            {files.length}/{MAX_ACQUISITION_FILES} {files.length === 1 ? 'foto selezionata' : 'foto selezionate'}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {files.map((file, i) => (
