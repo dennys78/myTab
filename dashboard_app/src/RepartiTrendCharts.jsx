@@ -4,6 +4,7 @@ import {
   CHART_SLOT_COLORS,
   averageSeriesValue,
   collectDepartmentsFromClosures,
+  countClosureDaysInPeriod,
   getDeptLabel,
   getFilteredClosureSeries,
   resolveChartDeptPair,
@@ -105,7 +106,7 @@ function MiniLineChart({ title, subtitle, color, series, periodLabel, average })
         className="reparti-chart-svg"
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
         role="img"
-        aria-label={`${title}: andamento saldo per giorno`}
+        aria-label={`${title}: andamento entrate per giorno`}
       >
         {yTicks.map((tick) => {
           const y = PAD.top + plotH - ((tick - minVal) / range) * plotH;
@@ -154,7 +155,7 @@ function DeptSelect({ id, label, value, options, excludeKey, onChange, disabled,
       id={id}
       label={label}
       footer={(
-        <span className="reparti-chart-dept-avg" title={`Media saldo giornaliero nel ${periodLabel}`}>
+        <span className="reparti-chart-dept-avg" title={`Media entrate giornaliere nel ${periodLabel}`}>
           Media ({periodLabel}): {average != null ? `€ ${average.toFixed(2)}` : '—'}
         </span>
       )}
@@ -242,8 +243,10 @@ export default function RepartiTrendCharts({ closures }) {
     [closures, period, deptKey2],
   );
 
-  const average1 = useMemo(() => averageSeriesValue(series1), [series1]);
-  const average2 = useMemo(() => averageSeriesValue(series2), [series2]);
+  const periodDayCount = useMemo(() => countClosureDaysInPeriod(closures, period), [closures, period]);
+
+  const average1 = useMemo(() => averageSeriesValue(series1, periodDayCount), [series1, periodDayCount]);
+  const average2 = useMemo(() => averageSeriesValue(series2, periodDayCount), [series2, periodDayCount]);
 
   const hasDepartments = departments.length > 0;
 
@@ -308,7 +311,7 @@ export default function RepartiTrendCharts({ closures }) {
         <div className="reparti-charts-grid">
           <MiniLineChart
             title={label1}
-            subtitle="Saldo cassa per giorno"
+            subtitle="Entrate per giorno"
             color={CHART_SLOT_COLORS[0]}
             series={series1}
             periodLabel={periodLabel}
@@ -316,7 +319,7 @@ export default function RepartiTrendCharts({ closures }) {
           />
           <MiniLineChart
             title={label2}
-            subtitle="Saldo cassa per giorno"
+            subtitle="Entrate per giorno"
             color={CHART_SLOT_COLORS[1]}
             series={series2}
             periodLabel={periodLabel}

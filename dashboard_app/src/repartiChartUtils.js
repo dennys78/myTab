@@ -19,9 +19,9 @@ export function matchesDept(name, deptKey) {
 }
 
 function itemValue(item) {
-  const saldo = Number(item.saldo);
-  if (saldo !== 0) return saldo;
-  return Number(item.entrate) || 0;
+  const entrate = Number(item.entrate);
+  if (entrate !== 0) return entrate;
+  return Number(item.saldo) || 0;
 }
 
 export function buildRepartoSeries(closures, matcher) {
@@ -43,6 +43,12 @@ export function buildRepartoSeries(closures, matcher) {
 export function getFilteredClosureSeries(closures, period, deptKey) {
   const filtered = filterByPeriod(closures, period);
   return buildRepartoSeries(filtered, (name) => matchesDept(name, deptKey));
+}
+
+/** Numero di giorni con almeno una chiusura nel periodo selezionato. */
+export function countClosureDaysInPeriod(closures, period) {
+  const filtered = filterByPeriod(closures, period);
+  return new Set(filtered.map((c) => c.date)).size;
 }
 
 /** Reparti presenti nelle chiusure, ordinati per etichetta */
@@ -108,9 +114,15 @@ export function getDeptLabel(departments, key) {
 
 export const CHART_SLOT_COLORS = ['#d97706', '#8b5cf6'];
 
-/** Media dei saldi giornalieri nel periodo (solo giorni con movimento). */
-export function averageSeriesValue(series) {
+/**
+ * Media delle entrate giornaliere del reparto nel periodo.
+ * Il denominatore è il numero di giorni con chiusura nel periodo selezionato
+ * (i giorni senza quel reparto contano 0), così la media segue il range della
+ * tendina "Periodo". In assenza di tale conteggio usa i giorni con movimento.
+ */
+export function averageSeriesValue(series, dayCount = null) {
   if (!series?.length) return null;
   const sum = series.reduce((acc, p) => acc + p.value, 0);
-  return Math.round((sum / series.length) * 100) / 100;
+  const denom = Number.isFinite(dayCount) && dayCount > 0 ? dayCount : series.length;
+  return Math.round((sum / denom) * 100) / 100;
 }
