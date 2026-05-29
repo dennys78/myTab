@@ -1376,6 +1376,7 @@ def _parse_ai_closure_payload(
     draft_id=None,
     operator='IA',
     report_overlays=None,
+    with_reports=False,
 ):
     items = []
     for item in parsed.get('items', []):
@@ -1422,16 +1423,24 @@ def _parse_ai_closure_payload(
     reso_auto = _money(summary.get('reso_auto'))
     reso_cont = _money(summary.get('reso_cont'))
 
-    # Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
-    saldo_reparti = sum(
-        (_money(it.get('entrate')) - _money(it.get('uscite')) for it in items),
-        MONEY_ZERO,
-    )
-    differenza = _money(totale - saldo_reparti)
+    if with_reports:
+        # 5 foto (con report giochi): Differenza = Totale cassa - Somma algebrica saldi reparti
+        saldo_reparti = sum(
+            (_money(it.get('entrate')) - _money(it.get('uscite')) for it in items),
+            MONEY_ZERO,
+        )
+        cassetto = MONEY_ZERO
+        differenza = _money(totale - saldo_reparti)
+    else:
+        # Solo foglio incasso: vecchio calcolo basato sul totale scassettato
+        cassetto = _money(totale_scassettato) if totale_scassettato is not None else MONEY_ZERO
+        atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+        differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
 
     data = {
         'date': parsed.get('date', ''),
         'operator': operator,
+        'with_reports': bool(with_reports),
         'summary': {
             'contanti': _money_number(summary.get('contanti')),
             'pag_pos': float(pag_pos),
@@ -1440,7 +1449,7 @@ def _parse_ai_closure_payload(
             'reso_auto': float(reso_auto),
             'distrib': float(distrib),
             'totale': float(totale),
-            'totale_cassetto': 0.0,
+            'totale_cassetto': float(cassetto),
             'differenza': float(differenza),
         },
         'items': items,
@@ -1594,11 +1603,12 @@ def _extract_closure_with_reports(images, company, provider):
 
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
     parsed['image_types'] = image_types
-    return parsed, operator_label, overlays
+    has_reports = bool(report_slots)
+    return parsed, operator_label, overlays, has_reports
 
 
 def _extract_ai_payload(images, company, provider=None):
-    parsed, operator, _overlays = _extract_closure_with_reports(images, company, provider)
+    parsed, operator, _overlays, _has_reports = _extract_closure_with_reports(images, company, provider)
     return parsed, operator
 
 
@@ -1668,9 +1678,10 @@ def api_extract_closure_ai(request):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
 
-        parsed, operator, report_overlays = _extract_closure_with_reports(images, company, provider)
+        parsed, operator, report_overlays, has_reports = _extract_closure_with_reports(images, company, provider)
         data = _parse_ai_closure_payload(
             parsed, company, operator=operator, report_overlays=report_overlays,
+            with_reports=has_reports,
         )
         if report_overlays:
             data['report_overlays_applied'] = list(report_overlays.keys())
@@ -1750,7 +1761,7 @@ def api_acquisition_draft_extract(request, draft_id):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
 
-        parsed, operator, report_overlays = _extract_closure_with_reports(images, company, provider)
+        parsed, operator, report_overlays, has_reports = _extract_closure_with_reports(images, company, provider)
 
         payload = _parse_ai_closure_payload(
             parsed,
@@ -1759,6 +1770,7 @@ def api_acquisition_draft_extract(request, draft_id):
             draft_id=draft.id,
             operator=operator,
             report_overlays=report_overlays,
+            with_reports=has_reports,
         )
         if report_overlays:
             payload['report_overlays_applied'] = list(report_overlays.keys())

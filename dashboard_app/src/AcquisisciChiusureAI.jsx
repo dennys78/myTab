@@ -154,34 +154,44 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return {
         ...prev,
         items,
-        summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) },
+        summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) },
       };
     });
   };
 
-  // Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
   const calcSaldoReparti = (items) =>
     Math.round((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0) * 100) / 100;
-  const calcDifferenza = (s, items) =>
+
+  // Con i report giochi (5 foto): Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
+  const calcDifferenzaReparti = (s, items) =>
     Math.round(((s.totale || 0) - calcSaldoReparti(items)) * 100) / 100;
+
+  // Solo foglio incasso (2 foto): vecchio calcolo basato sul totale scassettato
+  const calcDifferenzaCassetto = (s) => {
+    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
+    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
+  };
+
+  const calcDifferenza = (s, items, withReports) =>
+    withReports ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
 
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
     setPreviewData(prev => {
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      updated.differenza = calcDifferenza(updated, prev.items);
+      updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports);
       return { ...prev, summary: updated };
     });
   };
 
   const addItem = () => setPreviewData(prev => {
     const items = [...prev.items, { id: `n${Date.now()}`, descrizione: '', entrate: 0, uscite: 0, saldo: 0 }];
-    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) } };
+    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) } };
   });
 
   const removeItem = (id) => setPreviewData(prev => {
     const items = prev.items.filter(i => i.id !== id);
-    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items) } };
+    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) } };
   });
 
   const handleAcquire = () => {
@@ -190,10 +200,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
       delete cleanItem.id;
       return cleanItem;
     });
+    const withReports = !!previewData.with_reports;
     const summaryPayload = {
       ...previewData.summary,
-      totale_cassetto: 0,
-      differenza: calcDifferenza(previewData.summary, previewData.items),
+      totale_cassetto: withReports ? 0 : (previewData.summary.totale_cassetto || 0),
+      differenza: calcDifferenza(previewData.summary, previewData.items, withReports),
     };
     setSaving(true);
     setError(null);
@@ -238,9 +249,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const regularSummaryEntries = Object.entries(previewData.summary).filter(
       ([key]) => !['totale_cassetto', 'differenza'].includes(key)
     );
+    const withReports = !!previewData.with_reports;
     const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + calcItemSaldo(item), 0);
-    const totaleCassa = previewData.summary.totale ?? 0;
-    const differenza = Math.round((totaleCassa - saldoTotaleReparti) * 100) / 100;
+    const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
+    const differenza = calcDifferenza(previewData.summary, previewData.items, withReports);
     const previewImages = previewData.images?.length
       ? previewData.images
       : previews.map((url, index) => ({ id: `local_${index}`, url }));
@@ -299,22 +311,38 @@ export default function AcquisisciChiusureAI({ onBack }) {
             borderRadius: '14px',
             background: 'rgba(79, 141, 247, 0.08)',
           }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Somma algebrica saldi reparti
-              </label>
-              <div style={{
-                padding: '0.62rem 0.75rem',
-                borderRadius: '10px',
-                fontWeight: 700,
-                fontSize: '1.1rem',
-                border: '1px solid var(--border-strong)',
-                background: 'var(--bg-dark)',
-                color: 'var(--text-main)',
-              }}>
-                {saldoTotaleReparti.toFixed(2)}
+            {withReports ? (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Somma algebrica saldi reparti
+                </label>
+                <div style={{
+                  padding: '0.62rem 0.75rem',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '1.1rem',
+                  border: '1px solid var(--border-strong)',
+                  background: 'var(--bg-dark)',
+                  color: 'var(--text-main)',
+                }}>
+                  {saldoTotaleReparti.toFixed(2)}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Totale scassettato
+                </label>
+                <input
+                  type="number"
+                  name="totale_cassetto"
+                  value={totaleScassettato === 0 ? '' : totaleScassettato}
+                  onChange={handleSummaryChange}
+                  placeholder="0.00"
+                  style={{ ...inp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
+                />
+              </div>
+            )}
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Differenza
@@ -333,7 +361,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
             </div>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.6rem 0 0' }}>
-            Differenza = Totale riportato da cassa − Somma algebrica saldi reparti
+            {withReports
+              ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
+              : 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Resi)'}
           </p>
         </div>
 
