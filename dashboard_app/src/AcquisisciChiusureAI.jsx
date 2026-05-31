@@ -3,7 +3,7 @@ import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } 
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
-import { markAcquisitionDraftsSeen, showLocalPushNotification, subscribeWebPush } from './webPush';
+import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
 import { buildClosureSavedNotificationPayload } from './closureNotifyUtils';
 
 function useIsMobile() {
@@ -49,7 +49,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   useEffect(() => {
     markAcquisitionDraftsSeen();
-    subscribeWebPush({ requestPermission: false }).catch(() => {});
+    ensurePushSubscription({ requestPermission: false }).catch(() => {});
   }, []);
 
   useEffect(() => () => {
@@ -255,7 +255,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     };
     setSaving(true);
     setError(null);
-    await subscribeWebPush({ requestPermission: true }).catch(() => {});
+    await ensurePushSubscription({ requestPermission: true }).catch(() => {});
 
     const notifyPayload = buildClosureSavedNotificationPayload({
       date: previewData.date,
@@ -282,19 +282,28 @@ export default function AcquisisciChiusureAI({ onBack }) {
           return;
         }
         if (d.status === 'success' || d.id) {
+          const devices = d.push_devices ?? 0;
+          const sent = d.push_sent ?? 0;
           let shown = false;
-          if ((d.push_sent || 0) === 0) {
+          if (sent === 0) {
             shown = await showLocalPushNotification(notifyPayload).catch(() => false);
           }
-          if (!shown && (d.push_sent || 0) === 0) {
+          if (!shown && sent === 0) {
             alert(
               'Chiusura registrata.\n\n'
-              + 'Per il riepilogo come notifica browser: consenti le notifiche '
-              + 'e apri myTab via HTTPS (es. https://www.mytab.uk). '
-              + 'Su http://serverapp…:8080 le push non sono supportate.'
+              + 'Notifica browser non inviata: apri myTab su ogni smartphone (con HTTPS), '
+              + 'accetta le notifiche e lascia l\'app aperta almeno una volta dopo il login.'
+            );
+          } else if (devices <= 1 && sent <= 1) {
+            alert(
+              'Chiusura registrata.\n\n'
+              + `Notifica inviata a ${sent} dispositivo. `
+              + 'Sugli altri smartphone apri myTab e accetta le notifiche '
+              + '(ogni telefono va registrato separatamente). '
+              + 'Riceverai anche il riepilogo su Telegram se il bot è attivo.'
             );
           } else {
-            alert('Chiusura cassa registrata correttamente in myTab.');
+            alert(`Chiusura registrata. Riepilogo inviato a ${sent} dispositivi.`);
           }
           fetchDrafts();
           onBack();

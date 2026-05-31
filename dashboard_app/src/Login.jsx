@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Cigarette, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import { ensurePushSubscription } from './webPush';
 import InstallPwa from './InstallPwa';
 
 export default function Login() {
@@ -24,8 +25,10 @@ export default function Login() {
     })
       .then(r => r.json())
       .then(d => {
-        if (d.status === 'success') login(d.data);
-        else setError(d.error || 'Credenziali non valide');
+        if (d.status === 'success') {
+          login(d.data);
+          ensurePushSubscription({ requestPermission: true }).catch(() => {});
+        } else setError(d.error || 'Credenziali non valide');
       })
       .catch(() => setError('Errore di rete'))
       .finally(() => setLoading(false));

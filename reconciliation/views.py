@@ -532,8 +532,11 @@ def api_insert_closure(request):
                     )
 
             push_sent = 0
+            push_devices = 0
             try:
                 from .draft_notifications import notify_closure_saved
+                from .models import PushSubscription
+                push_devices = PushSubscription.objects.filter(company=company).count()
                 push_sent = notify_closure_saved(company, closure, items, summary, operator)
             except Exception:
                 import logging
@@ -544,6 +547,7 @@ def api_insert_closure(request):
                 'message': f'Chiusura cassa inserita correttamente con {len(items)} voci.',
                 'id': closure.id,
                 'push_sent': push_sent,
+                'push_devices': push_devices,
             }, status=201)
             
         except json.JSONDecodeError:

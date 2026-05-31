@@ -354,10 +354,41 @@ def _closure_saved_push_payload(closure, incasso_summary, operator):
     }
 
 
+def _closure_telegram_message(closure, incasso_summary, operator):
+    date_str = closure.date.strftime('%d/%m/%Y') if closure.date else ''
+    lines = [
+        f'Chiusura registrata · {date_str}',
+        '',
+        f'Operatore: {operator or closure.operator or "—"}',
+        f"Incassato tabacchi: {_money_text(incasso_summary['tabacchi'])}",
+        f"Incassato gratta e vinci: {_money_text(incasso_summary['gratta'])}",
+        f"Differenza: {_money_text(incasso_summary['differenza'])}",
+        f"Totale incassato: {_money_text(incasso_summary['totale'])}",
+    ]
+    return '\n'.join(lines)
+
+
+def send_telegram_closure_saved(company, closure, incasso_summary, operator=''):
+    token = _get_telegram_token(company)
+    if not token:
+        return 0
+    message = _closure_telegram_message(closure, incasso_summary, operator)
+    sent = 0
+    for chat_id in _get_telegram_chat_ids(company):
+        try:
+            if _send_telegram_message(token, chat_id, message):
+                sent += 1
+        except Exception as exc:
+            logger.warning('Telegram riepilogo chiusura fallito per chat %s: %s', chat_id, exc)
+    return sent
+
+
 def notify_closure_saved(company, closure, items, summary, operator=''):
-    """Push di riepilogo incasso a tutti i dispositivi iscritti per l'azienda."""
+    """Push di riepilogo incasso a tutti i dispositivi iscritti + Telegram."""
     if not company or not closure:
         return 0
     incasso = build_closure_incasso_summary(items, summary or {})
     payload = _closure_saved_push_payload(closure, incasso, operator)
-    return send_web_push_to_company(company, payload)
+    push_sent = send_web_push_to_company(company, payload)
+    send_telegram_closure_saved(company, closure, incasso, operator)
+    return push_sent

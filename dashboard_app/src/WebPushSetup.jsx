@@ -1,23 +1,41 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { isWebPushSupported, subscribeWebPush, waitForServiceWorker } from './webPush';
 
+const SYNC_MIN_MS = 30_000;
+
 export default function WebPushSetup({ enabled }) {
-  const startedRef = useRef(false);
+  const lastSyncRef = useRef(0);
+
+  const syncPush = useCallback(async (force = false) => {
+    if (!enabled || !isWebPushSupported()) return;
+    const now = Date.now();
+    if (!force && now - lastSyncRef.current < SYNC_MIN_MS) return;
+    lastSyncRef.current = now;
+
+    await waitForServiceWorker();
+    if (Notification.permission === 'granted') {
+      await subscribeWebPush({ requestPermission: false }).catch(() => {});
+    } else if (Notification.permission === 'default') {
+      await subscribeWebPush({ requestPermission: true }).catch(() => {});
+    }
+  }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || startedRef.current || !isWebPushSupported()) return;
-    startedRef.current = true;
+    if (!enabled) return undefined;
 
-    (async () => {
-      await waitForServiceWorker();
-      if (Notification.permission === 'granted') {
-        await subscribeWebPush({ requestPermission: false }).catch(() => {});
-        return;
-      }
-      if (Notification.permission === 'denied') return;
-      await subscribeWebPush({ requestPermission: true }).catch(() => {});
-    })();
-  }, [enabled]);
+    syncPush(true);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncPush(false);
+    };
+    const onFocus = () => syncPush(false);
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [enabled, syncPush]);
 
   return null;
 }

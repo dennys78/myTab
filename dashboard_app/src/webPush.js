@@ -72,17 +72,23 @@ export async function subscribeWebPush({ requestPermission = true } = {}) {
     });
   }
 
+  const body = subscription.toJSON();
   const saveRes = await apiFetch('/api/push/subscribe/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(subscription.toJSON()),
+    body: JSON.stringify(body),
   });
   const saveData = await saveRes.json();
   if (saveData.status !== 'success') {
     return { ok: false, reason: 'save' };
   }
 
-  return { ok: true };
+  return { ok: true, endpoint: body.endpoint };
+}
+
+/** Registra o aggiorna la sottoscrizione push di questo dispositivo sul server. */
+export async function ensurePushSubscription(options = {}) {
+  return subscribeWebPush(options);
 }
 
 export async function showLocalPushNotification(payload) {
