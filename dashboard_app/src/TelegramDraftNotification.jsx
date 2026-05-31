@@ -94,20 +94,24 @@ export default function TelegramDraftNotification({
       <div className="telegram-draft-banner__body">
         <strong className="telegram-draft-banner__title">
           {count === 1
-            ? 'Registrazione incasso da acquisire'
-            : `${count} registrazioni incasso da acquisire`}
+            ? 'Foglio cassa da contabilizzare'
+            : `${count} fogli cassa da contabilizzare`}
         </strong>
         <p className="telegram-draft-banner__text">
           {count === 1 ? (
             <>
               Da Telegram · <strong>{latest.operator || 'Operatore'}</strong>
-              {' · '}{latest.photo_count} foto · scassettato {formatMoney(latest.totale_scassettato)}
+              {' · '}{latest.photo_count} foto
+              {latest.pag_pos_reale > 0 ? ` · POS ${formatMoney(latest.pag_pos_reale)}` : ''}
+              {' · '}scassettato {formatMoney(latest.totale_scassettato)}
               {latest.created_at ? ` · ${formatWhen(latest.created_at)}` : ''}
             </>
           ) : (
             <>
-              Ultima bozza: <strong>{latest.operator || 'Operatore'}</strong>
-              {' · '}{latest.photo_count} foto · scassettato {formatMoney(latest.totale_scassettato)}
+              Ultimo foglio: <strong>{latest.operator || 'Operatore'}</strong>
+              {' · '}{latest.photo_count} foto
+              {latest.pag_pos_reale > 0 ? ` · POS ${formatMoney(latest.pag_pos_reale)}` : ''}
+              {' · '}scassettato {formatMoney(latest.totale_scassettato)}
             </>
           )}
         </p>

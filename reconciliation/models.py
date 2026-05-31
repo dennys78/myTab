@@ -233,6 +233,12 @@ class AcquisitionDraft(models.Model):
     operator = models.CharField(max_length=100, blank=True, verbose_name="Operatore")
     telegram_chat_id = models.CharField(max_length=64, blank=True, verbose_name="Chat Telegram")
     totale_scassettato = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Totale Scassettato")
+    pag_pos_reale = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Totale POS reale (Telegram)",
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Stato")
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)

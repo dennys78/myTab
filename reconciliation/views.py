@@ -1377,6 +1377,7 @@ def _parse_ai_closure_payload(
     operator='IA',
     report_overlays=None,
     with_reports=False,
+    pag_pos_override=None,
 ):
     items = []
     for item in parsed.get('items', []):
@@ -1418,7 +1419,10 @@ def _parse_ai_closure_payload(
 
     summary = parsed.get('summary', {})
     totale = _money(summary.get('totale'))
-    pag_pos = _money(summary.get('pag_pos'))
+    if pag_pos_override is not None:
+        pag_pos = _money(pag_pos_override)
+    else:
+        pag_pos = _money(summary.get('pag_pos'))
     distrib = _money(summary.get('distrib'))
     reso_auto = _money(summary.get('reso_auto'))
     reso_cont = _money(summary.get('reso_cont'))
@@ -1722,6 +1726,7 @@ def api_acquisition_drafts_list(request):
             'source': d.source,
             'operator': d.operator,
             'totale_scassettato': float(d.totale_scassettato),
+            'pag_pos_reale': float(d.pag_pos_reale or 0),
             'photo_count': d.images.count(),
             'created_at': d.created_at.isoformat(),
         } for d in drafts],
@@ -1763,6 +1768,10 @@ def api_acquisition_draft_extract(request, draft_id):
 
         parsed, operator, report_overlays, has_reports = _extract_closure_with_reports(images, company, provider)
 
+        pag_pos_override = None
+        if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
+            pag_pos_override = float(draft.pag_pos_reale)
+
         payload = _parse_ai_closure_payload(
             parsed,
             company,
@@ -1771,6 +1780,7 @@ def api_acquisition_draft_extract(request, draft_id):
             operator=operator,
             report_overlays=report_overlays,
             with_reports=has_reports,
+            pag_pos_override=pag_pos_override,
         )
         if report_overlays:
             payload['report_overlays_applied'] = list(report_overlays.keys())

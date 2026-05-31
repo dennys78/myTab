@@ -528,7 +528,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
                     {draft.operator || 'Telegram'} · {draft.photo_count} foto
                   </div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                    Totale scassettato € {Number(draft.totale_scassettato).toFixed(2)} · {new Date(draft.created_at).toLocaleString('it-IT')}
+                    {Number(draft.pag_pos_reale) > 0 && (
+                      <>POS reale € {Number(draft.pag_pos_reale).toFixed(2)} · </>
+                    )}
+                    Scassettato € {Number(draft.totale_scassettato).toFixed(2)} · {new Date(draft.created_at).toLocaleString('it-IT')}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', whiteSpace: 'nowrap' }}>

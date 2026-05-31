@@ -3,6 +3,7 @@ import re
 import json
 import asyncio
 import time
+from decimal import Decimal
 
 import django
 from asgiref.sync import sync_to_async
@@ -16,11 +17,15 @@ django.setup()
 
 from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting, Company
 
+STEP_AWAITING_POS = 'awaiting_pos'
+STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
+
 
 def _initial_session():
     return {
         'photos': [],
-        'awaiting_amount': False,
+        'step': STEP_AWAITING_POS,
+        'pag_pos_reale': None,
     }
 
 
@@ -119,7 +124,7 @@ async def _prepare_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return False
 
 
-def _save_draft_sync(company, operator, chat_id, photos, totale_scassettato):
+def _save_draft_sync(company, operator, chat_id, photos, pag_pos_reale, totale_scassettato):
     if not company:
         raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
     draft = AcquisitionDraft.objects.create(
@@ -127,7 +132,8 @@ def _save_draft_sync(company, operator, chat_id, photos, totale_scassettato):
         source='telegram',
         operator=operator,
         telegram_chat_id=str(chat_id),
-        totale_scassettato=totale_scassettato,
+        pag_pos_reale=Decimal(str(pag_pos_reale)).quantize(Decimal('0.01')),
+        totale_scassettato=Decimal(str(totale_scassettato)).quantize(Decimal('0.01')),
     )
     for index, photo_bytes in enumerate(photos, start=1):
         AcquisitionDraftImage.objects.create(
@@ -160,7 +166,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _reset(context)
     await update.message.reply_text(
         "Bot myTab pronto.\n\n"
-        "Invia una o più foto della chiusura cassa. Quando hai finito, scrivi l'importo scassettato, ad esempio 1240,00."
+        "Invia una o più foto della chiusura cassa.\n"
+        "Poi inserisci il totale POS reale e infine l'importo scassettato."
     )
 
 
@@ -173,16 +180,20 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
     session = context.user_data.setdefault('draft_session', _initial_session())
+
+    if session.get('step') == STEP_AWAITING_SCASSETTO:
+        await update.message.reply_text(
+            "Hai già inserito il totale POS.\n\n"
+            "Inserisci l'importo scassettato oppure usa /annulla per ricominciare."
+        )
+        return
+
     photo_file = await update.message.photo[-1].get_file()
     image_bytes = bytes(await photo_file.download_as_bytearray())
     session['photos'].append(image_bytes)
-    session['awaiting_amount'] = True
+    session['step'] = STEP_AWAITING_POS
 
-    count = len(session['photos'])
-    await update.message.reply_text(
-        f"Foto {count} ricevuta.\n\n"
-        "Invia un'altra foto oppure scrivi l'importo scassettato per creare la bozza in myTab."
-    )
+    await update.message.reply_text("Inserisci totale POS reale")
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,30 +211,48 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        totale_scassettato = _parse_amount(update.message.text)
+        amount = _parse_amount(update.message.text)
     except ValueError:
         await update.message.reply_text("Importo non valido. Scrivilo così: 1240,00")
+        return
+
+    if session.get('step') == STEP_AWAITING_POS:
+        session['pag_pos_reale'] = amount
+        session['step'] = STEP_AWAITING_SCASSETTO
+        await update.message.reply_text("Inserisci l'importo scassettato")
+        return
+
+    if session.get('step') != STEP_AWAITING_SCASSETTO:
+        await update.message.reply_text("Inserisci totale POS reale")
+        return
+
+    totale_scassettato = amount
+    pag_pos_reale = session.get('pag_pos_reale')
+    if pag_pos_reale is None:
+        await update.message.reply_text("Inserisci totale POS reale")
+        session['step'] = STEP_AWAITING_POS
         return
 
     user = update.message.from_user
     operator = user.username or user.first_name or 'Telegram'
     company = context.application.bot_data.get('company')
-    draft_id = await sync_to_async(_save_draft_sync)(
+    await sync_to_async(_save_draft_sync)(
         company,
         operator,
         update.message.chat_id,
         session['photos'],
+        pag_pos_reale,
         totale_scassettato,
     )
     photo_count = len(session['photos'])
     _reset(context)
 
     await update.message.reply_text(
-        "Bozza acquisizione creata in myTab.\n\n"
-        f"Foto ricevute: {photo_count}\n"
+        "Foglio cassa registrato in myTab.\n\n"
+        f"Foto: {photo_count}\n"
+        f"POS reale: {_money_text(pag_pos_reale)}\n"
         f"Totale scassettato: {_money_text(totale_scassettato)}\n\n"
-        "Gli utenti collegati all'app riceveranno una notifica.\n"
-        "Apri Acquisisci con IA: troverai la bozza pronta da controllare e confermare."
+        "Gli utenti collegati all'app riceveranno una notifica per contabilizzarlo."
     )
 
 
