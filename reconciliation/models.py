@@ -240,6 +240,9 @@ class AcquisitionDraft(models.Model):
         verbose_name="Totale POS reale (Telegram)",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Stato")
+    extracted_payload = models.JSONField(null=True, blank=True, verbose_name="Risultato estrazione IA")
+    extracted_provider = models.CharField(max_length=20, blank=True, default='', verbose_name="Provider IA estrazione")
+    extracted_at = models.DateTimeField(null=True, blank=True, verbose_name="Estrazione IA il")
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

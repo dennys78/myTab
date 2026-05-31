@@ -29,7 +29,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [drafts, setDrafts] = useState([]);
   const [loadingDraftId, setLoadingDraftId] = useState(null);
   const [deletingDraftId, setDeletingDraftId] = useState(null);
+  const [previewEditable, setPreviewEditable] = useState(false);
+  const [reextracting, setReextracting] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
+  const loadDraftAbortRef = useRef(null);
+  const loadDraftRequestIdRef = useRef(0);
 
   const companyId = user?.company?.id ?? user?.assigned_company?.id;
 
@@ -48,6 +52,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   useEffect(() => { fetchDrafts(); }, []);
+
+  useEffect(() => () => {
+    loadDraftAbortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     apiFetch('/api/acquisition/ai-provider/')
@@ -102,8 +110,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             ...d.data,
             items: d.data.items.map((item, i) => ({ ...item, id: `t${i}` })),
           };
-          if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
-          setPreviewData(enriched);
+          applyPreviewData(enriched);
         } else {
           setError(d.error || 'Errore durante l\'estrazione.');
         }
@@ -112,25 +119,56 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .finally(() => setLoading(false));
   };
 
-  const loadDraft = (draftId) => {
+  const applyPreviewData = (data, { cached = false } = {}) => {
+    const enriched = {
+      ...data,
+      items: data.items.map((item, i) => ({ ...item, id: item.id || `p${i}_${Date.now()}` })),
+      extract_cached: cached,
+    };
+    if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
+    setPreviewEditable(!isMobile);
+    setPreviewData(enriched);
+  };
+
+  const loadDraft = (draftId, { force = false } = {}) => {
+    loadDraftAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadDraftAbortRef.current = controller;
+    const requestId = ++loadDraftRequestIdRef.current;
+
     setLoadingDraftId(draftId);
     setError(null);
-    apiFetch(`/api/acquisition-drafts/${draftId}/extract-ai/`, { method: 'POST' })
+    if (force) setReextracting(true);
+
+    apiFetch(`/api/acquisition-drafts/${draftId}/extract-ai/`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    })
       .then(r => r.json())
       .then(d => {
+        if (requestId !== loadDraftRequestIdRef.current) return;
         if (d.status === 'success') {
           const enriched = {
             ...d.data,
             items: d.data.items.map((item, i) => ({ ...item, id: `d${draftId}_${i}` })),
           };
-          if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
-          setPreviewData(enriched);
+          applyPreviewData(enriched, { cached: !!d.cached });
         } else {
           setError(d.error || 'Errore durante il caricamento della bozza.');
         }
       })
-      .catch(() => setError('Errore di rete.'))
-      .finally(() => setLoadingDraftId(null));
+      .catch((err) => {
+        if (err.name === 'AbortError') return;
+        setError('Errore di rete.');
+      })
+      .finally(() => {
+        if (requestId !== loadDraftRequestIdRef.current) return;
+        setLoadingDraftId(null);
+        setReextracting(false);
+        loadDraftAbortRef.current = null;
+      });
   };
 
   const removeDraft = (draft) => {
@@ -248,6 +286,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
     ...extra,
   });
 
+  const numInp = (extra = {}) => inp({
+    inputMode: 'decimal',
+    ...extra,
+  });
+
+  const fieldsLocked = isMobile && !previewEditable;
+
   const summaryLabel = (key) => ({
     totale: 'Totale riportato da cassa',
     totale_cassetto: 'Totale scassettato',
@@ -271,14 +316,42 @@ export default function AcquisisciChiusureAI({ onBack }) {
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: isMobile ? '1.2rem' : '1.75rem' }}>
-            <Sparkles size={isMobile ? 20 : 24} color="var(--accent)" />
-            Anteprima Estrazione IA
-          </h1>
-          <button onClick={() => setPreviewData(null)}
-            style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ← Ricarica
-          </button>
+          <div>
+            <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: isMobile ? '1.2rem' : '1.75rem' }}>
+              <Sparkles size={isMobile ? 20 : 24} color="var(--accent)" />
+              Anteprima Estrazione IA
+            </h1>
+            {previewData.extract_cached && (
+              <p style={{ margin: '0.35rem 0 0', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                Estrazione già memorizzata — stessi dati su PC e smartphone.
+              </p>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {isMobile && !previewEditable && (
+              <button
+                onClick={() => setPreviewEditable(true)}
+                style={{ padding: '0.5rem 1rem', background: 'rgba(59,130,246,0.12)', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
+              >
+                Modifica valori
+              </button>
+            )}
+            {previewData.draft_id && (
+              <button
+                onClick={() => loadDraft(previewData.draft_id, { force: true })}
+                disabled={reextracting || loadingDraftId === previewData.draft_id}
+                style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {reextracting ? 'Riesecuzione...' : 'Riesegui IA'}
+              </button>
+            )}
+            <button
+              onClick={() => { setPreviewData(null); setPreviewEditable(false); }}
+              style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              ← Indietro
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -307,7 +380,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
                   <input type="number" name={key}
                     value={val === 0 ? '' : val}
                     onChange={handleSummaryChange} placeholder="0.00"
-                    style={{ ...inp(), width: '100%' }} />
+                    readOnly={fieldsLocked}
+                    className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'}
+                    style={{ ...numInp(), width: '100%' }} />
                 </div>
               );
             })}
@@ -349,7 +424,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
                   value={totaleScassettato === 0 ? '' : totaleScassettato}
                   onChange={handleSummaryChange}
                   placeholder="0.00"
-                  style={{ ...inp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
+                  readOnly={fieldsLocked}
+                  className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'}
+                  style={{ ...numInp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
                 />
               </div>
             )}
@@ -402,10 +479,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h2 style={{ margin: 0, fontSize: '1rem' }}>Voci di Reparto</h2>
-            <button onClick={addItem}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-              <Plus size={15} /> Aggiungi
-            </button>
+            {!fieldsLocked && (
+              <button onClick={addItem}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                <Plus size={15} /> Aggiungi
+              </button>
+            )}
           </div>
 
           <div className="table-responsive-wrapper">
@@ -426,22 +505,25 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 {previewData.items.map(item => (
                   <tr key={item.id}>
                     <td>
-                      <input className="acq-edit-input" type="text" value={item.descrizione}
+                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="text" value={item.descrizione}
                         onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
+                        readOnly={fieldsLocked}
                         placeholder="Nome Reparto"
                         style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
                     </td>
                     <td>
-                      <input className="acq-edit-input" type="number" value={item.entrate === 0 ? '' : item.entrate}
+                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="number" value={item.entrate === 0 ? '' : item.entrate}
                         onChange={e => handleItemChange(item.id, 'entrate', e.target.value)}
+                        readOnly={fieldsLocked}
                         placeholder="0.00"
-                        style={{ ...inp({ width: isMobile ? '75px' : '95px' }) }} />
+                        style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
                     </td>
                     <td>
-                      <input className="acq-edit-input" type="number" value={item.uscite === 0 ? '' : item.uscite}
+                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="number" value={item.uscite === 0 ? '' : item.uscite}
                         onChange={e => handleItemChange(item.id, 'uscite', e.target.value)}
+                        readOnly={fieldsLocked}
                         placeholder="0.00"
-                        style={{ ...inp({ width: isMobile ? '75px' : '95px' }) }} />
+                        style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
                     </td>
                     <td>
                       <span style={{
@@ -453,10 +535,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
                       </span>
                     </td>
                     <td>
-                      <button onClick={() => removeItem(item.id)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
-                        <X size={16} />
-                      </button>
+                      {!fieldsLocked && (
+                        <button onClick={() => removeItem(item.id)}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
+                          <X size={16} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -537,7 +621,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', whiteSpace: 'nowrap' }}>
                   <button
                     onClick={() => loadDraft(draft.id)}
-                    disabled={loadingDraftId === draft.id || deletingDraftId === draft.id}
+                    disabled={loadingDraftId !== null || deletingDraftId !== null}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
                   >
                     {loadingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
@@ -545,7 +629,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
                   </button>
                   <button
                     onClick={() => removeDraft(draft)}
-                    disabled={loadingDraftId === draft.id || deletingDraftId === draft.id}
+                    disabled={loadingDraftId !== null || deletingDraftId !== null}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 0.8rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}
                   >
                     {deletingDraftId === draft.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}

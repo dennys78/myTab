@@ -113,6 +113,23 @@ textarea:focus {
   transform: translateY(-1px);
 }
 
+.acq-readonly-input {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.acq-items-table input[type="number"].acq-readonly-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.acq-items-table input[type="number"].acq-readonly-input::-webkit-inner-spin-button,
+.acq-items-table input[type="number"].acq-readonly-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .acq-total-row {
   background: rgba(8, 17, 31, 0.72);
   cursor: default;

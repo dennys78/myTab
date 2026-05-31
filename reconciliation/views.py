@@ -1733,6 +1733,25 @@ def api_acquisition_drafts_list(request):
     })
 
 
+def _draft_extract_images(draft):
+    return [{
+        'id': image.id,
+        'url': f'/api/acquisition-draft-images/{image.id}/view/',
+    } for image in draft.images.all()]
+
+
+def _draft_extract_json_response(draft, payload, provider, *, cached=False):
+    return JsonResponse({
+        'status': 'success',
+        'provider': provider,
+        'cached': cached,
+        'data': {
+            **payload,
+            'images': _draft_extract_images(draft),
+        },
+    })
+
+
 @require_auth
 def api_acquisition_draft_extract(request, draft_id):
     if request.method != 'POST':
@@ -1744,6 +1763,18 @@ def api_acquisition_draft_extract(request, draft_id):
         draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, company=company, status='pending')
     except AcquisitionDraft.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
+
+    force = False
+    if request.body:
+        try:
+            body = json.loads(request.body.decode('utf-8'))
+            force = bool(body.get('force'))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+
+    if draft.extracted_payload and not force:
+        provider = draft.extracted_provider or _resolve_ai_provider(request.user, company)
+        return _draft_extract_json_response(draft, draft.extracted_payload, provider, cached=True)
 
     try:
         images = []
@@ -1785,17 +1816,12 @@ def api_acquisition_draft_extract(request, draft_id):
         if report_overlays:
             payload['report_overlays_applied'] = list(report_overlays.keys())
 
-        return JsonResponse({
-            'status': 'success',
-            'provider': provider,
-            'data': {
-                **payload,
-                'images': [{
-                    'id': image.id,
-                    'url': f'/api/acquisition-draft-images/{image.id}/view/',
-                } for image in draft.images.all()],
-            },
-        })
+        draft.extracted_payload = payload
+        draft.extracted_provider = provider
+        draft.extracted_at = timezone.now()
+        draft.save(update_fields=['extracted_payload', 'extracted_provider', 'extracted_at'])
+
+        return _draft_extract_json_response(draft, payload, provider, cached=False)
     except Exception as e:
         provider = _resolve_ai_provider(request.user, company)
         if _is_rate_limit_error(e):
