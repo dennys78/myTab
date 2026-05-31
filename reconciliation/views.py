@@ -1937,7 +1937,7 @@ def api_push_test(request):
         }, status=400)
     try:
         from .draft_notifications import send_test_push
-        push_sent = send_test_push(company)
+        push_sent, push_errors = send_test_push(company)
     except Exception as exc:
         return JsonResponse({'status': 'error', 'error': f'Invio test fallito: {exc}'}, status=500)
     return JsonResponse({
@@ -1945,6 +1945,7 @@ def api_push_test(request):
         'data': {
             'push_sent': push_sent,
             'company_devices': company_devices,
+            'push_errors': push_errors[:3],
         },
     })
 

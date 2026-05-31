@@ -69,13 +69,16 @@ export default function PushNotificheCard() {
     sendTestPush()
       .then((result) => {
         if (result.ok) {
-          const { push_sent: sent, company_devices: total } = result;
-          setTestResult({
-            ok: true,
-            message: sent > 0
-              ? `Notifica di test inviata a ${sent} dispositivo${sent === 1 ? '' : 'i'} su ${total} registrati.`
-              : `Nessun dispositivo ha ricevuto la notifica (${total} registrati). Verifica permessi e connessione.`,
-          });
+          const { push_sent: sent, company_devices: total, push_errors: errors } = result;
+          let message;
+          if (sent > 0) {
+            message = `Notifica di test inviata a ${sent} dispositivo${sent === 1 ? '' : 'i'} su ${total} registrati.`;
+          } else if (errors?.length) {
+            message = `Nessun dispositivo ha ricevuto la notifica (${total} registrati). ${errors[0]}`;
+          } else {
+            message = `Nessun dispositivo ha ricevuto la notifica (${total} registrati). Verifica permessi e connessione.`;
+          }
+          setTestResult({ ok: sent > 0, message });
         } else {
           setTestResult({ ok: false, message: result.error || 'Invio test fallito.' });
         }

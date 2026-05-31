@@ -65,6 +65,13 @@ def get_vapid_public_key():
     return ensure_vapid_keys()[0]
 
 
+def _vapid_signer_from_pem(private_key_pem):
+    from py_vapid import Vapid02
+
+    pem_bytes = private_key_pem.encode('utf-8') if isinstance(private_key_pem, str) else private_key_pem
+    return Vapid02.from_pem(pem_bytes)
+
+
 def _user_sidebar_menu(user):
     is_admin = is_admin_user(user)
     try:
@@ -167,7 +174,7 @@ def send_web_push(subscription, payload):
         from pywebpush import WebPushException, webpush
     except ImportError as exc:
         logger.error('pywebpush non installato: %s', exc)
-        return False
+        return False, 'pywebpush non installato'
 
     _, private_key = ensure_vapid_keys()
     subscription_info = {
@@ -181,19 +188,21 @@ def send_web_push(subscription, payload):
         webpush(
             subscription_info=subscription_info,
             data=json.dumps(payload),
-            vapid_private_key=private_key,
+            vapid_private_key=_vapid_signer_from_pem(private_key),
             vapid_claims={'sub': VAPID_EMAIL},
         )
-        return True
+        return True, None
     except WebPushException as exc:
         status = getattr(getattr(exc, 'response', None), 'status_code', None)
         if status in (404, 410):
             subscription.delete()
+        err = str(exc).strip() or f'HTTP {status}'
         logger.warning('Web push failed (%s): %s', status, exc)
-        return False
+        return False, err
     except Exception as exc:
+        err = str(exc).strip() or exc.__class__.__name__
         logger.warning('Web push failed: %s', exc)
-        return False
+        return False, err
 
 
 def send_web_push_to_company(company, payload, user_ids=None):
@@ -202,7 +211,8 @@ def send_web_push_to_company(company, payload, user_ids=None):
         qs = qs.filter(user_id__in=user_ids)
     sent = 0
     for subscription in qs:
-        if send_web_push(subscription, payload):
+        ok, _ = send_web_push(subscription, payload)
+        if ok:
             sent += 1
     return sent
 
@@ -214,7 +224,16 @@ def send_test_push(company):
         'url': '/?view=impostazioni',
         'tag': 'mytab-push-test',
     }
-    return send_web_push_to_company(company, payload)
+    qs = PushSubscription.objects.filter(company=company)
+    sent = 0
+    errors = []
+    for subscription in qs:
+        ok, err = send_web_push(subscription, payload)
+        if ok:
+            sent += 1
+        elif err and err not in errors:
+            errors.append(err)
+    return sent, errors
 
 
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
@@ -228,7 +247,8 @@ def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
 
     sent = 0
     for subscription in qs:
-        if send_web_push(subscription, payload):
+        ok, _ = send_web_push(subscription, payload)
+        if ok:
             sent += 1
     return sent
 
