@@ -3,9 +3,11 @@ import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, Pigg
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 
-export default function Impostazioni() {
+export default function Impostazioni({ section = 'generali' }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'amministratore';
+  const showAzienda = section === 'azienda';
+  const showGenerali = section === 'generali';
   const [groqKey, setGroqKey] = useState('');
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -421,11 +423,13 @@ export default function Impostazioni() {
 
   return (
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni</h1>
+      <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni · {showAzienda ? 'Azienda' : 'Generali'}</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-        {isAdmin
-          ? "Configura i dati aziendali, le chiavi API e il modello IA per le tue acquisizioni."
-          : "Scegli il modello IA usato quando acquisisci le chiusure con le foto."}
+        {showAzienda
+          ? "Gestisci i dati delle aziende e l'eliminazione dei dati dell'azienda attiva."
+          : isAdmin
+            ? "Configura le chiavi API, il modello IA, Telegram e le rettifiche di cassa."
+            : "Scegli il modello IA usato quando acquisisci le chiusure con le foto."}
       </p>
 
       {error && (
@@ -434,6 +438,7 @@ export default function Impostazioni() {
         </div>
       )}
 
+      {showGenerali && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Zap size={20} color="var(--accent)" />
@@ -476,9 +481,11 @@ export default function Impostazioni() {
           Salva il mio modello
         </button>
       </div>
+      )}
 
       {isAdmin && (
       <>
+      {showAzienda && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Building2 size={20} color="var(--accent)" />
@@ -604,7 +611,9 @@ export default function Impostazioni() {
           </div>
         )}
       </div>
+      )}
 
+      {showGenerali && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Zap size={20} color="var(--accent)" />
@@ -708,7 +717,9 @@ export default function Impostazioni() {
           )}
         </div>
       </div>
+      )}
 
+      {showGenerali && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Send size={20} color="var(--accent)" />
@@ -782,7 +793,9 @@ export default function Impostazioni() {
           </div>
         </div>
       </div>
+      )}
 
+      {showGenerali && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Trash2 size={20} color="var(--danger)" />
@@ -823,7 +836,9 @@ export default function Impostazioni() {
           Elimina immagini
         </button>
       </div>
+      )}
 
+      {showAzienda && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Trash2 size={20} color="var(--danger)" />
@@ -852,7 +867,9 @@ export default function Impostazioni() {
           Elimina tutti i dati azienda attiva
         </button>
       </div>
+      )}
 
+      {showGenerali && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Wallet size={20} color="var(--accent)" />
@@ -904,6 +921,7 @@ export default function Impostazioni() {
           Salva Rettifiche
         </button>
       </div>
+      )}
       </>
       )}
     </div>

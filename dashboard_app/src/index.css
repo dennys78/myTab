@@ -1222,6 +1222,21 @@ tbody tr:hover {
   color: #dbeafe;
 }
 
+.nav-subitems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0.25rem 1.1rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.nav-item.nav-subitem {
+  padding: 0.55rem 0.8rem;
+  font-size: 0.88rem;
+  gap: 0.5rem;
+}
+
 /* Inner Table for Items */
 .inner-table {
   width: 100%;

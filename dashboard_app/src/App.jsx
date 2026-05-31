@@ -50,6 +50,12 @@ function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [versamentoEditId, setVersamentoEditId] = useState(null);
   const [movimentoEditId, setMovimentoEditId] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState(isAdmin ? 'azienda' : 'generali');
+
+  const settingsSubsections = isAdmin
+    ? [{ id: 'azienda', label: 'Azienda' }, { id: 'generali', label: 'Generali' }]
+    : [{ id: 'generali', label: 'Modello IA' }];
 
   const fetchClosures = useCallback(() => {
     if (!canSeeClosures) return;
@@ -316,6 +322,35 @@ function AppShell() {
         <nav className="nav-links">
           {navItems.map(item => {
             const Icon = item.icon;
+            if (item.id === 'impostazioni') {
+              const settingsActive = currentView === 'impostazioni';
+              return (
+                <div key={item.id} style={item.pushToBottom ? { marginTop: 'auto' } : undefined}>
+                  <div
+                    className={`nav-item ${settingsActive ? 'active' : ''}`}
+                    onClick={() => setSettingsOpen(o => !o)}
+                  >
+                    <Icon size={20} /><span>{item.label}</span>
+                    {settingsOpen
+                      ? <ChevronDown size={16} style={{ marginLeft: 'auto' }} />
+                      : <ChevronRight size={16} style={{ marginLeft: 'auto' }} />}
+                  </div>
+                  {settingsOpen && (
+                    <div className="nav-subitems">
+                      {settingsSubsections.map(sub => (
+                        <div
+                          key={sub.id}
+                          className={`nav-item nav-subitem ${settingsActive && settingsSection === sub.id ? 'active' : ''}`}
+                          onClick={() => { setSettingsSection(sub.id); setCurrentView('impostazioni'); setIsMobileMenuOpen(false); }}
+                        >
+                          <span>{sub.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <div
                 key={item.id}
@@ -392,7 +427,7 @@ function AppShell() {
         ) : currentView === 'reparti' ? (
           <RepartiManager />
         ) : currentView === 'impostazioni' ? (
-          <Impostazioni />
+          <Impostazioni section={settingsSection} />
         ) : currentView === 'utenti' ? (
           <GestioneUtenti />
         ) : currentView === 'versamenti' ? (
