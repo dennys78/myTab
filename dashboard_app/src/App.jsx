@@ -160,6 +160,18 @@ function AppShell() {
     return true;
   });
 
+  const closuresTotals = filteredClosures.reduce((acc, closure) => {
+    const s = closure.summary;
+    acc.contanti += s.contanti || 0;
+    acc.pag_pos += s.pag_pos || 0;
+    acc.distrib += s.distrib || 0;
+    acc.cassa_auto += s.cassa_auto || 0;
+    acc.totale += s.totale || 0;
+    acc.totale_cassetto += s.totale_cassetto || 0;
+    acc.differenza += s.differenza || 0;
+    return acc;
+  }, { contanti: 0, pag_pos: 0, distrib: 0, cassa_auto: 0, totale: 0, totale_cassetto: 0, differenza: 0 });
+
   const toggleRow = (id) => { if (editingId) return; setExpandedId(expandedId === id ? null : id); };
 
   const handleEditClick = (closure) => {
@@ -474,10 +486,11 @@ function AppShell() {
                         <th className="desktop-closure-col">Foto</th>
                         <th>Data</th>
                         <th className="desktop-closure-col">Contanti</th>
-                        <th className="desktop-closure-col">Pag. POS</th>
+                        <th className="desktop-closure-col">POS</th>
+                        <th className="desktop-closure-col">Distributore</th>
+                        <th className="desktop-closure-col">Cassa automatica</th>
                         <th className="desktop-closure-col">Totale Generale</th>
                         <th className="mobile-closure-col">Totale cassetto</th>
-                        <th>Distrib</th>
                         <th>Differenza</th>
                         <th className="desktop-closure-col">Azioni</th>
                       </tr>
@@ -495,11 +508,10 @@ function AppShell() {
                             <td>{closure.date}</td>
                             <td className="desktop-closure-col">€ {closure.summary.contanti.toFixed(2)}</td>
                             <td className="desktop-closure-col">€ {closure.summary.pag_pos.toFixed(2)}</td>
+                            <td className="desktop-closure-col">€ {closure.summary.distrib.toFixed(2)}</td>
+                            <td className="desktop-closure-col">€ {closure.summary.cassa_auto.toFixed(2)}</td>
                             <td className="desktop-closure-col" style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
                             <td className="mobile-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closure.summary.totale_cassetto.toFixed(2)}</td>
-                            <td className="closure-highlight-col">
-                              <span className="closure-chip closure-chip--distrib">€ {closure.summary.distrib.toFixed(2)}</span>
-                            </td>
                             <td className="closure-highlight-col">
                               <span className={`closure-chip ${closure.summary.differenza > 0 ? 'closure-chip--positive' : closure.summary.differenza < 0 ? 'closure-chip--negative' : 'closure-chip--neutral'}`}>
                                 {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
@@ -515,7 +527,7 @@ function AppShell() {
 
                           {expandedId === closure.id && (
                             <tr>
-                              <td colSpan="10" style={{ padding: 0, borderBottom: 'none' }}>
+                              <td colSpan="11" style={{ padding: 0, borderBottom: 'none' }}>
                                 <div className="expanded-content">
                                   <div className="summary-section" style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -653,6 +665,25 @@ function AppShell() {
                         </React.Fragment>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="closures-total-row">
+                        <td></td>
+                        <td className="desktop-closure-col"></td>
+                        <td style={{ fontWeight: 700 }}>Totali ({filteredClosures.length})</td>
+                        <td className="desktop-closure-col" style={{ fontWeight: 700 }}>€ {closuresTotals.contanti.toFixed(2)}</td>
+                        <td className="desktop-closure-col" style={{ fontWeight: 700 }}>€ {closuresTotals.pag_pos.toFixed(2)}</td>
+                        <td className="desktop-closure-col" style={{ fontWeight: 700 }}>€ {closuresTotals.distrib.toFixed(2)}</td>
+                        <td className="desktop-closure-col" style={{ fontWeight: 700 }}>€ {closuresTotals.cassa_auto.toFixed(2)}</td>
+                        <td className="desktop-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closuresTotals.totale.toFixed(2)}</td>
+                        <td className="mobile-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closuresTotals.totale_cassetto.toFixed(2)}</td>
+                        <td className="closure-highlight-col">
+                          <span className={`closure-chip ${closuresTotals.differenza > 0 ? 'closure-chip--positive' : closuresTotals.differenza < 0 ? 'closure-chip--negative' : 'closure-chip--neutral'}`}>
+                            {closuresTotals.differenza >= 0 ? '+' : ''}€ {closuresTotals.differenza.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="desktop-closure-col"></td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}

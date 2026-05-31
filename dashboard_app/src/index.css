@@ -1243,6 +1243,12 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+.closures-table tfoot .closures-total-row td {
+  border-top: 2px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  white-space: nowrap;
+}
+
 .closure-chip {
   display: inline-block;
   padding: 0.2rem 0.55rem;
