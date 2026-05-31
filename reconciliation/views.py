@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import base64
+import copy
 import io
 import os
 import re
@@ -1350,6 +1351,9 @@ Regole:
 - Escludi solo intestazioni, righe vuote, note, piè pagina e il riepilogo finale con Contanti/Pag.Pos/Cassa Auto/Resi/Distrib./TOTALE.
 - Mappa le colonne del summary: contanti→Contanti, pag_pos→Pag.Pos, cassa_auto→Cassa Auto,
   reso_cont→Reso Cont., reso_auto→Reso Auto, distrib→Distrib., totale→TOTALE.
+- "totale" è SEMPRE l'ultima colonna della riga riepilogo in fondo (etichetta TOTALE), mai Pag.Pos,
+  mai Contanti, mai il totale scassettato, mai la somma parziale di un reparto.
+- La riga riepilogo ha 7 valori: Contanti, Pag.Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE.
 - Se un valore non è leggibile usa 0.00."""
 
 # Retrocompatibilità
@@ -1367,6 +1371,98 @@ def _json_from_ai_text(raw_json):
     if start != -1 and end != -1 and end > start:
         raw_json = raw_json[start:end + 1]
     return json.loads(raw_json)
+
+
+def _amounts_close(a, b, tol=Decimal('1.00')):
+    return abs(_money(a) - _money(b)) <= tol
+
+
+def _saldo_reparti(items):
+    return sum(
+        (_money(it.get('entrate')) - _money(it.get('uscite')) for it in (items or [])),
+        MONEY_ZERO,
+    )
+
+
+def _reconcile_totale_cassa(summary, items, pag_pos_override=None):
+    """Corregge errori IA frequenti: totale=0, totale=Pag.Pos o totale=Contanti."""
+    summary = summary or {}
+    totale = _money(summary.get('totale'))
+    contanti = _money(summary.get('contanti'))
+    pag_pos = _money(pag_pos_override if pag_pos_override is not None else summary.get('pag_pos'))
+    cassa_auto = _money(summary.get('cassa_auto'))
+    reso_cont = _money(summary.get('reso_cont'))
+    reso_auto = _money(summary.get('reso_auto'))
+    distrib = _money(summary.get('distrib'))
+
+    footer_sum = contanti + pag_pos + cassa_auto + reso_cont + reso_auto + distrib
+    saldo_reparti = _saldo_reparti(items)
+
+    if totale <= 0:
+        if footer_sum > 0 and (saldo_reparti <= 0 or _amounts_close(footer_sum, saldo_reparti)):
+            return footer_sum
+        if saldo_reparti > 0:
+            return saldo_reparti
+        return footer_sum if footer_sum > 0 else MONEY_ZERO
+
+    if _amounts_close(totale, pag_pos) and saldo_reparti > totale + Decimal('1'):
+        if _amounts_close(saldo_reparti, footer_sum) and saldo_reparti > totale:
+            return saldo_reparti
+        if footer_sum > totale:
+            return footer_sum
+
+    if _amounts_close(totale, contanti) and saldo_reparti > totale + Decimal('1'):
+        if _amounts_close(saldo_reparti, footer_sum):
+            return saldo_reparti
+        if footer_sum > totale:
+            return footer_sum
+
+    if saldo_reparti > totale + Decimal('5') and _amounts_close(saldo_reparti, footer_sum):
+        return saldo_reparti
+
+    return totale
+
+
+def _calc_closure_differenza(totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, totale_scassettato=None):
+    if with_reports:
+        return _money(totale - _saldo_reparti(items)), MONEY_ZERO
+    cassetto = _money(totale_scassettato) if totale_scassettato is not None else MONEY_ZERO
+    atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+    differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
+    return differenza, cassetto
+
+
+def _refresh_draft_extract_payload(draft, payload):
+    """Ricalcola totale/differenza su payload memorizzato (fix anche bozze già in cache)."""
+    payload = copy.deepcopy(payload)
+    items = payload.get('items', [])
+    summary = payload.get('summary', {})
+    with_reports = bool(payload.get('with_reports'))
+    pag_pos_override = None
+    if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
+        pag_pos_override = float(draft.pag_pos_reale)
+
+    totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
+    pag_pos = _money(pag_pos_override) if pag_pos_override is not None else _money(summary.get('pag_pos'))
+    distrib = _money(summary.get('distrib'))
+    reso_auto = _money(summary.get('reso_auto'))
+    reso_cont = _money(summary.get('reso_cont'))
+    differenza, cassetto = _calc_closure_differenza(
+        totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, draft.totale_scassettato,
+    )
+    payload['summary'] = {
+        **summary,
+        'contanti': _money_number(summary.get('contanti')),
+        'pag_pos': float(pag_pos),
+        'cassa_auto': _money_number(summary.get('cassa_auto')),
+        'reso_cont': float(reso_cont),
+        'reso_auto': float(reso_auto),
+        'distrib': float(distrib),
+        'totale': float(totale),
+        'totale_cassetto': float(cassetto),
+        'differenza': float(differenza),
+    }
+    return payload
 
 
 def _parse_ai_closure_payload(
@@ -1418,7 +1514,6 @@ def _parse_ai_closure_payload(
         items = merge_report_overlays_into_items(items, report_overlays)
 
     summary = parsed.get('summary', {})
-    totale = _money(summary.get('totale'))
     if pag_pos_override is not None:
         pag_pos = _money(pag_pos_override)
     else:
@@ -1426,20 +1521,10 @@ def _parse_ai_closure_payload(
     distrib = _money(summary.get('distrib'))
     reso_auto = _money(summary.get('reso_auto'))
     reso_cont = _money(summary.get('reso_cont'))
-
-    if with_reports:
-        # 5 foto (con report giochi): Differenza = Totale cassa - Somma algebrica saldi reparti
-        saldo_reparti = sum(
-            (_money(it.get('entrate')) - _money(it.get('uscite')) for it in items),
-            MONEY_ZERO,
-        )
-        cassetto = MONEY_ZERO
-        differenza = _money(totale - saldo_reparti)
-    else:
-        # Solo foglio incasso: vecchio calcolo basato sul totale scassettato
-        cassetto = _money(totale_scassettato) if totale_scassettato is not None else MONEY_ZERO
-        atteso = totale - pag_pos - distrib - reso_auto - reso_cont
-        differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
+    totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
+    differenza, cassetto = _calc_closure_differenza(
+        totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, totale_scassettato,
+    )
 
     data = {
         'date': parsed.get('date', ''),
@@ -1774,7 +1859,12 @@ def api_acquisition_draft_extract(request, draft_id):
 
     if draft.extracted_payload and not force:
         provider = draft.extracted_provider or _resolve_ai_provider(request.user, company)
-        return _draft_extract_json_response(draft, draft.extracted_payload, provider, cached=True)
+        old_totale = (draft.extracted_payload.get('summary') or {}).get('totale')
+        payload = _refresh_draft_extract_payload(draft, draft.extracted_payload)
+        if (payload.get('summary') or {}).get('totale') != old_totale:
+            draft.extracted_payload = payload
+            draft.save(update_fields=['extracted_payload'])
+        return _draft_extract_json_response(draft, payload, provider, cached=True)
 
     try:
         images = []
