@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { isIOS, isStandalonePwa } from './pwaPlatform';
 
 export const VAPID_STORAGE_KEY = 'mytab_registered_vapid_public_key';
 
@@ -25,6 +26,7 @@ export function pushUnavailableReason() {
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     return 'unsupported';
   }
+  if (isIOS() && !isStandalonePwa()) return 'ios-not-pwa';
   return null;
 }
 
@@ -41,7 +43,7 @@ export function isDevicePushRegistrationCurrent(serverPublicKey) {
   return getStoredVapidPublicKey() === serverPublicKey;
 }
 
-export async function waitForServiceWorker(timeoutMs = 15000) {
+export async function waitForServiceWorker(timeoutMs = isIOS() ? 30000 : 15000) {
   if (!('serviceWorker' in navigator)) return null;
   try {
     const ready = navigator.serviceWorker.ready;

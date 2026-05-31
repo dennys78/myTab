@@ -13,13 +13,13 @@ self.addEventListener('push', (event) => {
     /* ignore malformed payload */
   }
 
+  const iconUrl = new URL('/pwa-192x192.png', self.location.origin).href;
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-192x192.png',
+      icon: iconUrl,
+      badge: iconUrl,
       tag: payload.tag || 'mytab-draft',
-      renotify: true,
       data: { url: payload.url || '/?view=acquisisci-ai' },
     }),
   );

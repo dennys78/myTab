@@ -13,6 +13,7 @@ import {
 const REASON_LABELS = {
   insecure: 'Serve HTTPS (es. https://www.my-tab.uk). Su http://…:8080 le push non funzionano.',
   unsupported: 'Browser non supportato per le notifiche push.',
+  'ios-not-pwa': 'Su iPhone installa myTab con Aggiungi a Home, poi apri l\'app dall\'icona (iOS 16.4+).',
   denied: 'Notifiche bloccate. Abilitale nelle impostazioni del browser/sistema.',
   default: 'Permesso notifiche non ancora concesso.',
   'no-sw': 'App non pronta. Ricarica la pagina o reinstalla la PWA.',

@@ -10,6 +10,7 @@ import {
 const REASON_LABELS = {
   insecure: 'Serve HTTPS per le notifiche push.',
   unsupported: 'Browser non supportato.',
+  'ios-not-pwa': 'Su iPhone installa myTab con Aggiungi a Home, poi apri l\'app dall\'icona.',
   denied: 'Notifiche bloccate nel browser.',
   default: 'Permesso non concesso.',
   'no-sw': 'App non pronta. Ricarica la pagina.',
@@ -24,6 +25,7 @@ export default function PushNotifyButton() {
   const [active, setActive] = useState(false);
   const [denied, setDenied] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [iosNotPwa, setIosNotPwa] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -31,9 +33,19 @@ export default function PushNotifyButton() {
     const unavailable = pushUnavailableReason();
     if (unavailable === 'insecure' || unavailable === 'unsupported') {
       setHidden(true);
+      setIosNotPwa(false);
       setChecking(false);
       return;
     }
+    if (unavailable === 'ios-not-pwa') {
+      setHidden(false);
+      setIosNotPwa(true);
+      setActive(false);
+      setDenied(false);
+      setChecking(false);
+      return;
+    }
+    setIosNotPwa(false);
     setHidden(false);
     setDenied(unavailable === 'denied' || Notification.permission === 'denied');
 
@@ -57,7 +69,7 @@ export default function PushNotifyButton() {
   }, [refresh]);
 
   const handleActivate = () => {
-    if (activating || checking || denied) return;
+    if (activating || checking || denied || iosNotPwa) return;
     setActivating(true);
     setFeedback(null);
     ensurePushSubscription({ requestPermission: true, forceRenew: true })
@@ -87,14 +99,26 @@ export default function PushNotifyButton() {
 
   const label = checking
     ? 'Verifica notifiche…'
-    : denied
-      ? 'Notifiche bloccate'
-      : active
-        ? 'Notifiche attive'
-        : 'Attiva notifiche';
+    : iosNotPwa
+      ? 'Installa app (iPhone)'
+      : denied
+        ? 'Notifiche bloccate'
+        : active
+          ? 'Notifiche attive'
+          : 'Attiva notifiche';
 
   return (
     <div style={{ marginBottom: '0.5rem' }}>
+      {iosNotPwa && (
+        <div style={{
+          fontSize: '0.72rem',
+          marginBottom: '0.35rem',
+          color: 'var(--warning)',
+          lineHeight: 1.35,
+        }}>
+          {REASON_LABELS['ios-not-pwa']}
+        </div>
+      )}
       {feedback && (
         <div style={{
           fontSize: '0.72rem',
@@ -108,9 +132,11 @@ export default function PushNotifyButton() {
       <button
         type="button"
         onClick={handleActivate}
-        disabled={checking || activating || denied}
+        disabled={checking || activating || denied || iosNotPwa}
         title={
-          denied
+          iosNotPwa
+            ? REASON_LABELS['ios-not-pwa']
+            : denied
             ? 'Abilita le notifiche nelle impostazioni del browser'
             : active
               ? 'Dispositivo registrato per le notifiche push'
@@ -126,9 +152,9 @@ export default function PushNotifyButton() {
           border: `1px solid ${active ? '#22c55e' : 'var(--border)'}`,
           color: active ? '#22c55e' : denied ? 'var(--text-muted)' : 'var(--text-main)',
           borderRadius: '6px',
-          cursor: (checking || activating || denied) ? 'not-allowed' : 'pointer',
+          cursor: (checking || activating || denied || iosNotPwa) ? 'not-allowed' : 'pointer',
           fontSize: '0.85rem',
-          opacity: (checking || activating || denied) ? 0.65 : 1,
+          opacity: (checking || activating || denied || iosNotPwa) ? 0.65 : 1,
         }}
       >
         {activating || checking ? (

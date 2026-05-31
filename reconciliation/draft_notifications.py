@@ -17,6 +17,8 @@ from .nav_permissions import default_sidebar_menu, normalize_sidebar_menu
 logger = logging.getLogger(__name__)
 
 VAPID_EMAIL = os.environ.get('WEB_PUSH_VAPID_EMAIL', 'mailto:admin@mytab.local').strip()
+# Apple Push (web.push.apple.com) rifiuta TTL=0 con errore BadTtl.
+PUSH_TTL_SECONDS = int(os.environ.get('WEB_PUSH_TTL_SECONDS', '86400'))
 
 
 def _get_global_setting(key):
@@ -234,6 +236,7 @@ def send_web_push(subscription, payload):
                 vapid_private_key=vapid_signer,
                 vapid_claims={'sub': VAPID_EMAIL},
                 content_encoding=encoding,
+                ttl=PUSH_TTL_SECONDS,
             )
             return True, None, False
         except WebPushException as exc:

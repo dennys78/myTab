@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Share, X, Smartphone } from 'lucide-react';
-
-function isStandalone() {
-  return window.matchMedia('(display-mode: standalone)').matches
-    || window.navigator.standalone === true;
-}
-
-function isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
+import { isIOS, isStandalonePwa } from './pwaPlatform';
 
 function isMobile() {
   return window.innerWidth < 900 || isIOS() || /Android/i.test(navigator.userAgent);
@@ -21,7 +12,7 @@ export default function InstallPwa() {
   const [installPrompt, setInstallPrompt] = useState(null);
 
   useEffect(() => {
-    if (isStandalone() || sessionStorage.getItem('mytab-pwa-hint-dismissed') === '1') return;
+    if (isStandalonePwa() || sessionStorage.getItem('mytab-pwa-hint-dismissed') === '1') return;
     if (!isMobile()) return;
 
     setIos(isIOS());
@@ -63,7 +54,8 @@ export default function InstallPwa() {
         {ios ? (
           <p className="install-pwa-text">
             In <strong>Safari</strong>: tocca <Share size={14} style={{ verticalAlign: '-2px' }} /> Condividi
-            → <strong>Aggiungi a Home</strong>. Così avrai l&apos;icona myTab e l&apos;app a schermo intero.
+            → <strong>Aggiungi a Home</strong>. Poi apri myTab dall&apos;icona: le notifiche push
+            funzionano solo dalla app installata (iOS 16.4+).
           </p>
         ) : installPrompt ? (
           <p className="install-pwa-text">
