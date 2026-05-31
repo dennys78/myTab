@@ -275,7 +275,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
         draft_id: previewData.draft_id,
       }),
     })
-      .then(async (d) => {
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok && d.status !== 'success' && !d.id) {
+          setError(d.error || `Errore salvataggio (${r.status}).`);
+          return;
+        }
         if (d.status === 'success' || d.id) {
           let shown = false;
           if ((d.push_sent || 0) === 0) {
