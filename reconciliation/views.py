@@ -1921,6 +1921,35 @@ def api_push_status(request):
 
 
 @require_auth
+def api_push_test(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_receive_push(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    company_devices = PushSubscription.objects.filter(company=company).count()
+    if company_devices == 0:
+        return JsonResponse({
+            'status': 'error',
+            'error': 'Nessun dispositivo registrato. Registra almeno uno smartphone.',
+        }, status=400)
+    try:
+        from .draft_notifications import send_test_push
+        push_sent = send_test_push(company)
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'error': f'Invio test fallito: {exc}'}, status=500)
+    return JsonResponse({
+        'status': 'success',
+        'data': {
+            'push_sent': push_sent,
+            'company_devices': company_devices,
+        },
+    })
+
+
+@require_auth
 def api_acquisition_drafts_mark_seen(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Bell, CheckCircle, Loader2, AlertCircle, Send } from 'lucide-react';
 import {
   ensurePushSubscription,
   fetchPushStatus,
   isWebPushSupported,
   pushUnavailableReason,
+  sendTestPush,
 } from './webPush';
 
 const REASON_LABELS = {
@@ -23,6 +24,8 @@ export default function PushNotificheCard() {
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [registerResult, setRegisterResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -57,6 +60,32 @@ export default function PushNotificheCard() {
       .finally(() => {
         setRegistering(false);
         setTimeout(() => setRegisterResult(null), 8000);
+      });
+  };
+
+  const handleTest = () => {
+    setTesting(true);
+    setTestResult(null);
+    sendTestPush()
+      .then((result) => {
+        if (result.ok) {
+          const { push_sent: sent, company_devices: total } = result;
+          setTestResult({
+            ok: true,
+            message: sent > 0
+              ? `Notifica di test inviata a ${sent} dispositivo${sent === 1 ? '' : 'i'} su ${total} registrati.`
+              : `Nessun dispositivo ha ricevuto la notifica (${total} registrati). Verifica permessi e connessione.`,
+          });
+        } else {
+          setTestResult({ ok: false, message: result.error || 'Invio test fallito.' });
+        }
+      })
+      .catch(() => {
+        setTestResult({ ok: false, message: 'Errore di rete durante l\'invio del test.' });
+      })
+      .finally(() => {
+        setTesting(false);
+        setTimeout(() => setTestResult(null), 10000);
       });
   };
 
@@ -109,6 +138,24 @@ export default function PushNotificheCard() {
         </div>
       )}
 
+      {testResult && (
+        <div style={{
+          background: testResult.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          border: `1px solid ${testResult.ok ? '#22c55e' : 'var(--danger)'}`,
+          padding: '0.75rem',
+          borderRadius: '8px',
+          color: testResult.ok ? '#22c55e' : 'var(--danger)',
+          marginBottom: '1rem',
+          fontSize: '0.85rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}>
+          {testResult.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+          {testResult.message}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gap: '0.35rem', marginBottom: '1rem', fontSize: '0.85rem' }}>
         <div>Permesso browser: <strong>{permission}</strong></div>
         <div>Push supportate: <strong>{isWebPushSupported() ? 'sì' : 'no'}</strong></div>
@@ -127,27 +174,64 @@ export default function PushNotificheCard() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={handleRegister}
-        disabled={registering || !!blocked}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          padding: '0.65rem 1rem',
-          background: blocked ? 'var(--bg-dark)' : 'var(--accent)',
-          color: blocked ? 'var(--text-muted)' : 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: blocked ? 'not-allowed' : 'pointer',
-          fontWeight: 700,
-          fontSize: '0.9rem',
-        }}
-      >
-        {registering ? <Loader2 size={16} className="spin" /> : <Bell size={16} />}
-        Registra questo smartphone
-      </button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <button
+          type="button"
+          onClick={handleRegister}
+          disabled={registering || !!blocked}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.65rem 1rem',
+            background: blocked ? 'var(--bg-dark)' : 'var(--accent)',
+            color: blocked ? 'var(--text-muted)' : 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: blocked ? 'not-allowed' : 'pointer',
+            fontWeight: 700,
+            fontSize: '0.9rem',
+          }}
+        >
+          {registering ? <Loader2 size={16} className="spin" /> : <Bell size={16} />}
+          Registra questo smartphone
+        </button>
+
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={
+            testing
+            || loading
+            || !status?.vapid_configured
+            || !status?.company_devices
+          }
+          title={
+            !status?.company_devices
+              ? 'Registra almeno un dispositivo prima del test'
+              : 'Invia una notifica di prova a tutti i dispositivi registrati'
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.65rem 1rem',
+            background: 'var(--bg-dark)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            cursor: (testing || loading || !status?.vapid_configured || !status?.company_devices)
+              ? 'not-allowed'
+              : 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            opacity: (testing || loading || !status?.vapid_configured || !status?.company_devices) ? 0.55 : 1,
+          }}
+        >
+          {testing ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+          Invia notifica di test
+        </button>
+      </div>
     </div>
   );
 }

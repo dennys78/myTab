@@ -121,6 +121,15 @@ export async function fetchPushStatus() {
   return data.data;
 }
 
+export async function sendTestPush() {
+  const res = await apiFetch('/api/push/test/', { method: 'POST' });
+  const data = await res.json();
+  if (data.status !== 'success') {
+    return { ok: false, error: data.error || 'Invio fallito' };
+  }
+  return { ok: true, ...data.data };
+}
+
 export async function showLocalPushNotification(payload) {
   if (Notification.permission !== 'granted') return false;
   const registration = await waitForServiceWorker(5000);

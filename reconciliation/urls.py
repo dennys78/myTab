@@ -65,6 +65,7 @@ urlpatterns = [
     path('api/push/subscribe/',                     views.api_push_subscribe),
     path('api/push/unsubscribe/',                   views.api_push_unsubscribe),
     path('api/push/status/',                        views.api_push_status),
+    path('api/push/test/',                          views.api_push_test),
     path('api/settings/',                           views.api_get_settings),
     path('api/settings/save/',                      views.api_save_settings),
     path('api/settings/telegram/reset-sessions/',   views.api_reset_telegram_sessions),

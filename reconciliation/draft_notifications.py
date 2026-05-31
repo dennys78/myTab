@@ -207,6 +207,16 @@ def send_web_push_to_company(company, payload, user_ids=None):
     return sent
 
 
+def send_test_push(company):
+    payload = {
+        'title': 'myTab — test notifica',
+        'body': 'Se vedi questo messaggio, le push funzionano correttamente.',
+        'url': '/?view=impostazioni',
+        'tag': 'mytab-push-test',
+    }
+    return send_web_push_to_company(company, payload)
+
+
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
     payload = _push_payload_for_draft(draft, reminder=reminder)
     qs = PushSubscription.objects.filter(company=draft.company)
