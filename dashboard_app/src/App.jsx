@@ -55,11 +55,11 @@ function AppShell() {
 
   const settingsSubsections = isAdmin
     ? [
-        { id: 'azienda', label: 'Azienda' },
+        { id: 'azienda', label: 'Ragione sociale e archivi' },
         { id: 'rettifiche', label: 'Rettifiche' },
-        { id: 'generali', label: 'Generali' },
+        { id: 'generali', label: 'IA ed assistenti' },
       ]
-    : [{ id: 'generali', label: 'Modello IA' }];
+    : [{ id: 'generali', label: 'IA ed assistenti' }];
 
   const fetchClosures = useCallback(() => {
     if (!canSeeClosures) return;

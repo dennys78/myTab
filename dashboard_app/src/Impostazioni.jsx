@@ -10,13 +10,13 @@ export default function Impostazioni({ section = 'generali' }) {
   const showRettifiche = section === 'rettifiche';
   const showGenerali = section === 'generali';
 
-  const sectionTitle = showAzienda ? 'Azienda' : showRettifiche ? 'Rettifiche' : 'Generali';
+  const sectionTitle = showAzienda ? 'Ragione sociale e archivi' : showRettifiche ? 'Rettifiche' : 'IA ed assistenti';
   const sectionHint = showAzienda
-    ? "Gestisci i dati aziendali, l'archivio immagini e l'eliminazione dei dati dell'azienda attiva."
+    ? 'Gestisci ragione sociale, archivio immagini e cancellazione dati dell\'azienda attiva.'
     : showRettifiche
       ? 'Allinea i valori di cassa alla situazione reale del punto vendita.'
       : isAdmin
-        ? 'Configura le chiavi API, il modello IA e Telegram.'
+        ? 'Configura modelli IA, chiavi API e assistente Telegram.'
         : 'Scegli il modello IA usato quando acquisisci le chiusure con le foto.';
   const [groqKey, setGroqKey] = useState('');
   const [keyConfigured, setKeyConfigured] = useState(false);
