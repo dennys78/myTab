@@ -534,9 +534,8 @@ def api_insert_closure(request):
             push_sent = 0
             push_devices = 0
             try:
-                from .draft_notifications import notify_closure_saved
-                from .models import PushSubscription
-                push_devices = PushSubscription.objects.filter(company=company).count()
+                from .draft_notifications import notify_closure_saved, push_subscriptions_for_company
+                push_devices = push_subscriptions_for_company(company).count()
                 push_sent = notify_closure_saved(company, closure, items, summary, operator)
             except Exception:
                 import logging
@@ -1908,13 +1907,26 @@ def api_push_status(request):
         vapid_configured = True
     except Exception as exc:
         vapid_error = str(exc)
-    company_devices = PushSubscription.objects.filter(company=company).count()
-    user_devices = PushSubscription.objects.filter(company=company, user=request.user).count()
+    current_endpoint = (request.GET.get('endpoint') or '').strip()
+    from .draft_notifications import device_label, push_subscriptions_for_company
+    subs_qs = push_subscriptions_for_company(company)
+    company_devices = subs_qs.count()
+    user_devices = subs_qs.filter(user=request.user).count()
+    devices = [
+        {
+            'username': sub.user.get_username(),
+            'device': device_label(sub.user_agent),
+            'updated_at': sub.updated_at.isoformat(),
+            'is_current': bool(current_endpoint and sub.endpoint == current_endpoint),
+        }
+        for sub in subs_qs.order_by('-updated_at')
+    ]
     return JsonResponse({
         'status': 'success',
         'data': {
             'company_devices': company_devices,
             'user_devices': user_devices,
+            'devices': devices,
             'vapid_configured': vapid_configured,
             'vapid_error': vapid_error,
             'vapid_public_key': vapid_public_key,
@@ -1931,14 +1943,14 @@ def api_push_test(request):
         return err
     if not _user_can_receive_push(request.user, company):
         return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
-    company_devices = PushSubscription.objects.filter(company=company).count()
+    from .draft_notifications import push_subscriptions_for_company, send_test_push
+    company_devices = push_subscriptions_for_company(company).count()
     if company_devices == 0:
         return JsonResponse({
             'status': 'error',
             'error': 'Nessun dispositivo registrato. Registra almeno uno smartphone.',
         }, status=400)
     try:
-        from .draft_notifications import send_test_push
         push_sent, push_failed, push_removed, push_errors = send_test_push(company)
     except Exception as exc:
         return JsonResponse({'status': 'error', 'error': f'Invio test fallito: {exc}'}, status=500)

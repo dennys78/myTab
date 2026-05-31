@@ -7,6 +7,7 @@ import {
   isWebPushSupported,
   pushUnavailableReason,
   sendTestPush,
+  waitForServiceWorker,
 } from './webPush';
 
 const REASON_LABELS = {
@@ -30,7 +31,19 @@ export default function PushNotificheCard() {
 
   const refresh = useCallback(() => {
     setLoading(true);
-    fetchPushStatus()
+    (async () => {
+      let endpoint = '';
+      try {
+        if (isWebPushSupported()) {
+          const registration = await waitForServiceWorker(5000);
+          const subscription = await registration?.pushManager?.getSubscription();
+          endpoint = subscription?.endpoint || '';
+        }
+      } catch {
+        /* ignore */
+      }
+      return fetchPushStatus(endpoint);
+    })()
       .then((data) => setStatus(data))
       .catch(() => setStatus(null))
       .finally(() => setLoading(false));
@@ -134,7 +147,7 @@ export default function PushNotificheCard() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
         <Bell size={20} color="var(--accent)" />
         <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Notifiche browser</h2>
-        {status?.user_devices > 0 && (
+        {status?.user_devices > 0 && status?.devices?.some((d) => d.is_current) && (
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#22c55e', fontSize: '0.8rem', fontWeight: 600 }}>
             <CheckCircle size={14} /> Attivo su questo dispositivo
           </span>
@@ -206,11 +219,24 @@ export default function PushNotificheCard() {
           <div style={{ color: 'var(--text-muted)' }}>Caricamento stato…</div>
         ) : status && (
           <>
-            <div>Dispositivi azienda registrati: <strong>{status.company_devices}</strong></div>
-            <div>Dispositivi tuoi registrati: <strong>{status.user_devices}</strong></div>
+            <div>Totale dispositivi azienda: <strong>{status.company_devices}</strong></div>
+            <div>I tuoi dispositivi registrati: <strong>{status.user_devices}</strong></div>
             {!status.vapid_configured && (
               <div style={{ color: 'var(--danger)' }}>
                 Server push non pronto{status.vapid_error ? `: ${status.vapid_error}` : ''}. Esegui rebuild backend con pywebpush.
+              </div>
+            )}
+            {status.devices?.length > 0 && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Elenco dispositivi registrati:</div>
+                <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'grid', gap: '0.25rem' }}>
+                  {status.devices.map((device) => (
+                    <li key={`${device.username}-${device.device}-${device.updated_at}`}>
+                      <strong>{device.username}</strong> · {device.device}
+                      {device.is_current ? ' · questo dispositivo' : ''}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </>

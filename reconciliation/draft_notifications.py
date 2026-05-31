@@ -100,6 +100,44 @@ def users_with_acquisisci_access(company):
     return eligible
 
 
+def users_with_company_push_access(company):
+    if not company:
+        return []
+    eligible = []
+    for user in User.objects.filter(is_active=True):
+        if is_admin_user(user):
+            if user_companies(user).filter(id=company.id).exists():
+                eligible.append(user)
+        else:
+            assigned = get_user_assigned_company(user)
+            if assigned and assigned.id == company.id:
+                eligible.append(user)
+    return eligible
+
+
+def push_subscriptions_for_company(company, user_ids=None):
+    if user_ids is None:
+        user_ids = [u.id for u in users_with_company_push_access(company)]
+    if not user_ids:
+        return PushSubscription.objects.none()
+    return PushSubscription.objects.filter(user_id__in=user_ids).select_related('user')
+
+
+def device_label(user_agent):
+    ua = (user_agent or '').lower()
+    if 'iphone' in ua or 'ipad' in ua:
+        return 'iPhone/iPad'
+    if 'android' in ua:
+        return 'Android'
+    if 'mac os' in ua or 'macintosh' in ua:
+        return 'Mac'
+    if 'windows' in ua:
+        return 'Windows'
+    if 'linux' in ua:
+        return 'Linux'
+    return 'Browser'
+
+
 def _get_telegram_token(company):
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     if not token:
@@ -221,9 +259,7 @@ def send_web_push(subscription, payload):
 
 
 def send_web_push_to_company(company, payload, user_ids=None):
-    qs = PushSubscription.objects.filter(company=company)
-    if user_ids is not None:
-        qs = qs.filter(user_id__in=user_ids)
+    qs = push_subscriptions_for_company(company, user_ids=user_ids)
     sent = 0
     for subscription in qs:
         ok, _, _ = send_web_push(subscription, payload)
@@ -239,7 +275,7 @@ def send_test_push(company):
         'url': '/?view=impostazioni',
         'tag': 'mytab-push-test',
     }
-    qs = PushSubscription.objects.filter(company=company)
+    qs = push_subscriptions_for_company(company)
     sent = 0
     failed = 0
     removed = 0
@@ -259,12 +295,9 @@ def send_test_push(company):
 
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
     payload = _push_payload_for_draft(draft, reminder=reminder)
-    qs = PushSubscription.objects.filter(company=draft.company)
-    if user_ids is not None:
-        qs = qs.filter(user_id__in=user_ids)
-    else:
-        eligible_ids = [u.id for u in users_with_acquisisci_access(draft.company)]
-        qs = qs.filter(user_id__in=eligible_ids)
+    if user_ids is None:
+        user_ids = [u.id for u in users_with_acquisisci_access(draft.company)]
+    qs = push_subscriptions_for_company(draft.company, user_ids=user_ids)
 
     sent = 0
     for subscription in qs:

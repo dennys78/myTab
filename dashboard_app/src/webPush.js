@@ -139,8 +139,9 @@ export async function ensurePushSubscription(options = {}) {
   return subscribeWebPush(options);
 }
 
-export async function fetchPushStatus() {
-  const res = await apiFetch('/api/push/status/');
+export async function fetchPushStatus(currentEndpoint = '') {
+  const qs = currentEndpoint ? `?endpoint=${encodeURIComponent(currentEndpoint)}` : '';
+  const res = await apiFetch(`/api/push/status/${qs}`);
   const data = await res.json();
   if (data.status !== 'success') return null;
   return data.data;
