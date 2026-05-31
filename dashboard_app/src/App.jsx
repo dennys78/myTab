@@ -12,6 +12,7 @@ import Versamenti from './Versamenti';
 import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
+import TelegramDraftNotification from './TelegramDraftNotification';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
 import RepartiTrendCharts from './RepartiTrendCharts';
@@ -44,6 +45,8 @@ function AppShell() {
   );
   const canSeeClosures = canAccessView(user?.role, user?.sidebar_menu, 'dashboard')
     || canAccessView(user?.role, user?.sidebar_menu, 'chiusure');
+  const canAcquireAI = canAccessView(user?.role, user?.sidebar_menu, 'acquisisci-ai');
+  const activeCompanyId = user?.company?.id ?? user?.assigned_company?.id;
 
   const [currentView, setCurrentView] = useState('acquisisci-ai');
 
@@ -423,6 +426,13 @@ function AppShell() {
         )}
 
         <InstallPwa />
+
+        <TelegramDraftNotification
+          companyId={activeCompanyId}
+          enabled={canAcquireAI}
+          currentView={currentView}
+          onOpenAcquisition={() => navigate('acquisisci-ai')}
+        />
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />

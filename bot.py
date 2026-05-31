@@ -222,7 +222,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Bozza acquisizione creata in myTab.\n\n"
         f"Foto ricevute: {photo_count}\n"
         f"Totale scassettato: {_money_text(totale_scassettato)}\n\n"
-        "Apri Acquisisci con IA nell'app: troverai la bozza pronta da controllare e confermare."
+        "Gli utenti collegati all'app riceveranno una notifica.\n"
+        "Apri Acquisisci con IA: troverai la bozza pronta da controllare e confermare."
     )
 
 

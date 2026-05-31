@@ -3,6 +3,7 @@ import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } 
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
+import { markDraftsSeen } from './telegramDraftNotifications';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -30,10 +31,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [deletingDraftId, setDeletingDraftId] = useState(null);
   const [aiProvider, setAiProvider] = useState('groq');
 
+  const companyId = user?.company?.id ?? user?.assigned_company?.id;
+
   const fetchDrafts = () => {
     apiFetch('/api/acquisition-drafts/')
       .then(r => r.json())
-      .then(d => { if (d.status === 'success') setDrafts(d.data); })
+      .then(d => {
+        if (d.status === 'success') {
+          setDrafts(d.data);
+          if (companyId && d.data?.length) {
+            markDraftsSeen(companyId, d.data.map((item) => item.id));
+          }
+        }
+      })
       .catch(() => {});
   };
 
