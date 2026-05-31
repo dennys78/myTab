@@ -1238,6 +1238,45 @@ tbody tr:hover {
   display: none;
 }
 
+.closures-table .closure-highlight-col {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.closure-chip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  border: 1px solid transparent;
+}
+
+.closure-chip--distrib {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.closure-chip--positive {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.closure-chip--negative {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.closure-chip--neutral {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
+}
+
 /* Media Queries for Mobile Responsiveness */
 @media (max-width: 768px) {
   body {

@@ -473,12 +473,12 @@ function AppShell() {
                         <th></th>
                         <th className="desktop-closure-col">Foto</th>
                         <th>Data</th>
-                        <th className="desktop-closure-col">Operatore</th>
                         <th className="desktop-closure-col">Contanti</th>
                         <th className="desktop-closure-col">Pag. POS</th>
                         <th className="desktop-closure-col">Totale Generale</th>
                         <th className="mobile-closure-col">Totale cassetto</th>
-                        <th className="mobile-closure-col">Differenza</th>
+                        <th>Distrib</th>
+                        <th>Differenza</th>
                         <th className="desktop-closure-col">Azioni</th>
                       </tr>
                     </thead>
@@ -493,20 +493,17 @@ function AppShell() {
                               <ImageIcon size={17} color={closure.image_count > 0 ? 'var(--success)' : 'var(--text-subtle)'} />
                             </td>
                             <td>{closure.date}</td>
-                            <td className="desktop-closure-col">
-                              <div>{closure.operator}</div>
-                              {closure.submitted_by && closure.submitted_by !== closure.operator && (
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '0.15rem' }}>
-                                  File inviati da {closure.submitted_by}
-                                </div>
-                              )}
-                            </td>
                             <td className="desktop-closure-col">€ {closure.summary.contanti.toFixed(2)}</td>
                             <td className="desktop-closure-col">€ {closure.summary.pag_pos.toFixed(2)}</td>
                             <td className="desktop-closure-col" style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
                             <td className="mobile-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closure.summary.totale_cassetto.toFixed(2)}</td>
-                            <td className={`mobile-closure-col ${closure.summary.differenza > 0 ? 'mobile-diff-positive' : closure.summary.differenza < 0 ? 'mobile-diff-negative' : ''}`}>
-                              {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
+                            <td className="closure-highlight-col">
+                              <span className="closure-chip closure-chip--distrib">€ {closure.summary.distrib.toFixed(2)}</span>
+                            </td>
+                            <td className="closure-highlight-col">
+                              <span className={`closure-chip ${closure.summary.differenza > 0 ? 'closure-chip--positive' : closure.summary.differenza < 0 ? 'closure-chip--negative' : 'closure-chip--neutral'}`}>
+                                {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
+                              </span>
                             </td>
                             <td className="desktop-closure-col">
                               <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} title="Elimina"
@@ -518,7 +515,7 @@ function AppShell() {
 
                           {expandedId === closure.id && (
                             <tr>
-                              <td colSpan="8" style={{ padding: 0, borderBottom: 'none' }}>
+                              <td colSpan="10" style={{ padding: 0, borderBottom: 'none' }}>
                                 <div className="expanded-content">
                                   <div className="summary-section" style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
