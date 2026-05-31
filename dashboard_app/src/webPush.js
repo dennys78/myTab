@@ -1,5 +1,7 @@
 import { apiFetch } from './api';
 
+export const VAPID_STORAGE_KEY = 'mytab_registered_vapid_public_key';
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -24,6 +26,19 @@ export function pushUnavailableReason() {
     return 'unsupported';
   }
   return null;
+}
+
+export function getStoredVapidPublicKey() {
+  try {
+    return localStorage.getItem(VAPID_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function isDevicePushRegistrationCurrent(serverPublicKey) {
+  if (!serverPublicKey) return false;
+  return getStoredVapidPublicKey() === serverPublicKey;
 }
 
 export async function waitForServiceWorker(timeoutMs = 15000) {
@@ -64,8 +79,12 @@ export async function subscribeWebPush({ requestPermission = true, forceRenew = 
     return { ok: false, reason: keyData.error ? 'config-error' : 'config' };
   }
 
+  const serverPublicKey = keyData.data.public_key;
+  const storedKey = getStoredVapidPublicKey();
+  const needsRenew = forceRenew || !storedKey || storedKey !== serverPublicKey;
+
   let subscription = await registration.pushManager.getSubscription();
-  if (forceRenew && subscription) {
+  if (needsRenew && subscription) {
     try {
       await subscription.unsubscribe();
     } catch {
@@ -76,7 +95,7 @@ export async function subscribeWebPush({ requestPermission = true, forceRenew = 
 
   const subscribeOptions = {
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(keyData.data.public_key),
+    applicationServerKey: urlBase64ToUint8Array(serverPublicKey),
   };
 
   if (!subscription) {
@@ -106,7 +125,13 @@ export async function subscribeWebPush({ requestPermission = true, forceRenew = 
     return { ok: false, reason: saveData.error || 'save' };
   }
 
-  return { ok: true, endpoint: body.endpoint };
+  try {
+    localStorage.setItem(VAPID_STORAGE_KEY, serverPublicKey);
+  } catch {
+    /* ignore */
+  }
+
+  return { ok: true, endpoint: body.endpoint, renewed: needsRenew };
 }
 
 /** Registra o aggiorna la sottoscrizione push di questo dispositivo sul server. */

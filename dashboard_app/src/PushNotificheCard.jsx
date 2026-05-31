@@ -3,6 +3,7 @@ import { Bell, CheckCircle, Loader2, AlertCircle, Send } from 'lucide-react';
 import {
   ensurePushSubscription,
   fetchPushStatus,
+  isDevicePushRegistrationCurrent,
   isWebPushSupported,
   pushUnavailableReason,
   sendTestPush,
@@ -35,9 +36,30 @@ export default function PushNotificheCard() {
       .finally(() => setLoading(false));
   }, []);
 
+  const blocked = pushUnavailableReason();
+  const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+  const registrationStale = Boolean(
+    status?.vapid_public_key
+    && status?.vapid_configured
+    && !isDevicePushRegistrationCurrent(status.vapid_public_key),
+  );
+
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!status?.vapid_public_key || !status?.vapid_configured || blocked || permission !== 'granted') {
+      return;
+    }
+    if (isDevicePushRegistrationCurrent(status.vapid_public_key)) return;
+
+    ensurePushSubscription({ requestPermission: false, forceRenew: true })
+      .then((result) => {
+        if (result.ok) refresh();
+      })
+      .catch(() => {});
+  }, [status, blocked, permission, refresh]);
 
   const handleRegister = () => {
     setRegistering(true);
@@ -69,16 +91,31 @@ export default function PushNotificheCard() {
     sendTestPush()
       .then((result) => {
         if (result.ok) {
-          const { push_sent: sent, company_devices: total, push_errors: errors } = result;
+          const {
+            push_sent: sent,
+            push_failed: failed,
+            push_removed: removed,
+            company_devices: total,
+            push_errors: errors,
+          } = result;
           let message;
-          if (sent > 0) {
-            message = `Notifica di test inviata a ${sent} dispositivo${sent === 1 ? '' : 'i'} su ${total} registrati.`;
+          if (sent === total && total > 0) {
+            message = `Notifica di test inviata a tutti i ${total} dispositivi registrati.`;
+          } else if (sent > 0) {
+            message = `Notifica inviata a ${sent} dispositivo${sent === 1 ? '' : 'i'} su ${total}.`;
+            if (failed > 0) {
+              message += ` ${failed} non raggiunti: apri myTab su ogni telefono e premi «Registra questo smartphone».`;
+            }
+            if (removed > 0) {
+              message += ` ${removed} registrazione${removed === 1 ? ' obsoleta rimossa' : 'i obsolete rimosse'}.`;
+            }
           } else if (errors?.length) {
             message = `Nessun dispositivo ha ricevuto la notifica (${total} registrati). ${errors[0]}`;
           } else {
-            message = `Nessun dispositivo ha ricevuto la notifica (${total} registrati). Verifica permessi e connessione.`;
+            message = `Nessun dispositivo ha ricevuto la notifica (${total} registrati). Riregistra ogni smartphone.`;
           }
           setTestResult({ ok: sent > 0, message });
+          if (removed > 0) refresh();
         } else {
           setTestResult({ ok: false, message: result.error || 'Invio test fallito.' });
         }
@@ -91,9 +128,6 @@ export default function PushNotificheCard() {
         setTimeout(() => setTestResult(null), 10000);
       });
   };
-
-  const blocked = pushUnavailableReason();
-  const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
 
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
@@ -120,6 +154,12 @@ export default function PushNotificheCard() {
       {!blocked && permission === 'denied' && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.75rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.85rem' }}>
           {REASON_LABELS.denied}
+        </div>
+      )}
+
+      {!blocked && registrationStale && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid var(--warning)', padding: '0.75rem', borderRadius: '8px', color: 'var(--warning)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+          Questo dispositivo usa una registrazione push obsoleta. Premi «Registra questo smartphone» o attendi la sincronizzazione automatica.
         </div>
       )}
 

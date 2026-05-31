@@ -174,7 +174,7 @@ def send_web_push(subscription, payload):
         from pywebpush import WebPushException, webpush
     except ImportError as exc:
         logger.error('pywebpush non installato: %s', exc)
-        return False, 'pywebpush non installato'
+        return False, 'pywebpush non installato', False
 
     _, private_key = ensure_vapid_keys()
     subscription_info = {
@@ -184,25 +184,40 @@ def send_web_push(subscription, payload):
             'auth': subscription.auth,
         },
     }
-    try:
-        webpush(
-            subscription_info=subscription_info,
-            data=json.dumps(payload),
-            vapid_private_key=_vapid_signer_from_pem(private_key),
-            vapid_claims={'sub': VAPID_EMAIL},
-        )
-        return True, None
-    except WebPushException as exc:
-        status = getattr(getattr(exc, 'response', None), 'status_code', None)
-        if status in (404, 410):
-            subscription.delete()
-        err = str(exc).strip() or f'HTTP {status}'
-        logger.warning('Web push failed (%s): %s', status, exc)
-        return False, err
-    except Exception as exc:
-        err = str(exc).strip() or exc.__class__.__name__
-        logger.warning('Web push failed: %s', exc)
-        return False, err
+    vapid_signer = _vapid_signer_from_pem(private_key)
+    last_exc = None
+    last_status = None
+
+    for encoding in ('aes128gcm', 'aesgcm'):
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=json.dumps(payload),
+                vapid_private_key=vapid_signer,
+                vapid_claims={'sub': VAPID_EMAIL},
+                content_encoding=encoding,
+            )
+            return True, None, False
+        except WebPushException as exc:
+            last_exc = exc
+            last_status = getattr(getattr(exc, 'response', None), 'status_code', None)
+            if last_status in (401, 403):
+                break
+        except Exception as exc:
+            last_exc = exc
+            last_status = None
+            break
+
+    removed = False
+    if last_status in (401, 403, 404, 410):
+        subscription.delete()
+        removed = True
+
+    err = str(last_exc).strip() if last_exc else 'Invio push fallito'
+    if not err and last_status:
+        err = f'HTTP {last_status}'
+    logger.warning('Web push failed (%s): %s', last_status, last_exc)
+    return False, err, removed
 
 
 def send_web_push_to_company(company, payload, user_ids=None):
@@ -211,7 +226,7 @@ def send_web_push_to_company(company, payload, user_ids=None):
         qs = qs.filter(user_id__in=user_ids)
     sent = 0
     for subscription in qs:
-        ok, _ = send_web_push(subscription, payload)
+        ok, _, _ = send_web_push(subscription, payload)
         if ok:
             sent += 1
     return sent
@@ -226,14 +241,20 @@ def send_test_push(company):
     }
     qs = PushSubscription.objects.filter(company=company)
     sent = 0
+    failed = 0
+    removed = 0
     errors = []
     for subscription in qs:
-        ok, err = send_web_push(subscription, payload)
+        ok, err, was_removed = send_web_push(subscription, payload)
         if ok:
             sent += 1
-        elif err and err not in errors:
-            errors.append(err)
-    return sent, errors
+        else:
+            failed += 1
+            if was_removed:
+                removed += 1
+            if err and err not in errors:
+                errors.append(err)
+    return sent, failed, removed, errors
 
 
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
@@ -247,7 +268,7 @@ def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
 
     sent = 0
     for subscription in qs:
-        ok, _ = send_web_push(subscription, payload)
+        ok, _, _ = send_web_push(subscription, payload)
         if ok:
             sent += 1
     return sent

@@ -1901,9 +1901,10 @@ def api_push_status(request):
         return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
     vapid_configured = False
     vapid_error = ''
+    vapid_public_key = ''
     try:
         from .draft_notifications import get_vapid_public_key
-        get_vapid_public_key()
+        vapid_public_key = get_vapid_public_key()
         vapid_configured = True
     except Exception as exc:
         vapid_error = str(exc)
@@ -1916,6 +1917,7 @@ def api_push_status(request):
             'user_devices': user_devices,
             'vapid_configured': vapid_configured,
             'vapid_error': vapid_error,
+            'vapid_public_key': vapid_public_key,
         },
     })
 
@@ -1937,13 +1939,15 @@ def api_push_test(request):
         }, status=400)
     try:
         from .draft_notifications import send_test_push
-        push_sent, push_errors = send_test_push(company)
+        push_sent, push_failed, push_removed, push_errors = send_test_push(company)
     except Exception as exc:
         return JsonResponse({'status': 'error', 'error': f'Invio test fallito: {exc}'}, status=500)
     return JsonResponse({
         'status': 'success',
         'data': {
             'push_sent': push_sent,
+            'push_failed': push_failed,
+            'push_removed': push_removed,
             'company_devices': company_devices,
             'push_errors': push_errors[:3],
         },
