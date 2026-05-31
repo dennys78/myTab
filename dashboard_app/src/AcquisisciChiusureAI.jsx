@@ -255,7 +255,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     };
     setSaving(true);
     setError(null);
-    await ensurePushSubscription({ requestPermission: true }).catch(() => {});
+    await ensurePushSubscription({ requestPermission: true, forceRenew: true }).catch(() => {});
 
     const notifyPayload = buildClosureSavedNotificationPayload({
       date: previewData.date,
@@ -291,15 +291,15 @@ export default function AcquisisciChiusureAI({ onBack }) {
           if (!shown && sent === 0) {
             alert(
               'Chiusura registrata.\n\n'
-              + 'Notifica browser non inviata: apri myTab su ogni smartphone (con HTTPS), '
-              + 'accetta le notifiche e lascia l\'app aperta almeno una volta dopo il login.'
+              + 'Nessuna notifica push inviata. Vai in Impostazioni → Notifiche browser '
+              + 'e premi "Registra questo smartphone" su ogni telefono.'
             );
           } else if (devices <= 1 && sent <= 1) {
             alert(
               'Chiusura registrata.\n\n'
-              + `Notifica inviata a ${sent} dispositivo. `
-              + 'Sugli altri smartphone apri myTab e accetta le notifiche '
-              + '(ogni telefono va registrato separatamente). '
+              + `Notifica push inviata a ${sent} dispositivo `
+              + `(registrati in azienda: ${devices}). `
+              + 'Su ogni altro smartphone: Impostazioni → Registra questo smartphone. '
               + 'Riceverai anche il riepilogo su Telegram se il bot è attivo.'
             );
           } else {

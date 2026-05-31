@@ -39,7 +39,7 @@ export async function waitForServiceWorker(timeoutMs = 15000) {
   }
 }
 
-export async function subscribeWebPush({ requestPermission = true } = {}) {
+export async function subscribeWebPush({ requestPermission = true, forceRenew = false } = {}) {
   const blocked = pushUnavailableReason();
   if (blocked) {
     return { ok: false, reason: blocked };
@@ -61,15 +61,38 @@ export async function subscribeWebPush({ requestPermission = true } = {}) {
   const keyRes = await apiFetch('/api/push/vapid-public-key/');
   const keyData = await keyRes.json();
   if (keyData.status !== 'success' || !keyData.data?.public_key) {
-    return { ok: false, reason: 'config' };
+    return { ok: false, reason: keyData.error ? 'config-error' : 'config' };
   }
 
   let subscription = await registration.pushManager.getSubscription();
+  if (forceRenew && subscription) {
+    try {
+      await subscription.unsubscribe();
+    } catch {
+      /* ignore */
+    }
+    subscription = null;
+  }
+
+  const subscribeOptions = {
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(keyData.data.public_key),
+  };
+
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(keyData.data.public_key),
-    });
+    try {
+      subscription = await registration.pushManager.subscribe(subscribeOptions);
+    } catch {
+      const stale = await registration.pushManager.getSubscription();
+      if (stale) {
+        try {
+          await stale.unsubscribe();
+        } catch {
+          /* ignore */
+        }
+      }
+      subscription = await registration.pushManager.subscribe(subscribeOptions);
+    }
   }
 
   const body = subscription.toJSON();
@@ -80,7 +103,7 @@ export async function subscribeWebPush({ requestPermission = true } = {}) {
   });
   const saveData = await saveRes.json();
   if (saveData.status !== 'success') {
-    return { ok: false, reason: 'save' };
+    return { ok: false, reason: saveData.error || 'save' };
   }
 
   return { ok: true, endpoint: body.endpoint };
@@ -89,6 +112,13 @@ export async function subscribeWebPush({ requestPermission = true } = {}) {
 /** Registra o aggiorna la sottoscrizione push di questo dispositivo sul server. */
 export async function ensurePushSubscription(options = {}) {
   return subscribeWebPush(options);
+}
+
+export async function fetchPushStatus() {
+  const res = await apiFetch('/api/push/status/');
+  const data = await res.json();
+  if (data.status !== 'success') return null;
+  return data.data;
 }
 
 export async function showLocalPushNotification(payload) {

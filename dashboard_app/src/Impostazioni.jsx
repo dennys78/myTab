@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2, Plus, Pencil } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
+import PushNotificheCard from './PushNotificheCard';
 
 export default function Impostazioni({ section = 'generali' }) {
   const { user } = useAuth();
@@ -442,6 +443,10 @@ export default function Impostazioni({ section = 'generali' }) {
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.6rem 0.9rem', borderRadius: '6px', color: 'var(--danger)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
           <AlertCircle size={15} /> {error}
         </div>
+      )}
+
+      {showGenerali && (
+        <PushNotificheCard />
       )}
 
       {showGenerali && (

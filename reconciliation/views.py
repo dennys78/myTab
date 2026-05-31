@@ -1891,6 +1891,36 @@ def api_push_unsubscribe(request):
 
 
 @require_auth
+def api_push_status(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_receive_push(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    vapid_configured = False
+    vapid_error = ''
+    try:
+        from .draft_notifications import get_vapid_public_key
+        get_vapid_public_key()
+        vapid_configured = True
+    except Exception as exc:
+        vapid_error = str(exc)
+    company_devices = PushSubscription.objects.filter(company=company).count()
+    user_devices = PushSubscription.objects.filter(company=company, user=request.user).count()
+    return JsonResponse({
+        'status': 'success',
+        'data': {
+            'company_devices': company_devices,
+            'user_devices': user_devices,
+            'vapid_configured': vapid_configured,
+            'vapid_error': vapid_error,
+        },
+    })
+
+
+@require_auth
 def api_acquisition_drafts_mark_seen(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error'}, status=405)

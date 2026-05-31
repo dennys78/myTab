@@ -160,7 +160,11 @@ def _push_payload_for_draft(draft, *, reminder=False):
 
 
 def send_web_push(subscription, payload):
-    from pywebpush import WebPushException, webpush
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError as exc:
+        logger.error('pywebpush non installato: %s', exc)
+        return False
 
     _, private_key = ensure_vapid_keys()
     subscription_info = {

@@ -1,0 +1,153 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Bell, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import {
+  ensurePushSubscription,
+  fetchPushStatus,
+  isWebPushSupported,
+  pushUnavailableReason,
+} from './webPush';
+
+const REASON_LABELS = {
+  insecure: 'Serve HTTPS (es. https://www.my-tab.uk). Su http://…:8080 le push non funzionano.',
+  unsupported: 'Browser non supportato per le notifiche push.',
+  denied: 'Notifiche bloccate. Abilitale nelle impostazioni del browser/sistema.',
+  default: 'Permesso notifiche non ancora concesso.',
+  'no-sw': 'App non pronta. Ricarica la pagina o reinstalla la PWA.',
+  config: 'Server push non configurato. Contatta l\'amministratore.',
+  'config-error': 'Errore configurazione push sul server.',
+  save: 'Registrazione sul server fallita. Riprova.',
+};
+
+export default function PushNotificheCard() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] = useState(false);
+  const [registerResult, setRegisterResult] = useState(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    fetchPushStatus()
+      .then((data) => setStatus(data))
+      .catch(() => setStatus(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleRegister = () => {
+    setRegistering(true);
+    setRegisterResult(null);
+    ensurePushSubscription({ requestPermission: true, forceRenew: true })
+      .then((result) => {
+        if (result.ok) {
+          setRegisterResult({ ok: true });
+          refresh();
+        } else {
+          setRegisterResult({
+            ok: false,
+            message: REASON_LABELS[result.reason] || `Errore: ${result.reason}`,
+          });
+        }
+      })
+      .catch(() => {
+        setRegisterResult({ ok: false, message: 'Errore di rete durante la registrazione.' });
+      })
+      .finally(() => {
+        setRegistering(false);
+        setTimeout(() => setRegisterResult(null), 8000);
+      });
+  };
+
+  const blocked = pushUnavailableReason();
+  const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+        <Bell size={20} color="var(--accent)" />
+        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Notifiche browser</h2>
+        {status?.user_devices > 0 && (
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#22c55e', fontSize: '0.8rem', fontWeight: 600 }}>
+            <CheckCircle size={14} /> Attivo su questo dispositivo
+          </span>
+        )}
+      </div>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem', lineHeight: 1.5 }}>
+        Ogni smartphone va registrato separatamente: apri myTab, accetta le notifiche e premi il pulsante sotto.
+        Su iPhone installa la PWA (Aggiungi a Home) e usa HTTPS.
+      </p>
+
+      {blocked && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid var(--warning)', padding: '0.75rem', borderRadius: '8px', color: 'var(--warning)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+          {REASON_LABELS[blocked]}
+        </div>
+      )}
+
+      {!blocked && permission === 'denied' && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.75rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+          {REASON_LABELS.denied}
+        </div>
+      )}
+
+      {registerResult && (
+        <div style={{
+          background: registerResult.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          border: `1px solid ${registerResult.ok ? '#22c55e' : 'var(--danger)'}`,
+          padding: '0.75rem',
+          borderRadius: '8px',
+          color: registerResult.ok ? '#22c55e' : 'var(--danger)',
+          marginBottom: '1rem',
+          fontSize: '0.85rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}>
+          {registerResult.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+          {registerResult.ok ? 'Dispositivo registrato per le notifiche push.' : registerResult.message}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gap: '0.35rem', marginBottom: '1rem', fontSize: '0.85rem' }}>
+        <div>Permesso browser: <strong>{permission}</strong></div>
+        <div>Push supportate: <strong>{isWebPushSupported() ? 'sì' : 'no'}</strong></div>
+        {loading ? (
+          <div style={{ color: 'var(--text-muted)' }}>Caricamento stato…</div>
+        ) : status && (
+          <>
+            <div>Dispositivi azienda registrati: <strong>{status.company_devices}</strong></div>
+            <div>Dispositivi tuoi registrati: <strong>{status.user_devices}</strong></div>
+            {!status.vapid_configured && (
+              <div style={{ color: 'var(--danger)' }}>
+                Server push non pronto{status.vapid_error ? `: ${status.vapid_error}` : ''}. Esegui rebuild backend con pywebpush.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={handleRegister}
+        disabled={registering || !!blocked}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          padding: '0.65rem 1rem',
+          background: blocked ? 'var(--bg-dark)' : 'var(--accent)',
+          color: blocked ? 'var(--text-muted)' : 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: blocked ? 'not-allowed' : 'pointer',
+          fontWeight: 700,
+          fontSize: '0.9rem',
+        }}
+      >
+        {registering ? <Loader2 size={16} className="spin" /> : <Bell size={16} />}
+        Registra questo smartphone
+      </button>
+    </div>
+  );
+}
