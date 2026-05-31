@@ -13,6 +13,7 @@ import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
 import WebPushSetup from './WebPushSetup';
+import PushNotifyButton from './PushNotifyButton';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
 import RepartiTrendCharts from './RepartiTrendCharts';
@@ -415,6 +416,7 @@ function AppShell() {
               </select>
             </div>
           )}
+          <PushNotifyButton />
           <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%', padding: '0.5rem 0.6rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
             <LogOut size={15} /> Esci
           </button>
