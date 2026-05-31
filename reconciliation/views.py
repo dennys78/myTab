@@ -35,6 +35,7 @@ from .models import (
     Versamento,
     MovimentoCassa,
     FondoCassaMovimento,
+    PushSubscription,
 )
 from .nav_permissions import default_sidebar_menu, normalize_sidebar_menu
 from .company_scope import (
@@ -1796,6 +1797,98 @@ def api_extract_closure_ai(request):
 
 # ── BOZZE ACQUISIZIONE TELEGRAM ──────────────────────────────────────────────
 
+# ── WEB PUSH + BOZZE TELEGRAM ────────────────────────────────────────────────
+
+def _user_can_acquire_ai(user, company):
+    from .draft_notifications import users_with_acquisisci_access
+    return user in users_with_acquisisci_access(company)
+
+
+@require_auth
+def api_push_vapid_public_key(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_acquire_ai(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    try:
+        from .draft_notifications import get_vapid_public_key
+        return JsonResponse({'status': 'success', 'data': {'public_key': get_vapid_public_key()}})
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'error': f'Push non disponibile: {exc}'}, status=500)
+
+
+@require_auth
+def api_push_subscribe(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_acquire_ai(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+    endpoint = (data.get('endpoint') or '').strip()
+    keys = data.get('keys') or {}
+    p256dh = (keys.get('p256dh') or '').strip()
+    auth = (keys.get('auth') or '').strip()
+    if not endpoint or not p256dh or not auth:
+        return JsonResponse({'status': 'error', 'error': 'Sottoscrizione push non valida'}, status=400)
+    PushSubscription.objects.update_or_create(
+        user=request.user,
+        endpoint=endpoint,
+        defaults={
+            'company': company,
+            'p256dh': p256dh,
+            'auth': auth,
+            'user_agent': (request.META.get('HTTP_USER_AGENT') or '')[:255],
+        },
+    )
+    return JsonResponse({'status': 'success'})
+
+
+@require_auth
+def api_push_unsubscribe(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+    endpoint = (data.get('endpoint') or '').strip()
+    if endpoint:
+        PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+    else:
+        PushSubscription.objects.filter(user=request.user).delete()
+    return JsonResponse({'status': 'success'})
+
+
+@require_auth
+def api_acquisition_drafts_mark_seen(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_acquire_ai(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        data = {}
+    draft_ids = data.get('draft_ids')
+    qs = AcquisitionDraft.objects.filter(company=company, status='pending', source='telegram', viewed_at__isnull=True)
+    if draft_ids:
+        qs = qs.filter(id__in=[int(i) for i in draft_ids if str(i).isdigit()])
+    updated = qs.update(viewed_at=timezone.now())
+    return JsonResponse({'status': 'success', 'data': {'marked': updated}})
+
+
 @require_auth
 def api_acquisition_drafts_list(request):
     if request.method != 'GET':
@@ -1814,6 +1907,7 @@ def api_acquisition_drafts_list(request):
             'pag_pos_reale': float(d.pag_pos_reale or 0),
             'photo_count': d.images.count(),
             'created_at': d.created_at.isoformat(),
+            'viewed': d.viewed_at is not None,
         } for d in drafts],
     })
 
@@ -1848,6 +1942,10 @@ def api_acquisition_draft_extract(request, draft_id):
         draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, company=company, status='pending')
     except AcquisitionDraft.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
+
+    if draft.viewed_at is None:
+        draft.viewed_at = timezone.now()
+        draft.save(update_fields=['viewed_at'])
 
     force = False
     if request.body:

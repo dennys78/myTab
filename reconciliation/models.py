@@ -243,6 +243,8 @@ class AcquisitionDraft(models.Model):
     extracted_payload = models.JSONField(null=True, blank=True, verbose_name="Risultato estrazione IA")
     extracted_provider = models.CharField(max_length=20, blank=True, default='', verbose_name="Provider IA estrazione")
     extracted_at = models.DateTimeField(null=True, blank=True, verbose_name="Estrazione IA il")
+    viewed_at = models.DateTimeField(null=True, blank=True, verbose_name="Vista in app il")
+    telegram_reminder_sent_at = models.DateTimeField(null=True, blank=True, verbose_name="Promemoria Telegram il")
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -263,6 +265,25 @@ class AcquisitionDraftImage(models.Model):
     class Meta:
         verbose_name = "Foto Bozza"
         verbose_name_plural = "Foto Bozza"
+
+
+class PushSubscription(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_subscriptions')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='push_subscriptions')
+    endpoint = models.TextField()
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=64)
+    user_agent = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Sottoscrizione Push'
+        verbose_name_plural = 'Sottoscrizioni Push'
+        unique_together = [('user', 'endpoint')]
+
+    def __str__(self):
+        return f'Push {self.user.username} @ {self.company.denominazione}'
 
 
 class BankTransaction(models.Model):

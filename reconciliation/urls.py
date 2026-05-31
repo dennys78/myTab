@@ -24,6 +24,7 @@ urlpatterns = [
     path('api/closure-images/<int:image_id>/view/', views.api_closure_image_view),
     path('api/closure-images/<int:image_id>/delete/', views.api_closure_image_delete),
     path('api/acquisition-drafts/',                 views.api_acquisition_drafts_list),
+    path('api/acquisition-drafts/mark-seen/',     views.api_acquisition_drafts_mark_seen),
     path('api/acquisition-drafts/<int:draft_id>/extract-ai/', views.api_acquisition_draft_extract),
     path('api/acquisition-drafts/<int:draft_id>/cancel/', views.api_acquisition_draft_cancel),
     path('api/acquisition-draft-images/<int:image_id>/view/', views.api_acquisition_draft_image_view),
@@ -60,6 +61,9 @@ urlpatterns = [
     # AI + Impostazioni
     path('api/closures/extract-ai/',                views.api_extract_closure_ai),
     path('api/acquisition/ai-provider/',            views.api_acquisition_ai_provider),
+    path('api/push/vapid-public-key/',              views.api_push_vapid_public_key),
+    path('api/push/subscribe/',                     views.api_push_subscribe),
+    path('api/push/unsubscribe/',                   views.api_push_unsubscribe),
     path('api/settings/',                           views.api_get_settings),
     path('api/settings/save/',                      views.api_save_settings),
     path('api/settings/telegram/reset-sessions/',   views.api_reset_telegram_sessions),

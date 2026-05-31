@@ -12,7 +12,7 @@ import Versamenti from './Versamenti';
 import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import InstallPwa from './InstallPwa';
-import TelegramDraftNotification from './TelegramDraftNotification';
+import WebPushSetup from './WebPushSetup';
 import PromemoriaDashboardCard from './PromemoriaDashboardCard';
 import PromemoriaMovimentiDashboardCard from './PromemoriaMovimentiDashboardCard';
 import RepartiTrendCharts from './RepartiTrendCharts';
@@ -46,7 +46,6 @@ function AppShell() {
   const canSeeClosures = canAccessView(user?.role, user?.sidebar_menu, 'dashboard')
     || canAccessView(user?.role, user?.sidebar_menu, 'chiusure');
   const canAcquireAI = canAccessView(user?.role, user?.sidebar_menu, 'acquisisci-ai');
-  const activeCompanyId = user?.company?.id ?? user?.assigned_company?.id;
 
   const [currentView, setCurrentView] = useState('acquisisci-ai');
 
@@ -79,6 +78,17 @@ function AppShell() {
       setCurrentView(ids[0]);
     }
   }, [user, navItems, currentView]);
+
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+    if (view && canAccessView(user.role, user.sidebar_menu, view)) {
+      setCurrentView(view);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [user]);
+
 
   const fetchVersamenti = useCallback(() => {
     apiFetch('/api/versamenti/')
@@ -427,12 +437,7 @@ function AppShell() {
 
         <InstallPwa />
 
-        <TelegramDraftNotification
-          companyId={activeCompanyId}
-          enabled={canAcquireAI}
-          currentView={currentView}
-          onOpenAcquisition={() => navigate('acquisisci-ai')}
-        />
+        <WebPushSetup enabled={canAcquireAI} />
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />

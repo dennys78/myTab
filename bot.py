@@ -16,6 +16,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cash_manager.settings')
 django.setup()
 
 from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting, Company
+from reconciliation.draft_notifications import notify_new_acquisition_draft, send_unviewed_draft_reminders
 
 STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
@@ -140,6 +141,7 @@ def _save_draft_sync(company, operator, chat_id, photos, pag_pos_reale, totale_s
             draft=draft,
             image=ContentFile(photo_bytes, name=f'telegram_{chat_id}_{draft.id}_{index}.jpg'),
         )
+    notify_new_acquisition_draft(draft, exclude_telegram_chat_id=str(chat_id))
     return draft.id
 
 
@@ -157,8 +159,17 @@ async def _watch_restart_requests(app):
             os._exit(0)
 
 
+async def _watch_pending_draft_reminders(app):
+    company = app.bot_data.get('company')
+    while True:
+        await asyncio.sleep(900)
+        if company:
+            await sync_to_async(send_unviewed_draft_reminders)(company)
+
+
 async def _post_init(app):
     app.create_task(_watch_restart_requests(app))
+    app.create_task(_watch_pending_draft_reminders(app))
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -252,7 +263,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Foto: {photo_count}\n"
         f"POS reale: {_money_text(pag_pos_reale)}\n"
         f"Totale scassettato: {_money_text(totale_scassettato)}\n\n"
-        "Gli utenti collegati all'app riceveranno una notifica per contabilizzarlo."
+        "Gli utenti myTab riceveranno una notifica push e un messaggio Telegram (se configurato)."
     )
 
 

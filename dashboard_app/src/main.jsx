@@ -15,7 +15,15 @@ registerSW({
     });
     checkForUpdate();
   },
-})
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'NAVIGATE' && event.data.url) {
+      window.location.href = event.data.url;
+    }
+  });
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
