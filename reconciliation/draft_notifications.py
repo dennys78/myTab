@@ -47,12 +47,15 @@ def ensure_vapid_keys():
     if public_key and private_key:
         return public_key, private_key
 
-    from py_vapid import Vapid02
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from py_vapid import Vapid02, b64urlencode
 
     vapid = Vapid02()
     vapid.generate_keys()
-    private_key = vapid.private_pem.decode('utf-8') if isinstance(vapid.private_pem, bytes) else vapid.private_pem
-    public_key = vapid.public_key
+    private_pem = vapid.private_pem()
+    private_key = private_pem.decode('utf-8') if isinstance(private_pem, bytes) else private_pem
+    raw_public = vapid.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    public_key = b64urlencode(raw_public)
     _set_global_setting('web_push_vapid_private', private_key)
     _set_global_setting('web_push_vapid_public', public_key)
     return public_key, private_key
