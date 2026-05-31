@@ -437,7 +437,7 @@ function AppShell() {
 
         <InstallPwa />
 
-        <WebPushSetup enabled={canAcquireAI} />
+        <WebPushSetup enabled={Boolean(user)} />
 
         {currentView === 'acquisisci' ? (
           <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />

@@ -531,13 +531,19 @@ def api_insert_closure(request):
                         completed_at=timezone.now(),
                     )
 
-            from .draft_notifications import notify_closure_saved
-            notify_closure_saved(company, closure, items, summary, operator)
-            
+            push_sent = 0
+            try:
+                from .draft_notifications import notify_closure_saved
+                push_sent = notify_closure_saved(company, closure, items, summary, operator)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Push riepilogo chiusura non inviata')
+
             return JsonResponse({
                 'status': 'success', 
                 'message': f'Chiusura cassa inserita correttamente con {len(items)} voci.',
-                'id': closure.id
+                'id': closure.id,
+                'push_sent': push_sent,
             }, status=201)
             
         except json.JSONDecodeError:
@@ -1802,6 +1808,15 @@ def api_extract_closure_ai(request):
 
 # ── WEB PUSH + BOZZE TELEGRAM ────────────────────────────────────────────────
 
+def _user_can_receive_push(user, company):
+    if not user.is_authenticated or not company:
+        return False
+    if is_admin_user(user):
+        return user_companies(user).filter(id=company.id).exists()
+    assigned = get_user_assigned_company(user)
+    return bool(assigned and assigned.id == company.id)
+
+
 def _user_can_acquire_ai(user, company):
     from .draft_notifications import users_with_acquisisci_access
     return user in users_with_acquisisci_access(company)
@@ -1814,7 +1829,7 @@ def api_push_vapid_public_key(request):
     company, err = bind_company(request)
     if err:
         return err
-    if not _user_can_acquire_ai(request.user, company):
+    if not _user_can_receive_push(request.user, company):
         return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
     try:
         from .draft_notifications import get_vapid_public_key
@@ -1830,7 +1845,7 @@ def api_push_subscribe(request):
     company, err = bind_company(request)
     if err:
         return err
-    if not _user_can_acquire_ai(request.user, company):
+    if not _user_can_receive_push(request.user, company):
         return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
     try:
         data = json.loads(request.body or '{}')

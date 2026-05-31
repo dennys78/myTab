@@ -3,7 +3,8 @@ import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } 
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
-import { markAcquisitionDraftsSeen } from './webPush';
+import { markAcquisitionDraftsSeen, showLocalPushNotification, subscribeWebPush } from './webPush';
+import { buildClosureSavedNotificationPayload } from './closureNotifyUtils';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -48,6 +49,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   useEffect(() => {
     markAcquisitionDraftsSeen();
+    subscribeWebPush({ requestPermission: false }).catch(() => {});
   }, []);
 
   useEffect(() => () => {
@@ -239,7 +241,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) } };
   });
 
-  const handleAcquire = () => {
+  const handleAcquire = async () => {
     const cleanItems = previewData.items.map(item => {
       const cleanItem = { ...item, uscite: Math.abs(Number(item.uscite) || 0), saldo: calcItemSaldo(item) };
       delete cleanItem.id;
@@ -253,6 +255,15 @@ export default function AcquisisciChiusureAI({ onBack }) {
     };
     setSaving(true);
     setError(null);
+    await subscribeWebPush({ requestPermission: true }).catch(() => {});
+
+    const notifyPayload = buildClosureSavedNotificationPayload({
+      date: previewData.date,
+      operator: user?.username,
+      items: previewData.items,
+      summary: summaryPayload,
+    });
+
     apiFetch('/api/closures/insert/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -264,10 +275,27 @@ export default function AcquisisciChiusureAI({ onBack }) {
         draft_id: previewData.draft_id,
       }),
     })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'success' || d.id) { alert('Chiusura cassa registrata correttamente in myTab.'); fetchDrafts(); onBack(); }
-        else setError(d.error || 'Errore salvataggio.');
+      .then(async (d) => {
+        if (d.status === 'success' || d.id) {
+          let shown = false;
+          if ((d.push_sent || 0) === 0) {
+            shown = await showLocalPushNotification(notifyPayload).catch(() => false);
+          }
+          if (!shown && (d.push_sent || 0) === 0) {
+            alert(
+              'Chiusura registrata.\n\n'
+              + 'Per il riepilogo come notifica browser: consenti le notifiche '
+              + 'e apri myTab via HTTPS (es. https://www.mytab.uk). '
+              + 'Su http://serverapp…:8080 le push non sono supportate.'
+            );
+          } else {
+            alert('Chiusura cassa registrata correttamente in myTab.');
+          }
+          fetchDrafts();
+          onBack();
+        } else {
+          setError(d.error || 'Errore salvataggio.');
+        }
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSaving(false));

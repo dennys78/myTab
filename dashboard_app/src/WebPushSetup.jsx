@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { isWebPushSupported, subscribeWebPush } from './webPush';
-
-const SESSION_KEY = 'mytab_push_prompted';
+import { isWebPushSupported, subscribeWebPush, waitForServiceWorker } from './webPush';
 
 export default function WebPushSetup({ enabled }) {
   const startedRef = useRef(false);
@@ -10,16 +8,15 @@ export default function WebPushSetup({ enabled }) {
     if (!enabled || startedRef.current || !isWebPushSupported()) return;
     startedRef.current = true;
 
-    if (Notification.permission === 'granted') {
-      subscribeWebPush().catch(() => {});
-      return;
-    }
-
-    if (Notification.permission === 'denied') return;
-    if (sessionStorage.getItem(SESSION_KEY)) return;
-
-    sessionStorage.setItem(SESSION_KEY, '1');
-    subscribeWebPush().catch(() => {});
+    (async () => {
+      await waitForServiceWorker();
+      if (Notification.permission === 'granted') {
+        await subscribeWebPush({ requestPermission: false }).catch(() => {});
+        return;
+      }
+      if (Notification.permission === 'denied') return;
+      await subscribeWebPush({ requestPermission: true }).catch(() => {});
+    })();
   }, [enabled]);
 
   return null;

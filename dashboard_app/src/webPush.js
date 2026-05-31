@@ -10,23 +10,52 @@ function urlBase64ToUint8Array(base64String) {
 export function isWebPushSupported() {
   return (
     typeof window !== 'undefined'
+    && window.isSecureContext
     && 'Notification' in window
     && 'serviceWorker' in navigator
     && 'PushManager' in window
   );
 }
 
-export async function subscribeWebPush() {
-  if (!isWebPushSupported()) {
-    return { ok: false, reason: 'unsupported' };
+export function pushUnavailableReason() {
+  if (typeof window === 'undefined') return 'unsupported';
+  if (!window.isSecureContext) return 'insecure';
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return 'unsupported';
+  }
+  return null;
+}
+
+export async function waitForServiceWorker(timeoutMs = 15000) {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const ready = navigator.serviceWorker.ready;
+    const timeout = new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error('service worker timeout')), timeoutMs);
+    });
+    return await Promise.race([ready, timeout]);
+  } catch {
+    return null;
+  }
+}
+
+export async function subscribeWebPush({ requestPermission = true } = {}) {
+  const blocked = pushUnavailableReason();
+  if (blocked) {
+    return { ok: false, reason: blocked };
   }
 
   let permission = Notification.permission;
-  if (permission === 'default') {
+  if (permission === 'default' && requestPermission) {
     permission = await Notification.requestPermission();
   }
   if (permission !== 'granted') {
-    return { ok: false, reason: 'denied' };
+    return { ok: false, reason: permission === 'denied' ? 'denied' : 'default' };
+  }
+
+  const registration = await waitForServiceWorker();
+  if (!registration?.pushManager) {
+    return { ok: false, reason: 'no-sw' };
   }
 
   const keyRes = await apiFetch('/api/push/vapid-public-key/');
@@ -35,7 +64,6 @@ export async function subscribeWebPush() {
     return { ok: false, reason: 'config' };
   }
 
-  const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
@@ -44,11 +72,10 @@ export async function subscribeWebPush() {
     });
   }
 
-  const body = subscription.toJSON();
   const saveRes = await apiFetch('/api/push/subscribe/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(subscription.toJSON()),
   });
   const saveData = await saveRes.json();
   if (saveData.status !== 'success') {
@@ -56,6 +83,21 @@ export async function subscribeWebPush() {
   }
 
   return { ok: true };
+}
+
+export async function showLocalPushNotification(payload) {
+  if (Notification.permission !== 'granted') return false;
+  const registration = await waitForServiceWorker(5000);
+  if (!registration?.showNotification) return false;
+  await registration.showNotification(payload.title, {
+    body: payload.body,
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
+    tag: payload.tag || 'mytab-local',
+    renotify: true,
+    data: { url: payload.url || '/?view=chiusure' },
+  });
+  return true;
 }
 
 export function markAcquisitionDraftsSeen(draftIds = null) {
