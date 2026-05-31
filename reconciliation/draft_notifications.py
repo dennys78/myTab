@@ -189,6 +189,17 @@ def send_web_push(subscription, payload):
         return False
 
 
+def send_web_push_to_company(company, payload, user_ids=None):
+    qs = PushSubscription.objects.filter(company=company)
+    if user_ids is not None:
+        qs = qs.filter(user_id__in=user_ids)
+    sent = 0
+    for subscription in qs:
+        if send_web_push(subscription, payload):
+            sent += 1
+    return sent
+
+
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
     payload = _push_payload_for_draft(draft, reminder=reminder)
     qs = PushSubscription.objects.filter(company=draft.company)
@@ -268,3 +279,85 @@ def send_unviewed_draft_reminders(company, min_age_minutes=15):
         draft.save(update_fields=['telegram_reminder_sent_at'])
 
     return {'drafts': len(drafts), 'push_sent': push_sent, 'telegram_sent': telegram_sent}
+
+
+def _normalize_dept(name):
+    return ' '.join(str(name or '').upper().split())
+
+
+def _is_tabacchi(name):
+    n = _normalize_dept(name)
+    return n == 'TABACCHI' or n.startswith('TABACCH')
+
+
+def _is_gratta_e_vinci(name):
+    n = _normalize_dept(name)
+    return 'GRATTA' in n and 'VINCI' in n
+
+
+def _item_incassato(item):
+    try:
+        entrate = float(item.get('entrate', item.get('incomes')) or 0)
+    except (TypeError, ValueError):
+        entrate = 0.0
+    try:
+        uscite = abs(float(item.get('uscite', item.get('expenses')) or 0))
+    except (TypeError, ValueError):
+        uscite = 0.0
+    if entrate > 0:
+        return round(entrate, 2)
+    saldo = round(entrate - uscite, 2)
+    return saldo if saldo > 0 else 0.0
+
+
+def build_closure_incasso_summary(items, summary):
+    tabacchi = 0.0
+    gratta = 0.0
+    totale = 0.0
+    for item in items or []:
+        name = item.get('descrizione') or item.get('department_name') or ''
+        inc = _item_incassato(item)
+        totale += inc
+        if _is_tabacchi(name):
+            tabacchi += inc
+        if _is_gratta_e_vinci(name):
+            gratta += inc
+    try:
+        differenza = round(float(summary.get('differenza') or 0), 2)
+    except (TypeError, ValueError):
+        differenza = 0.0
+    return {
+        'tabacchi': round(tabacchi, 2),
+        'gratta': round(gratta, 2),
+        'differenza': differenza,
+        'totale': round(totale, 2),
+    }
+
+
+def _closure_saved_push_payload(closure, incasso_summary, operator):
+    date_str = closure.date.strftime('%d/%m/%Y') if closure.date else ''
+    body = '\n'.join([
+        f"Incassato tabacchi: {_money_text(incasso_summary['tabacchi'])}",
+        f"Incassato gratta e vinci: {_money_text(incasso_summary['gratta'])}",
+        f"Differenza: {_money_text(incasso_summary['differenza'])}",
+        f"Totale incassato: {_money_text(incasso_summary['totale'])}",
+    ])
+    op = (operator or closure.operator or '').strip()
+    title = f"Chiusura registrata · {date_str}"
+    if op:
+        title = f"{title} · {op}"
+    return {
+        'title': title,
+        'body': body,
+        'url': '/?view=chiusure',
+        'tag': f'mytab-closure-{closure.id}',
+    }
+
+
+def notify_closure_saved(company, closure, items, summary, operator=''):
+    """Push di riepilogo incasso a tutti i dispositivi iscritti per l'azienda."""
+    if not company or not closure:
+        return 0
+    incasso = build_closure_incasso_summary(items, summary or {})
+    payload = _closure_saved_push_payload(closure, incasso, operator)
+    return send_web_push_to_company(company, payload)

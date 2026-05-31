@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.test import SimpleTestCase
 
+from reconciliation.draft_notifications import build_closure_incasso_summary
 from reconciliation.views import _reconcile_totale_cassa
 
 
@@ -50,3 +51,18 @@ class ReconcileTotaleCassaTests(SimpleTestCase):
         }
         result = _reconcile_totale_cassa(summary, items)
         self.assertEqual(result, Decimal('800.00'))
+
+
+class ClosureIncassoSummaryTests(SimpleTestCase):
+    def test_summary_tabacchi_gratta_totale(self):
+        items = [
+            {'descrizione': 'TABACCHI', 'entrate': 1200, 'uscite': 0},
+            {'descrizione': 'GRATTA E VINCI', 'entrate': 350, 'uscite': 50},
+            {'descrizione': 'CAFFÈ', 'entrate': 100, 'uscite': 0},
+        ]
+        summary = {'differenza': -12.5}
+        result = build_closure_incasso_summary(items, summary)
+        self.assertEqual(result['tabacchi'], 1200.0)
+        self.assertEqual(result['gratta'], 350.0)
+        self.assertEqual(result['totale'], 1650.0)
+        self.assertEqual(result['differenza'], -12.5)

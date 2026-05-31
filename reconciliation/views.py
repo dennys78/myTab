@@ -530,6 +530,9 @@ def api_insert_closure(request):
                         status='completed',
                         completed_at=timezone.now(),
                     )
+
+            from .draft_notifications import notify_closure_saved
+            notify_closure_saved(company, closure, items, summary, operator)
             
             return JsonResponse({
                 'status': 'success', 
