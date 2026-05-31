@@ -7,7 +7,17 @@ export default function Impostazioni({ section = 'generali' }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'amministratore';
   const showAzienda = section === 'azienda';
+  const showRettifiche = section === 'rettifiche';
   const showGenerali = section === 'generali';
+
+  const sectionTitle = showAzienda ? 'Azienda' : showRettifiche ? 'Rettifiche' : 'Generali';
+  const sectionHint = showAzienda
+    ? "Gestisci i dati aziendali, l'archivio immagini e l'eliminazione dei dati dell'azienda attiva."
+    : showRettifiche
+      ? 'Allinea i valori di cassa alla situazione reale del punto vendita.'
+      : isAdmin
+        ? 'Configura le chiavi API, il modello IA e Telegram.'
+        : 'Scegli il modello IA usato quando acquisisci le chiusure con le foto.';
   const [groqKey, setGroqKey] = useState('');
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -423,13 +433,9 @@ export default function Impostazioni({ section = 'generali' }) {
 
   return (
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni · {showAzienda ? 'Azienda' : 'Generali'}</h1>
+      <h1 style={{ marginBottom: '0.5rem' }}>Impostazioni · {sectionTitle}</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-        {showAzienda
-          ? "Gestisci i dati delle aziende e l'eliminazione dei dati dell'azienda attiva."
-          : isAdmin
-            ? "Configura le chiavi API, il modello IA, Telegram e le rettifiche di cassa."
-            : "Scegli il modello IA usato quando acquisisci le chiusure con le foto."}
+        {sectionHint}
       </p>
 
       {error && (
@@ -486,6 +492,7 @@ export default function Impostazioni({ section = 'generali' }) {
       {isAdmin && (
       <>
       {showAzienda && (
+      <>
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Building2 size={20} color="var(--accent)" />
@@ -611,6 +618,77 @@ export default function Impostazioni({ section = 'generali' }) {
           </div>
         )}
       </div>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Trash2 size={20} color="var(--danger)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Archivio Immagini Incassi</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+          Elimina immagini archiviate su disco. I dati contabili restano salvati, ma le foto associate non saranno più disponibili.
+        </p>
+
+        {imagePurgeResult && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Eliminate {imagePurgeResult.total_deleted} immagini.
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Ambito</label>
+            <select value={imagePurgeScope} onChange={e => setImagePurgeScope(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }}>
+              <option value="month">Un mese specifico</option>
+              <option value="all">Tutte le immagini</option>
+            </select>
+          </div>
+          {imagePurgeScope === 'month' && (
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Mese</label>
+              <input type="month" value={imagePurgeMonth} onChange={e => setImagePurgeMonth(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }} />
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handlePurgeImages}
+          disabled={purgingImages || (imagePurgeScope === 'month' && !imagePurgeMonth)}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+        >
+          {purgingImages ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+          Elimina immagini
+        </button>
+      </div>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Trash2 size={20} color="var(--danger)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Elimina Dati Azienda Attiva</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.9rem' }}>
+          Questa azione elimina chiusure, reparti, bozze, versamenti, movimenti e impostazioni dell&apos;azienda attiva.
+        </p>
+        <p style={{ color: 'var(--danger)', fontSize: '0.82rem', marginTop: 0, marginBottom: '1rem', fontWeight: 600 }}>
+          Azienda coinvolta: {activeCompanyName}
+        </p>
+
+        {companyPurgeResult && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} />
+            Dati eliminati per "{companyPurgeResult.company_name}".
+          </div>
+        )}
+
+        <button
+          onClick={handlePurgeCompanyData}
+          disabled={purgingCompanyData || !activeCompanyId}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+        >
+          {purgingCompanyData ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+          Elimina tutti i dati azienda attiva
+        </button>
+      </div>
+      </>
       )}
 
       {showGenerali && (
@@ -795,81 +873,7 @@ export default function Impostazioni({ section = 'generali' }) {
       </div>
       )}
 
-      {showGenerali && (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
-          <Trash2 size={20} color="var(--danger)" />
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Archivio Immagini Incassi</h2>
-        </div>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Elimina immagini archiviate su disco. I dati contabili restano salvati, ma le foto associate non saranno più disponibili.
-        </p>
-
-        {imagePurgeResult && (
-          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-            <CheckCircle size={15} /> Eliminate {imagePurgeResult.total_deleted} immagini.
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Ambito</label>
-            <select value={imagePurgeScope} onChange={e => setImagePurgeScope(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }}>
-              <option value="month">Un mese specifico</option>
-              <option value="all">Tutte le immagini</option>
-            </select>
-          </div>
-          {imagePurgeScope === 'month' && (
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Mese</label>
-              <input type="month" value={imagePurgeMonth} onChange={e => setImagePurgeMonth(e.target.value)} style={{ ...inputStyle, width: '100%', fontFamily: 'inherit' }} />
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={handlePurgeImages}
-          disabled={purgingImages || (imagePurgeScope === 'month' && !imagePurgeMonth)}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
-        >
-          {purgingImages ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
-          Elimina immagini
-        </button>
-      </div>
-      )}
-
-      {showAzienda && (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
-          <Trash2 size={20} color="var(--danger)" />
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Elimina Dati Azienda Attiva</h2>
-        </div>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.9rem' }}>
-          Questa azione elimina chiusure, reparti, bozze, versamenti, movimenti e impostazioni dell&apos;azienda attiva.
-        </p>
-        <p style={{ color: 'var(--danger)', fontSize: '0.82rem', marginTop: 0, marginBottom: '1rem', fontWeight: 600 }}>
-          Azienda coinvolta: {activeCompanyName}
-        </p>
-
-        {companyPurgeResult && (
-          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-            <CheckCircle size={15} />
-            Dati eliminati per "{companyPurgeResult.company_name}".
-          </div>
-        )}
-
-        <button
-          onClick={handlePurgeCompanyData}
-          disabled={purgingCompanyData || !activeCompanyId}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
-        >
-          {purgingCompanyData ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
-          Elimina tutti i dati azienda attiva
-        </button>
-      </div>
-      )}
-
-      {showGenerali && (
+      {showRettifiche && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Wallet size={20} color="var(--accent)" />

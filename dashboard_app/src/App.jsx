@@ -54,7 +54,11 @@ function AppShell() {
   const [settingsSection, setSettingsSection] = useState(isAdmin ? 'azienda' : 'generali');
 
   const settingsSubsections = isAdmin
-    ? [{ id: 'azienda', label: 'Azienda' }, { id: 'generali', label: 'Generali' }]
+    ? [
+        { id: 'azienda', label: 'Azienda' },
+        { id: 'rettifiche', label: 'Rettifiche' },
+        { id: 'generali', label: 'Generali' },
+      ]
     : [{ id: 'generali', label: 'Modello IA' }];
 
   const fetchClosures = useCallback(() => {
