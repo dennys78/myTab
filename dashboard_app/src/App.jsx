@@ -492,7 +492,7 @@ function AppShell() {
                         <th className="desktop-closure-col">Totale Generale</th>
                         <th className="mobile-closure-col">Totale cassetto</th>
                         <th>Differenza</th>
-                        <th className="desktop-closure-col">Azioni</th>
+                        <th>Azioni</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -517,11 +517,17 @@ function AppShell() {
                                 {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
                               </span>
                             </td>
-                            <td className="desktop-closure-col">
-                              <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} title="Elimina"
-                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                                <Trash2 size={16} color="var(--danger)" />
-                              </button>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <button onClick={(e) => { e.stopPropagation(); setExpandedId(closure.id); handleEditClick(closure); }} title="Modifica"
+                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                  <Edit2 size={16} color="var(--accent)" />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }} title="Elimina"
+                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                  <Trash2 size={16} color="var(--danger)" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
 
@@ -534,7 +540,7 @@ function AppShell() {
                                       <h2 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         <Calculator size={16} color="var(--accent)" /> Riepilogo Totali
                                       </h2>
-                                      {editingId === closure.id ? (
+                                      {editingId === closure.id && (
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                           <button onClick={() => handleSaveEdit(closure.id)} disabled={saving}
                                             style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
@@ -543,17 +549,6 @@ function AppShell() {
                                           <button onClick={handleCancelEdit} disabled={saving}
                                             style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}>
                                             <X size={14} /> Annulla
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                          <button onClick={(e) => { e.stopPropagation(); handleEditClick(closure); }}
-                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                            <Edit2 size={14} /> Modifica
-                                          </button>
-                                          <button onClick={(e) => { e.stopPropagation(); handleDelete(closure.id); }}
-                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.75rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                            <Trash2 size={14} /> Elimina
                                           </button>
                                         </div>
                                       )}
@@ -681,7 +676,7 @@ function AppShell() {
                             {closuresTotals.differenza >= 0 ? '+' : ''}€ {closuresTotals.differenza.toFixed(2)}
                           </span>
                         </td>
-                        <td className="desktop-closure-col"></td>
+                        <td></td>
                       </tr>
                     </tfoot>
                   </table>
