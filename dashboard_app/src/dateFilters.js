@@ -5,16 +5,18 @@ export const STORICO_PERIOD_OPTIONS = [
   { value: 'year', label: 'Anno' },
 ];
 
-/** Periodi grafici dashboard: mese corrente di default, alternativa settimana/anno */
+/** Periodi grafici dashboard: mese corrente di default */
 export const REPARTI_CHART_PERIOD_OPTIONS = [
   { value: 'week', label: 'Settimana corrente' },
   { value: 'month', label: 'Mese corrente' },
+  { value: 'three', label: 'Tre mesi' },
   { value: 'year', label: 'Anno corrente' },
 ];
 
 const REPARTI_PERIOD_LABELS = {
   week: 'settimana corrente',
   month: 'mese corrente',
+  three: 'ultimi tre mesi',
   year: 'anno corrente',
 };
 
