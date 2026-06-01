@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { useAuth } from './auth';
 import { loadUserPreference, saveUserPreference } from './userPreferences';
+import { collectDepartmentsFromClosures } from './repartiChartUtils';
 import {
   INCASSATO_PERIOD_OPTIONS,
+  INCASSATO_SCOPE_ALL,
   averageNonZeroValues,
   getCurrentMonthName,
   getDailyIncassatoSeries,
@@ -13,6 +15,7 @@ import {
 } from './incassatoUtils';
 
 const PREF_INCASSATO_PERIOD = 'incassatoDashboardPeriod';
+const PREF_INCASSATO_SCOPE = 'incassatoDashboardScope';
 const PERIOD_VALUES = INCASSATO_PERIOD_OPTIONS.map((o) => o.value);
 const DEFAULT_PERIOD = 'month';
 
@@ -112,35 +115,53 @@ export default function IncassatoDashboardSection({ closures }) {
   const year = now.getFullYear();
   const monthIndex = now.getMonth();
 
+  const departments = useMemo(() => collectDepartmentsFromClosures(closures), [closures]);
+
   const [period, setPeriod] = useState(() =>
     loadUserPreference(username, PREF_INCASSATO_PERIOD, PERIOD_VALUES, DEFAULT_PERIOD),
   );
+  const [scope, setScope] = useState(INCASSATO_SCOPE_ALL);
 
   useEffect(() => {
     setPeriod(loadUserPreference(username, PREF_INCASSATO_PERIOD, PERIOD_VALUES, DEFAULT_PERIOD));
   }, [username]);
+
+  useEffect(() => {
+    const keys = [INCASSATO_SCOPE_ALL, ...collectDepartmentsFromClosures(closures).map((d) => d.key)];
+    const saved = loadUserPreference(username, PREF_INCASSATO_SCOPE, keys, INCASSATO_SCOPE_ALL);
+    setScope(keys.includes(saved) ? saved : INCASSATO_SCOPE_ALL);
+  }, [username, closures]);
 
   const handlePeriodChange = (next) => {
     setPeriod(next);
     saveUserPreference(username, PREF_INCASSATO_PERIOD, next);
   };
 
+  const handleScopeChange = (next) => {
+    setScope(next);
+    saveUserPreference(username, PREF_INCASSATO_SCOPE, next);
+  };
+
+  const deptKey = scope || INCASSATO_SCOPE_ALL;
+  const deptLabel = departments.find((d) => d.key === deptKey)?.label;
+  const isTotalScope = !deptKey;
+
   const monthTotal = useMemo(
-    () => getTotalIncassatoForMonth(closures, year, monthIndex),
-    [closures, year, monthIndex],
+    () => getTotalIncassatoForMonth(closures, year, monthIndex, deptKey),
+    [closures, year, monthIndex, deptKey],
   );
   const yearTotal = useMemo(
-    () => getTotalIncassatoForYear(closures, year),
-    [closures, year],
+    () => getTotalIncassatoForYear(closures, year, deptKey),
+    [closures, year, deptKey],
   );
 
   const dailySeries = useMemo(
-    () => getDailyIncassatoSeries(closures, year, monthIndex),
-    [closures, year, monthIndex],
+    () => getDailyIncassatoSeries(closures, year, monthIndex, deptKey),
+    [closures, year, monthIndex, deptKey],
   );
   const monthlySeries = useMemo(
-    () => getMonthlyIncassatoSeries(closures, year),
-    [closures, year],
+    () => getMonthlyIncassatoSeries(closures, year, deptKey),
+    [closures, year, deptKey],
   );
 
   const mainTotal = period === 'year' ? yearTotal : monthTotal;
@@ -157,28 +178,50 @@ export default function IncassatoDashboardSection({ closures }) {
         <div className="incassato-section__intro">
           <div className="incassato-section__title-row">
             <TrendingUp size={22} className="incassato-section__icon" aria-hidden />
-            <h2 id="incassato-heading" className="incassato-section__title">Totale incassato</h2>
+            <h2 id="incassato-heading" className="incassato-section__title">
+              {isTotalScope ? 'Totale incassato' : `Incassato — ${deptLabel}`}
+            </h2>
           </div>
           <p className="incassato-section__hint">
-            Somma delle <strong>entrate di tutti i reparti</strong> dalle chiusure cassa.
+            {isTotalScope ? (
+              <>Somma delle <strong>entrate di tutti i reparti</strong> dalle chiusure cassa.</>
+            ) : (
+              <>Entrate del reparto <strong>{deptLabel}</strong> dalle chiusure cassa.</>
+            )}
             {period === 'month'
               ? ` Mese di ${monthName}.`
               : ` Anno ${year} (andamento mensile).`}
-            {' '}La vista scelta viene ricordata su questo dispositivo.
+            {' '}Periodo e reparto scelti vengono ricordati su questo dispositivo.
           </p>
         </div>
-        <div className="incassato-section__filter">
-          <label htmlFor="incassato-period" className="incassato-section__filter-label">Periodo</label>
-          <select
-            id="incassato-period"
-            className="reparti-chart-select"
-            value={period}
-            onChange={(e) => handlePeriodChange(e.target.value)}
-          >
-            {INCASSATO_PERIOD_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+        <div className="incassato-section__filters">
+          <div className="incassato-section__filter">
+            <label htmlFor="incassato-scope" className="incassato-section__filter-label">Visualizza</label>
+            <select
+              id="incassato-scope"
+              className="reparti-chart-select"
+              value={scope}
+              onChange={(e) => handleScopeChange(e.target.value)}
+            >
+              <option value={INCASSATO_SCOPE_ALL}>Totale incassato</option>
+              {departments.map((d) => (
+                <option key={d.key} value={d.key}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="incassato-section__filter">
+            <label htmlFor="incassato-period" className="incassato-section__filter-label">Periodo</label>
+            <select
+              id="incassato-period"
+              className="reparti-chart-select"
+              value={period}
+              onChange={(e) => handlePeriodChange(e.target.value)}
+            >
+              {INCASSATO_PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -207,8 +250,8 @@ export default function IncassatoDashboardSection({ closures }) {
         <div className="incassato-chart-wrap">
           <h3 className="incassato-chart-title">
             {period === 'year'
-              ? `Incassato per mese — ${year}`
-              : `Incassato giornaliero — ${monthName}`}
+              ? `${isTotalScope ? 'Incassato' : deptLabel} per mese — ${year}`
+              : `${isTotalScope ? 'Incassato' : deptLabel} giornaliero — ${monthName}`}
           </h3>
           <IncassatoBarChart
             series={chartSeries}

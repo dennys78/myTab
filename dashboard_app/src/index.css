@@ -271,6 +271,13 @@ h2 {
   max-width: 42rem;
 }
 
+.incassato-section__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+}
+
 .incassato-section__filter {
   display: flex;
   flex-direction: column;
