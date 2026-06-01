@@ -35,6 +35,8 @@ VERSAMENTO_TRIGGER_RE = re.compile(
     r'(?i)^versat[oi]\s*([\d.,\s€]+)$',
 )
 
+SALDO_QUERY_RE = re.compile(r'(?i)^saldo(?:\s+cassa)?\s*$')
+
 DATE_TODAY_ALIASES = {
     '',
     'si',
@@ -218,6 +220,12 @@ def _save_draft_sync(company, operator, chat_id, photos, pag_pos_reale, totale_s
     return draft.id
 
 
+def _saldo_cassa_sync(company):
+    if not company:
+        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
+    return float(_get_saldo_cassa(company))
+
+
 def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
     if not company:
         raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
@@ -236,7 +244,8 @@ def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
         note=(note or '').strip(),
         ricorda_promemoria=False,
     )
-    return versamento
+    saldo_attuale = float(_get_saldo_cassa(company))
+    return versamento, float(saldo_prec), saldo_attuale
 
 
 async def _watch_restart_requests(app):
@@ -274,7 +283,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Chiusura cassa: invia una o più foto, poi totale POS e importo scassettato.\n\n"
         "Versamento: scrivi ad esempio\n"
         "Versati 2343,20\n"
-        "e segui le istruzioni per la data."
+        "e segui le istruzioni per la data.\n\n"
+        "Saldo cassa: comando /saldo oppure scrivi «saldo cassa»."
     )
 
 
@@ -285,6 +295,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Operazione annullata. Invia una nuova foto per la chiusura cassa "
         "oppure scrivi «Versati 1234,50» per un versamento."
     )
+
+
+async def saldo_cassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _prepare_context(update, context)
+    company = context.application.bot_data.get('company')
+    try:
+        saldo = await sync_to_async(_saldo_cassa_sync)(company)
+    except Exception as exc:
+        await update.message.reply_text(f"Impossibile leggere il saldo cassa: {exc}")
+        return
+    await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo)}")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -339,7 +360,7 @@ async def _complete_versamento(update, context, versamento_date):
     company = context.application.bot_data.get('company')
 
     try:
-        versamento = await sync_to_async(_save_versamento_sync)(
+        versamento, saldo_prima, saldo_dopo = await sync_to_async(_save_versamento_sync)(
             company,
             operator,
             importo,
@@ -361,6 +382,8 @@ async def _complete_versamento(update, context, versamento_date):
         f"Importo: {_money_text(float(versamento.importo_versato))}\n"
         f"Data: {versamento.date.strftime('%d/%m/%Y')}\n"
         f"Operatore: {versamento.operator}\n\n"
+        f"Saldo cassa prima: {_money_text(saldo_prima)}\n"
+        f"Saldo cassa attuale: {_money_text(saldo_dopo)}\n\n"
         "Lo trovi subito nella webapp, sezione Versamenti."
     )
     return True
@@ -376,6 +399,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (update.message.text or '').strip()
+
+    if SALDO_QUERY_RE.match(text):
+        company = context.application.bot_data.get('company')
+        try:
+            saldo = await sync_to_async(_saldo_cassa_sync)(company)
+        except Exception as exc:
+            await update.message.reply_text(f"Impossibile leggere il saldo cassa: {exc}")
+            return
+        await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo)}")
+        return
 
     if _versamento_session(context):
         try:
@@ -471,6 +504,7 @@ def run_bot():
         app.bot_data['restart_marker'] = _get_restart_marker_sync(company)
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("annulla", cancel))
+        app.add_handler(CommandHandler("saldo", saldo_cassa))
         app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
