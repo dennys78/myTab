@@ -37,16 +37,8 @@ function buildLinePayload(line, catalog) {
       quantita: qty,
     };
   }
-  if (line.valore_bollato_id) {
-    return { tipo: TIPO_VALORE_BOLLATO, valore_bollato_id: Number(line.valore_bollato_id), quantita: qty };
-  }
-  const preset = catalog.find((v) => String(v.id) === String(line.valore_bollato_id));
-  return {
-    tipo: TIPO_VALORE_BOLLATO,
-    descrizione: line.descrizione.trim() || preset?.descrizione || '',
-    importo_unitario: parseFloat(String(line.importo_unitario).replace(',', '.')) || preset?.importo || 0,
-    quantita: qty,
-  };
+  if (!line.valore_bollato_id) return null;
+  return { tipo: TIPO_VALORE_BOLLATO, valore_bollato_id: Number(line.valore_bollato_id), quantita: qty };
 }
 
 export default function RicevuteValoriBollati() {
@@ -157,9 +149,10 @@ export default function RicevuteValoriBollati() {
     }
     const righe = lines
       .map((line) => buildLinePayload(line, catalogo))
+      .filter(Boolean)
       .filter((r) => {
         if (r.tipo === TIPO_CONTRIBUTO) return r.importo_unitario > 0;
-        return r.valore_bollato_id || (r.descrizione && r.importo_unitario > 0);
+        return Boolean(r.valore_bollato_id);
       });
     if (!righe.length) {
       setError('Aggiungi almeno un articolo valido.');
@@ -325,17 +318,29 @@ export default function RicevuteValoriBollati() {
                 background: 'var(--bg-elevated)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Riga {index + 1}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'flex-end',
+                  gap: '0.65rem',
+                }}
+              >
                 {lines.length > 1 && (
-                  <button type="button" onClick={() => removeLine(line._id)} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => removeLine(line._id)}
+                    title="Rimuovi riga"
+                    style={{
+                      flex: '0 0 auto', background: 'transparent', border: 'none', color: 'var(--danger)',
+                      cursor: 'pointer', padding: '0.45rem 0', marginBottom: '0.1rem',
+                    }}
+                  >
                     <Trash2 size={16} />
                   </button>
                 )}
-              </div>
 
-              <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-                <div>
+                <div style={{ flex: '0 0 150px', minWidth: '130px' }}>
                   <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Tipo</label>
                   <select
                     style={ricevuteInputStyle}
@@ -348,60 +353,60 @@ export default function RicevuteValoriBollati() {
                 </div>
 
                 {line.tipo === TIPO_VALORE_BOLLATO ? (
-                  <>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Marca da bollo</label>
-                      <select
-                        style={ricevuteInputStyle}
-                        value={line.valore_bollato_id}
-                        onChange={(e) => onCatalogPick(line._id, e.target.value)}
-                      >
-                        <option value="">Seleziona dal catalogo...</option>
-                        {catalogo.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.descrizione} — € {Number(v.importo).toFixed(2)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {!line.valore_bollato_id && (
-                      <>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Descrizione</label>
-                          <input style={ricevuteInputStyle} value={line.descrizione} onChange={(e) => updateLine(line._id, { descrizione: e.target.value })} placeholder="Descrizione" />
-                        </div>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Importo €</label>
-                          <input type="number" min="0" step="0.01" style={ricevuteInputStyle} value={line.importo_unitario} onChange={(e) => updateLine(line._id, { importo_unitario: e.target.value })} />
-                        </div>
-                      </>
-                    )}
-                  </>
+                  <div style={{ flex: '1 1 180px', minWidth: '160px' }}>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Articolo</label>
+                    <select
+                      style={ricevuteInputStyle}
+                      value={line.valore_bollato_id}
+                      onChange={(e) => onCatalogPick(line._id, e.target.value)}
+                    >
+                      <option value="">Seleziona...</option>
+                      {catalogo.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.descrizione} — € {Number(v.importo).toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ) : (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Importo contributo €</label>
-                    <input type="number" min="0" step="0.01" style={ricevuteInputStyle} value={line.importo_unitario} onChange={(e) => updateLine(line._id, { importo_unitario: e.target.value })} />
+                  <div style={{ flex: '1 1 120px', minWidth: '100px' }}>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Importo €</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      style={ricevuteInputStyle}
+                      value={line.importo_unitario}
+                      onChange={(e) => updateLine(line._id, { importo_unitario: e.target.value })}
+                    />
                   </div>
                 )}
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Quantità</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    style={ricevuteInputStyle}
-                    value={line.quantita}
-                    onChange={(e) => updateLine(line._id, { quantita: e.target.value })}
-                    disabled={line.tipo === TIPO_CONTRIBUTO}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent)' }}>
-                    € {lineSubtotal(line).toFixed(2)}
+                {line.tipo === TIPO_VALORE_BOLLATO && (
+                  <div style={{ flex: '0 0 72px', minWidth: '64px' }}>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Qtà</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      style={ricevuteInputStyle}
+                      value={line.quantita}
+                      onChange={(e) => updateLine(line._id, { quantita: e.target.value })}
+                    />
                   </div>
-                </div>
+                )}
+
+                <span style={{
+                  flex: '0 0 auto', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.55rem', marginLeft: 'auto',
+                }}>
+                  Riga {index + 1}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.55rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border)' }}>
+                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent)' }}>
+                  € {lineSubtotal(line).toFixed(2)}
+                </span>
               </div>
             </div>
           ))}
@@ -422,12 +427,9 @@ export default function RicevuteValoriBollati() {
         </div>
 
         <div style={{
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: '1rem',
           paddingTop: '1rem', borderTop: '1px solid var(--border)',
         }}>
-          <div style={{ fontSize: '1.15rem', fontWeight: 700 }}>
-            Totale ricevuta: <span style={{ color: 'var(--accent)' }}>€ {totaleBozza.toFixed(2)}</span>
-          </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button type="button" onClick={resetForm} style={{ ...btnPrimary, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
               Annulla
@@ -436,6 +438,9 @@ export default function RicevuteValoriBollati() {
               {saving ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
               Salva ricevuta
             </button>
+          </div>
+          <div style={{ fontSize: '1.15rem', fontWeight: 700, marginLeft: 'auto' }}>
+            Totale ricevuta: <span style={{ color: 'var(--accent)' }}>€ {totaleBozza.toFixed(2)}</span>
           </div>
         </div>
       </div>
