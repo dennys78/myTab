@@ -127,8 +127,8 @@ export default function RicevuteValoriBollati() {
     }));
   };
 
-  const addLine = (tipo) => {
-    setLines((prev) => [...prev, emptyLine(tipo)]);
+  const addLine = () => {
+    setLines((prev) => [...prev, emptyLine()]);
   };
 
   const removeLine = (lineId) => {
@@ -413,11 +413,8 @@ export default function RicevuteValoriBollati() {
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-          <button type="button" onClick={() => addLine(TIPO_VALORE_BOLLATO)} style={{ ...btnPrimary, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-            <Plus size={16} /> Valore bollato
-          </button>
-          <button type="button" onClick={() => addLine(TIPO_CONTRIBUTO)} style={{ ...btnPrimary, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-            <Plus size={16} /> Contributo unificato
+          <button type="button" onClick={addLine} style={{ ...btnPrimary, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+            <Plus size={16} /> Aggiungi
           </button>
         </div>
 
