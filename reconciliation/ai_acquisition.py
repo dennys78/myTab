@@ -34,22 +34,23 @@ Regole:
 - uscite = importo della riga "Uscite Gioco" (o Uscite gioco)
 - Numeri float positivi; se non leggibile usa 0.00"""
 
-GRATTA_PROMPT = """Questa immagine è un report Gratta e Vinci (premi pagati nel giorno).
+GRATTA_PROMPT = """Questa immagine è il report Gratta e Vinci "Premi pagati nel giorno" (tabella Gioco / Quantità / Importo).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"uscite": 0.00}
 
 Regole:
-- uscite = totale "Premi pagati nel giorno" (o Premi pagati / totale premi pagati)
+- uscite = importo nella riga "Totale" in fondo alla tabella (es. € 505,00 → 505.00)
+- NON usare singole righe gioco; solo il totale premi pagati del giorno.
 - Numero float positivo; se non leggibile usa 0.00"""
 
-SISAL_PROMPT = """Questa immagine è un report Sisal "Movimento contanti" BORDERÒ o riepilogo PDV Sisal.
+SISAL_PROMPT = """Questa immagine è un report Sisal (tab RICONSEGNA o ESPOSIZIONE / Movimento contanti).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = riga "Totale vendite" / "Vendite" nel riquadro TOTALE (es. 77,00)
-- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -5,21 → 5.21)
-- Ignora il netto finale; usa solo vendite e pagamenti.
+- entrate = "Vendite" nel riquadro TOTALE in basso (es. 76,50 → 76.50)
+- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -69,00 → 69.00)
+- NON usare il saldo/netto finale (es. 7,50); solo vendite e pagamenti del TOTALE.
 - Numeri float positivi; se non leggibile usa 0.00"""
 
 REPORT_PROMPTS = {
@@ -59,17 +60,21 @@ REPORT_PROMPTS = {
 }
 
 CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
-Restituisci SOLO JSON: {"type": "main_closure"|"lottomatica"|"gratta"|"sisal"|"other"}
+Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"other"}
 
-- main_closure: tabella "Riepilogo Chiusure di Cassa" con reparti (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, ecc.)
-- lottomatica: Contabile Giornaliero / Prospetto con "Entrate Gioco" e "Uscite Gioco"
-- gratta: "Premi pagati nel giorno" / prospetto Gratta e Vinci
-- sisal: BORDERÒ "Movimento contanti" con Totale vendite e Pagamenti (Sisal / ricariche)
-- other: anteprima generica non classificabile"""
+- main_closure: tabella "Riepilogo Chiusure di Cassa" con molte righe reparto (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, Pag fornitori, ecc.) e colonne Entrate/Uscite/Saldo
+- summary_footer: SOLO la riga/box riepilogo finale con etichette Contanti, Pag.Pos (o Pagamento POS), Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza elenco reparti sopra
+- lottomatica: "Contabile Giornaliero" Lottomatica con righe "Entrate Gioco" e "Uscite Gioco" (e Aggio/Saldo)
+- gratta: schermata "Premi pagati nel giorno" Gratta e Vinci con tabella Gioco/Quantità/Importo e riga Totale
+- sisal: schermata Sisal tab RICONSEGNA o ESPOSIZIONE con Vendite, Pagamenti e riquadro TOTALE
+- other: solo se non corrisponde a nessuna delle categorie sopra"""
 
-VALID_IMAGE_TYPES = frozenset({'main_closure', 'lottomatica', 'gratta', 'sisal', 'other'})
+VALID_IMAGE_TYPES = frozenset({
+    'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'other',
+})
 
-FIVE_FILES_SUMMARY_PROMPT = """Analizza il RIEPILOGO CHIUSURA CASSA (tabella reparti + riga totali in fondo).
+FIVE_FILES_SUMMARY_PROMPT = """Analizza l'immagine del RIEPILOGO FINALE CHIUSURA CASSA POS (riga con Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE).
+Può essere solo la barra riepilogo o l'ultima riga sotto la tabella reparti.
 Restituisci SOLO JSON valido, senza markdown:
 {
   "date": "YYYY-MM-DD",
@@ -84,18 +89,20 @@ Restituisci SOLO JSON valido, senza markdown:
   }
 }
 
-Regole sulla riga RIEPILOGO in fondo (7 valori nell'ordine tipico):
+Mappa le 7 colonne nell'ordine (esempio tipico: 0,00 | 431,10 | 1.841,85 | 0,00 | -5,00 | 306,40 | 2.579,35):
 1. Contanti → contanti
-2. Pag.Pos / Pagamento POS → pag_pos
+2. Pag.Pos / Pagamento POS → pag_pos (NON è il totale)
 3. Cassa Auto → cassa_auto
-4. Reso Cont. / Reso contanti → reso_cont
-5. Reso Auto → reso_auto
+4. Reso Cont. → reso_cont
+5. Reso Auto → reso_auto (può essere negativo, es. -5.00)
 6. Distrib. / Distributore → distrib
-7. TOTALE (ultima colonna, mai Pag.Pos) → totale
+7. TOTALE (ultima colonna) → totale
 
-- Importi float positivi; se non leggibile usa 0.00.
-- Non usare totali di reparto singoli per il campo totale.
-- Data YYYY-MM-DD se visibile sul documento, altrimenti stringa vuota."""
+- Usa numeri decimali con punto (1841.85 non 1.841,85 nel JSON).
+- reso_auto e reso_cont possono essere negativi; gli altri campi di solito ≥ 0.
+- totale è SEMPRE l'ultima colonna etichettata TOTALE, mai Pag.Pos né Cassa Auto.
+- Non sommare reparti: leggi solo la riga riepilogo.
+- Data YYYY-MM-DD se visibile (es. 01/06/2026 → 2026-06-01), altrimenti stringa vuota."""
 
 
 def get_ai_acquisition_file_mode(company) -> str:
@@ -140,6 +147,12 @@ def validate_acquisition_file_count(company, count: int) -> None:
         )
 
 
+def _summary_totale_value(summary: dict | None) -> float:
+    if not isinstance(summary, dict):
+        return 0.0
+    return float(parse_amount(summary.get('totale', 0)))
+
+
 def merge_five_files_summary(parsed: dict, footer_parsed: dict | None) -> dict:
     """Integra cassa auto, distributore, totale e resi dall'estrazione dedicata al riepilogo."""
     if not footer_parsed:
@@ -150,10 +163,18 @@ def merge_five_files_summary(parsed: dict, footer_parsed: dict | None) -> dict:
     if not isinstance(footer_summary, dict):
         footer_summary = {}
 
+    footer_totale = _summary_totale_value(footer_summary)
+    main_totale = _summary_totale_value(main_summary)
+    prefer_footer = footer_totale > 0 and (
+        main_totale <= 0 or abs(footer_totale - main_totale) >= 1
+    )
+
     for key in FOOTER_SUMMARY_KEYS:
         from_footer = float(parse_amount(footer_summary.get(key, 0)))
         from_main = float(parse_amount(main_summary.get(key, 0)))
-        if from_footer != 0 or from_main == 0:
+        if prefer_footer and (from_footer != 0 or key in ('totale', 'cassa_auto', 'distrib', 'pag_pos')):
+            main_summary[key] = from_footer
+        elif from_footer != 0 or from_main == 0:
             main_summary[key] = from_footer
         else:
             main_summary[key] = from_main
@@ -164,49 +185,75 @@ def merge_five_files_summary(parsed: dict, footer_parsed: dict | None) -> dict:
     return merged
 
 
+def pick_best_footer_parsed(candidates: list[dict | None]) -> dict | None:
+    best = None
+    best_totale = 0.0
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        summary = candidate.get('summary') or {}
+        totale = _summary_totale_value(summary)
+        cassa = float(parse_amount(summary.get('cassa_auto', 0)))
+        score = totale + (cassa * 0.01 if totale <= 0 else 0)
+        if score > best_totale:
+            best = candidate
+            best_totale = score
+    return best
+
+
 def normalize_image_type(raw: str) -> str:
     value = str(raw or '').strip().lower()
     return value if value in VALID_IMAGE_TYPES else 'other'
 
 
-def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, dict]]:
+def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, dict], list]:
     """Fallback se la classificazione IA non è disponibile."""
     n = len(images)
+    if n == 5:
+        # Ordine upload non affidabile: non assegnare le ultime 3 ai report a caso.
+        return list(images), {}, []
     if n >= 4:
         main = images[:-3]
         slots = dict(zip(REPORT_SLOT_ORDER, images[-3:]))
-        return main, slots
+        return main, slots, []
     if n == 3:
-        return images[:1], {'lottomatica': images[1], 'gratta': images[2]}
-    return images, {}
+        return images[:1], {'lottomatica': images[1], 'gratta': images[2]}, []
+    return images, {}, []
 
 
-def split_acquisition_images(images: list, image_types: list[str] | None = None) -> tuple[list, dict[str, dict]]:
+def split_acquisition_images(
+    images: list,
+    image_types: list[str] | None = None,
+) -> tuple[list, dict[str, dict], list]:
     """
-    Separa riepilogo cassa e report giochi.
+    Separa riepilogo cassa, riga riepilogo (footer) e report giochi.
     Con image_types (da classificazione IA) non dipende dall'ordine di upload.
     """
     if not image_types or len(image_types) != len(images):
         return split_acquisition_images_by_position(images)
 
     main: list = []
+    footer: list = []
     slots: dict[str, dict] = {}
 
     for image, img_type in zip(images, image_types):
         img_type = normalize_image_type(img_type)
-        if img_type == 'main_closure':
+        if img_type == 'summary_footer':
+            footer.append(image)
+        elif img_type == 'main_closure':
             main.append(image)
         elif img_type in REPORT_SLOT_ORDER and img_type not in slots:
             slots[img_type] = image
 
     if not main:
         slot_images = set(slots.values())
-        main = [img for img in images if img not in slot_images]
+        footer_set = set(footer)
+        main = [img for img in images if img not in slot_images and img not in footer_set]
 
     if not main and images:
         main = [images[0]]
 
-    return main, slots
+    return main, slots, footer
 
 
 def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict]) -> list[dict]:

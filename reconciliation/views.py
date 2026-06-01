@@ -62,10 +62,14 @@ MONEY_ZERO = Decimal('0.00')
 def _money(value, default=MONEY_ZERO):
     if value in (None, ''):
         return default
-    try:
-        return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError, TypeError):
-        raise ValueError(f'Importo non valido: {value}')
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError(f'Importo non valido: {value}')
+    from .closure_reports import parse_amount
+
+    return parse_amount(value, default)
 
 
 def _money_number(value):
@@ -1707,29 +1711,51 @@ def _extract_closure_two_files(images, company, provider):
     return parsed, operator_label, {}, False
 
 
+def _extract_footer_summary(images, company, provider):
+    from .ai_acquisition import FIVE_FILES_SUMMARY_PROMPT, pick_best_footer_parsed
+
+    if not images:
+        return None
+    candidates = []
+    for image in images:
+        try:
+            candidates.append(_extract_ai_json([image], company, provider, FIVE_FILES_SUMMARY_PROMPT))
+        except Exception:
+            continue
+    if not candidates:
+        return None
+    try:
+        batch = _extract_ai_json(images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
+        candidates.append(batch)
+    except Exception:
+        pass
+    return pick_best_footer_parsed(candidates)
+
+
 def _extract_closure_five_files(images, company, provider):
     """Protocollo a 5 file: classificazione report + estrazione dedicata riga riepilogo."""
     from .ai_acquisition import (
-        FIVE_FILES_SUMMARY_PROMPT,
         merge_five_files_summary,
         split_acquisition_images,
     )
 
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
     image_types = [_classify_acquisition_image(img, company, provider) for img in images]
-    main_images, report_slots = split_acquisition_images(images, image_types)
+    main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
 
     if main_images:
         parsed = _extract_ai_json(main_images, company, provider, MAIN_CLOSURE_AI_PROMPT)
-        try:
-            footer_parsed = _extract_ai_json(main_images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
-            parsed = merge_five_files_summary(parsed, footer_parsed)
-        except Exception:
-            pass
     elif report_slots:
         parsed = {'date': '', 'summary': {}, 'items': []}
     else:
         parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+
+    footer_sources = list(footer_images)
+    if not footer_sources:
+        footer_sources = list(main_images)
+    footer_parsed = _extract_footer_summary(footer_sources, company, provider)
+    if footer_parsed:
+        parsed = merge_five_files_summary(parsed, footer_parsed)
 
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
     parsed['image_types'] = image_types

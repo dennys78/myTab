@@ -19,7 +19,7 @@ REPORT_DEPARTMENTS = {
 
 
 def parse_amount(value, default: Decimal | None = None) -> Decimal:
-    """Accetta 378.00 e 378,00 (formato italiano)."""
+    """Accetta 378.00, 378,00, 1.841,85 e importi con segno (es. -5,00)."""
     if default is None:
         default = Decimal('0.00')
     if value in (None, ''):
@@ -29,11 +29,37 @@ def parse_amount(value, default: Decimal | None = None) -> Decimal:
             return Decimal(str(value).replace(',', '.')).quantize(Decimal('0.01'))
         except (InvalidOperation, ValueError):
             return default
-    s = str(value).strip().replace(' ', '').replace(',', '.')
+
+    s = str(value).strip().replace(' ', '').replace('€', '')
+    if not s:
+        return default
+
+    negative = False
+    if s.startswith('(') and s.endswith(')'):
+        negative = True
+        s = s[1:-1]
+    if s.startswith('-'):
+        negative = True
+        s = s[1:]
+    if s.startswith('+'):
+        s = s[1:]
+
+    if ',' in s:
+        # Formato italiano: 1.841,85 → 1841.85
+        s = s.replace('.', '').replace(',', '.')
+    elif s.count('.') > 1:
+        # Solo separatori migliaia: 2.579.35 non standard; 1.841.85 improbabile
+        parts = s.split('.')
+        if len(parts[-1]) == 2:
+            s = ''.join(parts[:-1]) + '.' + parts[-1]
+        else:
+            s = s.replace('.', '')
+
     if not s:
         return default
     try:
-        return Decimal(s).quantize(Decimal('0.01'))
+        amount = Decimal(s).quantize(Decimal('0.01'))
+        return -amount if negative else amount
     except (InvalidOperation, ValueError):
         return default
 
