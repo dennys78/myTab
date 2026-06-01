@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText,
 } from 'lucide-react';
@@ -18,6 +18,21 @@ const emptyLine = (tipo = TIPO_VALORE_BOLLATO) => ({
   tipo,
   importo_unitario: '',
   quantita: 1,
+});
+
+const ARTICOLI_GRID = 'minmax(130px, 1fr) 100px 72px auto';
+
+const iconActionStyle = (color, disabled = false) => ({
+  background: 'transparent',
+  border: `1px solid ${disabled ? 'var(--border)' : 'var(--border)'}`,
+  borderRadius: '6px',
+  padding: '0.4rem',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  color: disabled ? 'var(--text-muted)' : color,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  opacity: disabled ? 0.45 : 1,
 });
 
 function lineSubtotal(line) {
@@ -49,6 +64,8 @@ export default function RicevuteValoriBollati() {
   const [date, setDate] = useState(todayIso);
   const [note, setNote] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
+  const lineValoreRefs = useRef({});
+  const [focusLineId, setFocusLineId] = useState(null);
 
   const loadAll = () => {
     setLoading(true);
@@ -72,6 +89,15 @@ export default function RicevuteValoriBollati() {
     loadAll();
   }, []);
 
+  useEffect(() => {
+    if (!focusLineId) return;
+    const el = lineValoreRefs.current[focusLineId];
+    if (el) {
+      el.focus();
+      setFocusLineId(null);
+    }
+  }, [focusLineId, lines]);
+
   const totaleBozza = useMemo(
     () => lines.reduce((sum, line) => sum + lineSubtotal(line), 0),
     [lines],
@@ -93,8 +119,14 @@ export default function RicevuteValoriBollati() {
     }));
   };
 
-  const addLine = () => {
-    setLines((prev) => [...prev, emptyLine()]);
+  const insertLineAfter = (afterId) => {
+    const newLine = emptyLine();
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l._id === afterId);
+      if (idx === -1) return [...prev, newLine];
+      return [...prev.slice(0, idx + 1), newLine, ...prev.slice(idx + 1)];
+    });
+    setFocusLineId(newLine._id);
   };
 
   const removeLine = (lineId) => {
@@ -247,6 +279,24 @@ export default function RicevuteValoriBollati() {
         )}
 
         <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>Articoli</h3>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: ARTICOLI_GRID,
+            gap: '0.65rem',
+            alignItems: 'end',
+            marginBottom: '0.5rem',
+            padding: '0 0.85rem',
+            fontSize: '0.72rem',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <span>Tipo</span>
+          <span>Valore</span>
+          <span>Qtà</span>
+          <span style={{ textAlign: 'center' }}>Azioni</span>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
           {lines.map((line) => (
             <div
@@ -258,28 +308,13 @@ export default function RicevuteValoriBollati() {
             >
               <div
                 style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'flex-end',
+                  display: 'grid',
+                  gridTemplateColumns: ARTICOLI_GRID,
                   gap: '0.65rem',
+                  alignItems: 'end',
                 }}
               >
-                {lines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeLine(line._id)}
-                    title="Rimuovi riga"
-                    style={{
-                      flex: '0 0 auto', background: 'transparent', border: 'none', color: 'var(--danger)',
-                      cursor: 'pointer', padding: '0.45rem 0', marginBottom: '0.1rem',
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-
-                <div style={{ flex: '0 0 150px', minWidth: '130px' }}>
-                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Tipo</label>
+                <div>
                   <select
                     style={ricevuteInputStyle}
                     value={line.tipo}
@@ -290,9 +325,9 @@ export default function RicevuteValoriBollati() {
                   </select>
                 </div>
 
-                <div style={{ flex: '0 0 100px', minWidth: '88px' }}>
-                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Valore</label>
+                <div>
                   <input
+                    ref={(el) => { lineValoreRefs.current[line._id] = el; }}
                     type="number"
                     min="0"
                     step="0.01"
@@ -303,9 +338,8 @@ export default function RicevuteValoriBollati() {
                   />
                 </div>
 
-                {line.tipo === TIPO_VALORE_BOLLATO && (
-                  <div style={{ flex: '0 0 72px', minWidth: '64px' }}>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Qtà</label>
+                <div>
+                  {line.tipo === TIPO_VALORE_BOLLATO ? (
                     <input
                       type="number"
                       min="1"
@@ -314,8 +348,30 @@ export default function RicevuteValoriBollati() {
                       value={line.quantita}
                       onChange={(e) => updateLine(line._id, { quantita: e.target.value })}
                     />
-                  </div>
-                )}
+                  ) : (
+                    <div style={{ ...ricevuteInputStyle, opacity: 0.35, textAlign: 'center' }} aria-hidden>—</div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    title="Aggiungi riga sotto"
+                    onClick={() => insertLineAfter(line._id)}
+                    style={iconActionStyle('var(--accent)')}
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Elimina riga"
+                    onClick={() => removeLine(line._id)}
+                    disabled={lines.length <= 1}
+                    style={iconActionStyle('var(--danger)', lines.length <= 1)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.55rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border)' }}>
@@ -325,12 +381,6 @@ export default function RicevuteValoriBollati() {
               </div>
             </div>
           ))}
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-          <button type="button" onClick={addLine} style={{ ...btnPrimary, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-            <Plus size={16} /> Aggiungi
-          </button>
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
