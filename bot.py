@@ -3,11 +3,13 @@ import re
 import json
 import asyncio
 import time
+from datetime import date
 from decimal import Decimal
 
 import django
 from asgiref.sync import sync_to_async
 from django.core.files.base import ContentFile
+from django.utils import timezone
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -15,11 +17,38 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Messa
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cash_manager.settings')
 django.setup()
 
-from reconciliation.models import AcquisitionDraft, AcquisitionDraftImage, AppSetting, Company
+from reconciliation.models import (
+    AcquisitionDraft,
+    AcquisitionDraftImage,
+    AppSetting,
+    Company,
+    Versamento,
+)
 from reconciliation.draft_notifications import notify_new_acquisition_draft, send_unviewed_draft_reminders
+from reconciliation.views import _get_saldo_cassa, _money
 
 STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
+STEP_VERSAMENTO_DATE = 'awaiting_versamento_date'
+
+VERSAMENTO_TRIGGER_RE = re.compile(
+    r'(?i)^versat[oi]\s*([\d.,\s€]+)$',
+)
+
+DATE_TODAY_ALIASES = {
+    '',
+    'si',
+    'sì',
+    's',
+    'ok',
+    'oggi',
+    'odierna',
+    'yes',
+    'y',
+    'data odierna',
+    'con data odierna',
+    'usa oggi',
+}
 
 
 def _initial_session():
@@ -32,6 +61,50 @@ def _initial_session():
 
 def _reset(context):
     context.user_data['draft_session'] = _initial_session()
+    context.user_data.pop('versamento_session', None)
+
+
+def _versamento_session(context):
+    return context.user_data.get('versamento_session')
+
+
+def _start_versamento_session(context, importo):
+    context.user_data['versamento_session'] = {
+        'step': STEP_VERSAMENTO_DATE,
+        'importo_versato': importo,
+    }
+
+
+def _parse_versamento_date(text):
+    normalized = (text or '').strip().lower()
+    if normalized in DATE_TODAY_ALIASES:
+        return timezone.localdate()
+
+    match = re.fullmatch(r'(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?', normalized)
+    if not match:
+        raise ValueError('Data non valida')
+
+    day = int(match.group(1))
+    month = int(match.group(2))
+    year_raw = match.group(3)
+    if year_raw:
+        year = int(year_raw)
+        if year < 100:
+            year += 2000
+    else:
+        year = timezone.localdate().year
+
+    try:
+        return date(year, month, day)
+    except ValueError as exc:
+        raise ValueError('Data non valida') from exc
+
+
+def _match_versamento_trigger(text):
+    match = VERSAMENTO_TRIGGER_RE.match((text or '').strip())
+    if not match:
+        return None
+    return _parse_amount(match.group(1))
 
 
 def _parse_amount(text):
@@ -145,6 +218,27 @@ def _save_draft_sync(company, operator, chat_id, photos, pag_pos_reale, totale_s
     return draft.id
 
 
+def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
+    if not company:
+        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
+    importo_dec = Decimal(str(importo)).quantize(Decimal('0.01'))
+    if importo_dec <= 0:
+        raise ValueError('Importo deve essere maggiore di zero')
+
+    saldo_prec = _get_saldo_cassa(company)
+    versamento = Versamento.objects.create(
+        company=company,
+        date=versamento_date,
+        operator=(operator or 'Telegram')[:100],
+        importo_versato=importo_dec,
+        accantonamento=Decimal('0.00'),
+        saldo_precedente=saldo_prec,
+        note=(note or '').strip(),
+        ricorda_promemoria=False,
+    )
+    return versamento
+
+
 async def _watch_restart_requests(app):
     company = app.bot_data.get('company')
     initial_token = app.bot_data.get('telegram_token')
@@ -177,19 +271,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _reset(context)
     await update.message.reply_text(
         "Bot myTab pronto.\n\n"
-        "Invia una o più foto della chiusura cassa.\n"
-        "Poi inserisci il totale POS reale e infine l'importo scassettato."
+        "Chiusura cassa: invia una o più foto, poi totale POS e importo scassettato.\n\n"
+        "Versamento: scrivi ad esempio\n"
+        "Versati 2343,20\n"
+        "e segui le istruzioni per la data."
     )
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
     _reset(context)
-    await update.message.reply_text("Bozza annullata. Invia una nuova foto per ricominciare.")
+    await update.message.reply_text(
+        "Operazione annullata. Invia una nuova foto per la chiusura cassa "
+        "oppure scrivi «Versati 1234,50» per un versamento."
+    )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
+    if _versamento_session(context):
+        await update.message.reply_text(
+            "Stai registrando un versamento.\n\n"
+            "Rispondi con la data (gg/mm) oppure «sì» per la data odierna, "
+            "oppure usa /annulla."
+        )
+        return
+
     session = context.user_data.setdefault('draft_session', _initial_session())
 
     if session.get('step') == STEP_AWAITING_SCASSETTO:
@@ -207,13 +314,90 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Inserisci totale POS reale")
 
 
+async def _ask_versamento_date(update, importo):
+    await update.message.reply_text(
+        f"Importo versamento: {_money_text(importo)}\n\n"
+        "Vuoi che versi con data odierna?\n"
+        "Oppure indica semplicemente la data preferita in formato gg/mm"
+        " (es. 31/05 o 31/05/2026)."
+    )
+
+
+async def _complete_versamento(update, context, versamento_date):
+    session = _versamento_session(context)
+    if not session or session.get('step') != STEP_VERSAMENTO_DATE:
+        return False
+
+    importo = session.get('importo_versato')
+    if importo is None:
+        context.user_data.pop('versamento_session', None)
+        await update.message.reply_text("Sessione versamento non valida. Riprova con «Versati 1234,50».")
+        return True
+
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
+
+    try:
+        versamento = await sync_to_async(_save_versamento_sync)(
+            company,
+            operator,
+            importo,
+            versamento_date,
+            note='Registrato da Telegram',
+        )
+    except ValueError as exc:
+        await update.message.reply_text(f"Versamento non registrato: {exc}")
+        context.user_data.pop('versamento_session', None)
+        return True
+    except Exception as exc:
+        await update.message.reply_text(f"Versamento non registrato: {exc}")
+        context.user_data.pop('versamento_session', None)
+        return True
+
+    context.user_data.pop('versamento_session', None)
+    await update.message.reply_text(
+        "Versamento registrato in myTab.\n\n"
+        f"Importo: {_money_text(float(versamento.importo_versato))}\n"
+        f"Data: {versamento.date.strftime('%d/%m/%Y')}\n"
+        f"Operatore: {versamento.operator}\n\n"
+        "Lo trovi subito nella webapp, sezione Versamenti."
+    )
+    return True
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_applied = await _prepare_context(update, context)
     if reset_applied:
         await update.message.reply_text(
             "Sessione Telegram precedente azzerata da myTab.\n\n"
-            "Invia una nuova foto della chiusura cassa per ricominciare."
+            "Invia una nuova foto della chiusura cassa oppure scrivi «Versati 1234,50»."
         )
+        return
+
+    text = (update.message.text or '').strip()
+
+    if _versamento_session(context):
+        try:
+            versamento_date = _parse_versamento_date(text)
+        except ValueError:
+            await update.message.reply_text(
+                "Data non valida.\n\n"
+                "Rispondi «sì» per usare la data odierna oppure scrivi la data in formato gg/mm."
+            )
+            return
+        await _complete_versamento(update, context, versamento_date)
+        return
+
+    try:
+        versamento_importo = _match_versamento_trigger(text)
+    except ValueError:
+        await update.message.reply_text("Importo non valido. Esempio: Versati 2343,20")
+        return
+
+    if versamento_importo is not None:
+        _start_versamento_session(context, versamento_importo)
+        await _ask_versamento_date(update, versamento_importo)
         return
 
     session = context.user_data.setdefault('draft_session', _initial_session())
