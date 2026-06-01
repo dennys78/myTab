@@ -5,12 +5,14 @@ alwaysApply: true
 
 # Git Push And Beta Deploy (obbligatorio)
 
-Dopo **ogni** modifica a codice o configurazione del progetto (non solo su richiesta esplicita):
+**Non considerare completata una modifica finché non è su `origin/main`.**  
+Dopo **ogni** modifica a codice o configurazione del progetto — **sempre, senza aspettare che l’utente lo chieda**:
 
 1. Esegui verifica minima appropriata (es. `npm run build` nel frontend se toccato `dashboard_app/`).
 2. Controlla `git status` e committa **solo** i file del task (mai `.env`, `CONTEXT.md` salvo richiesta, segreti o file locali non correlati).
 3. **Crea il commit e fai subito `git push` su `origin/main`** — non lasciare modifiche solo in locale: altrimenti il Mac Mini resta sulla versione vecchia.
 4. Se il push fallisce, segnalalo e riprova; non considerare il task completato senza push riuscito.
+5. Nella risposta all’utente indica l’hash del commit pushato (es. `fb1759b`).
 
 Messaggio commit: breve, in inglese, stile repo (`feat:`, `fix:`, `style:`).
 
