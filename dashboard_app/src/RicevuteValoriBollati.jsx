@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText,
+  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown,
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { ricevuteCardStyle, ricevuteInputStyle } from './ricevuteStyles';
@@ -207,6 +207,20 @@ export default function RicevuteValoriBollati() {
         }
       })
       .catch(() => setError('Errore di rete.'));
+  };
+
+  const openPdf = (id) => {
+    apiFetch(`/api/ricevute/emesse/${id}/pdf/`)
+      .then((r) => {
+        if (!r.ok) throw new Error('PDF non disponibile');
+        return r.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      })
+      .catch(() => setError('Impossibile generare il PDF.'));
   };
 
   const btnPrimary = {
@@ -459,13 +473,22 @@ export default function RicevuteValoriBollati() {
                       {detail.note && (
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.75rem' }}>Note: {detail.note}</p>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRicevuta(row)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.8rem', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
-                      >
-                        <Trash2 size={15} /> Elimina ricevuta
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => openPdf(row.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.8rem', background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                        >
+                          <FileDown size={15} /> Scarica PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRicevuta(row)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.8rem', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                        >
+                          <Trash2 size={15} /> Elimina ricevuta
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

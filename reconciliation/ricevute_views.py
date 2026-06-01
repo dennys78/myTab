@@ -2,12 +2,13 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from .company_scope import bind_company
 from .models import Cliente, Ricevuta, RicevutaRiga, ValoreBollato
+from .ricevuta_pdf import render_ricevuta_pdf
 from .views import require_auth
 
 
@@ -339,3 +340,30 @@ def api_ricevuta_emessa_detail(request, ricevuta_id):
         return JsonResponse({'status': 'success'})
 
     return JsonResponse({'status': 'success', 'data': _serialize_ricevuta(row, detail=True)})
+
+
+@require_auth
+@require_http_methods(['GET'])
+def api_ricevuta_pdf(request, ricevuta_id):
+    company, err = bind_company(request)
+    if err:
+        return err
+
+    try:
+        row = (
+            Ricevuta.objects.filter(company=company)
+            .select_related('cliente', 'company')
+            .prefetch_related('righe')
+            .get(id=ricevuta_id)
+        )
+    except Ricevuta.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Ricevuta non trovata'}, status=404)
+
+    try:
+        pdf_bytes = render_ricevuta_pdf(row)
+    except RuntimeError as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=503)
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="ricevuta-{row.id}.pdf"'
+    return response
