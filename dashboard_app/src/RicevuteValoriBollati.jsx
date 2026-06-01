@@ -16,8 +16,6 @@ const newLineId = () => `line-${++lineUid}`;
 const emptyLine = (tipo = TIPO_VALORE_BOLLATO) => ({
   _id: newLineId(),
   tipo,
-  valore_bollato_id: '',
-  descrizione: '',
   importo_unitario: '',
   quantita: 1,
 });
@@ -28,27 +26,22 @@ function lineSubtotal(line) {
   return Math.round(unit * qty * 100) / 100;
 }
 
-function buildLinePayload(line, catalog) {
+function buildLinePayload(line) {
   const qty = Math.max(1, parseInt(line.quantita, 10) || 1);
+  const importo = parseFloat(String(line.importo_unitario).replace(',', '.')) || 0;
+  if (importo <= 0) return null;
   if (line.tipo === TIPO_CONTRIBUTO) {
-    return {
-      tipo: TIPO_CONTRIBUTO,
-      importo_unitario: parseFloat(String(line.importo_unitario).replace(',', '.')) || 0,
-      quantita: qty,
-    };
+    return { tipo: TIPO_CONTRIBUTO, importo_unitario: importo, quantita: 1 };
   }
-  if (!line.valore_bollato_id) return null;
-  return { tipo: TIPO_VALORE_BOLLATO, valore_bollato_id: Number(line.valore_bollato_id), quantita: qty };
+  return { tipo: TIPO_VALORE_BOLLATO, importo_unitario: importo, quantita: qty };
 }
 
 export default function RicevuteValoriBollati() {
   const [clienti, setClienti] = useState([]);
-  const [catalogo, setCatalogo] = useState([]);
   const [ricevute, setRicevute] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [catalogOpen, setCatalogOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [detailCache, setDetailCache] = useState({});
 
@@ -57,22 +50,17 @@ export default function RicevuteValoriBollati() {
   const [note, setNote] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
 
-  const [catForm, setCatForm] = useState({ descrizione: '', importo: '' });
-  const [catSaving, setCatSaving] = useState(false);
-
   const loadAll = () => {
     setLoading(true);
     setError(null);
     Promise.all([
       apiFetch('/api/ricevute/clienti/').then((r) => r.json()),
-      apiFetch('/api/ricevute/valori-bollati/').then((r) => r.json()),
       apiFetch('/api/ricevute/emesse/').then((r) => r.json()),
     ])
-      .then(([c, cat, rec]) => {
+      .then(([c, rec]) => {
         if (c.status === 'success') setClienti(c.data);
-        if (cat.status === 'success') setCatalogo(cat.data);
         if (rec.status === 'success') setRicevute(rec.data);
-        if (c.status !== 'success' || cat.status !== 'success' || rec.status !== 'success') {
+        if (c.status !== 'success' || rec.status !== 'success') {
           setError('Errore caricamento dati ricevute.');
         }
       })
@@ -95,35 +83,13 @@ export default function RicevuteValoriBollati() {
     setLines((prev) => prev.map((line) => (line._id === lineId ? { ...line, ...patch } : line)));
   };
 
-  const onCatalogPick = (lineId, valoreId) => {
-    const item = catalogo.find((v) => String(v.id) === String(valoreId));
-    updateLine(lineId, {
-      valore_bollato_id: valoreId,
-      descrizione: item?.descrizione || '',
-      importo_unitario: item ? String(item.importo) : '',
-    });
-  };
-
   const onTipoChange = (lineId, tipo) => {
     setLines((prev) => prev.map((line) => {
       if (line._id !== lineId) return line;
       if (tipo === TIPO_CONTRIBUTO) {
-        return {
-          ...line,
-          tipo: TIPO_CONTRIBUTO,
-          valore_bollato_id: '',
-          descrizione: 'Contributo unificato',
-          quantita: 1,
-        };
+        return { ...line, tipo: TIPO_CONTRIBUTO, quantita: 1 };
       }
-      return {
-        ...line,
-        tipo: TIPO_VALORE_BOLLATO,
-        valore_bollato_id: '',
-        descrizione: '',
-        importo_unitario: '',
-        quantita: 1,
-      };
+      return { ...line, tipo: TIPO_VALORE_BOLLATO, quantita: 1 };
     }));
   };
 
@@ -148,12 +114,8 @@ export default function RicevuteValoriBollati() {
       return;
     }
     const righe = lines
-      .map((line) => buildLinePayload(line, catalogo))
-      .filter(Boolean)
-      .filter((r) => {
-        if (r.tipo === TIPO_CONTRIBUTO) return r.importo_unitario > 0;
-        return Boolean(r.valore_bollato_id);
-      });
+      .map((line) => buildLinePayload(line))
+      .filter(Boolean);
     if (!righe.length) {
       setError('Aggiungi almeno un articolo valido.');
       return;
@@ -213,30 +175,6 @@ export default function RicevuteValoriBollati() {
         }
       })
       .catch(() => setError('Errore di rete.'));
-  };
-
-  const handleAddCatalogItem = () => {
-    if (!catForm.descrizione.trim()) {
-      setError('Inserisci la descrizione della marca da bollo.');
-      return;
-    }
-    setCatSaving(true);
-    apiFetch('/api/ricevute/valori-bollati/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(catForm),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === 'success') {
-          setCatForm({ descrizione: '', importo: '' });
-          loadAll();
-        } else {
-          setError(d.error || 'Errore catalogo.');
-        }
-      })
-      .catch(() => setError('Errore di rete.'))
-      .finally(() => setCatSaving(false));
   };
 
   const btnPrimary = {
@@ -310,7 +248,7 @@ export default function RicevuteValoriBollati() {
 
         <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>Articoli</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
-          {lines.map((line, index) => (
+          {lines.map((line) => (
             <div
               key={line._id}
               style={{
@@ -352,35 +290,18 @@ export default function RicevuteValoriBollati() {
                   </select>
                 </div>
 
-                {line.tipo === TIPO_VALORE_BOLLATO ? (
-                  <div style={{ flex: '1 1 180px', minWidth: '160px' }}>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Articolo</label>
-                    <select
-                      style={ricevuteInputStyle}
-                      value={line.valore_bollato_id}
-                      onChange={(e) => onCatalogPick(line._id, e.target.value)}
-                    >
-                      <option value="">Seleziona...</option>
-                      {catalogo.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.descrizione} — € {Number(v.importo).toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div style={{ flex: '1 1 120px', minWidth: '100px' }}>
-                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Importo €</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      style={ricevuteInputStyle}
-                      value={line.importo_unitario}
-                      onChange={(e) => updateLine(line._id, { importo_unitario: e.target.value })}
-                    />
-                  </div>
-                )}
+                <div style={{ flex: '0 0 100px', minWidth: '88px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Valore</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    style={ricevuteInputStyle}
+                    value={line.importo_unitario}
+                    onChange={(e) => updateLine(line._id, { importo_unitario: e.target.value })}
+                  />
+                </div>
 
                 {line.tipo === TIPO_VALORE_BOLLATO && (
                   <div style={{ flex: '0 0 72px', minWidth: '64px' }}>
@@ -395,12 +316,6 @@ export default function RicevuteValoriBollati() {
                     />
                   </div>
                 )}
-
-                <span style={{
-                  flex: '0 0 auto', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.55rem', marginLeft: 'auto',
-                }}>
-                  Riga {index + 1}
-                </span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.55rem', paddingTop: '0.45rem', borderTop: '1px dashed var(--border)' }}>
@@ -510,45 +425,6 @@ export default function RicevuteValoriBollati() {
                 </div>
               );
             })}
-          </div>
-        )}
-      </div>
-
-      <div style={ricevuteCardStyle}>
-        <button
-          type="button"
-          onClick={() => setCatalogOpen((o) => !o)}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'transparent',
-            border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: 0, fontWeight: 600, fontSize: '0.95rem',
-          }}
-        >
-          {catalogOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-          Catalogo marche da bollo
-        </button>
-        {catalogOpen && (
-          <div style={{ marginTop: '1rem' }}>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Voci predefinite selezionabili nelle righe &quot;Valori bollati&quot;.
-            </p>
-            <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: '1fr 120px auto', marginBottom: '1rem' }}>
-              <input style={ricevuteInputStyle} placeholder="Descrizione" value={catForm.descrizione} onChange={(e) => setCatForm({ ...catForm, descrizione: e.target.value })} />
-              <input type="number" min="0" step="0.01" style={ricevuteInputStyle} placeholder="€" value={catForm.importo} onChange={(e) => setCatForm({ ...catForm, importo: e.target.value })} />
-              <button type="button" onClick={handleAddCatalogItem} disabled={catSaving} style={btnPrimary}>
-                {catSaving ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
-              </button>
-            </div>
-            {catalogo.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Catalogo vuoto: aggiungi le marche più usate.</p>
-            ) : (
-              <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                {catalogo.map((v) => (
-                  <li key={v.id} style={{ padding: '0.45rem 0', borderBottom: '1px solid var(--border)', fontSize: '0.9rem' }}>
-                    {v.descrizione} — <strong>€ {Number(v.importo).toFixed(2)}</strong>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
       </div>

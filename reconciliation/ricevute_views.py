@@ -229,10 +229,13 @@ def _parse_riga_body(data, company):
             descrizione = valore_bollato.descrizione
             importo_unitario = valore_bollato.importo
         else:
-            descrizione = str(data.get('descrizione', '')).strip()
-            if not descrizione:
-                raise ValueError('Descrizione obbligatoria per il valore bollato.')
-            importo_unitario = _money_decimal(data.get('importo_unitario', 0))
+            importo_unitario = _money_decimal(
+                data.get('importo_unitario', data.get('valore', 0)),
+                'Valore',
+            )
+            if importo_unitario <= 0:
+                raise ValueError('Valore obbligatorio.')
+            descrizione = f'Valore bollato € {importo_unitario:.2f}'.replace('.', ',')
     else:
         descrizione = 'Contributo unificato'
         importo_unitario = _money_decimal(data.get('importo_unitario', 0), 'Importo contributo')
