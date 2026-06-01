@@ -2,7 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
-import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
+import {
+  ACQUISITION_MODE_FIVE,
+  maxFilesForAcquisitionMode,
+} from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
 import { buildClosureSavedNotificationPayload } from './closureNotifyUtils';
 import AcquisitionProgressBar from './AcquisitionProgressBar';
@@ -42,6 +45,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [previewEditable, setPreviewEditable] = useState(false);
   const [reextracting, setReextracting] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
+  const [acquisitionFileMode, setAcquisitionFileMode] = useState(ACQUISITION_MODE_FIVE);
+  const maxAcquisitionFiles = maxFilesForAcquisitionMode(acquisitionFileMode);
+  const isFiveFileMode = acquisitionFileMode === ACQUISITION_MODE_FIVE;
   const loadDraftAbortRef = useRef(null);
   const loadDraftRequestIdRef = useRef(0);
   const progressControllerRef = useRef(null);
@@ -74,10 +80,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .then(d => {
         if (d.status === 'success') {
           setAiProvider(d.data.provider || 'groq');
+          const mode = d.data.ai_acquisition_file_mode || ACQUISITION_MODE_FIVE;
+          setAcquisitionFileMode(mode);
         }
       })
       .catch(() => {});
   }, [user?.active_company_id]);
+
+  useEffect(() => {
+    if (filesRef.current.length <= maxAcquisitionFiles) return;
+    const trimmed = filesRef.current.slice(0, maxAcquisitionFiles);
+    filesRef.current = trimmed;
+    setFiles([...trimmed]);
+  }, [maxAcquisitionFiles]);
 
   const providerLabel = aiProvider === 'gemini' ? 'Gemini' : 'Groq';
 
@@ -90,11 +105,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const addFiles = (e) => {
     if (!e.target.files?.length) return;
-    const remaining = MAX_ACQUISITION_FILES - filesRef.current.length;
+    const remaining = maxAcquisitionFiles - filesRef.current.length;
     if (remaining <= 0) return;
     const incoming = Array.from(e.target.files).slice(0, remaining);
     // Usa ref per evitare qualsiasi problema di closure stale su iOS
-    const next = [...filesRef.current, ...incoming].slice(0, MAX_ACQUISITION_FILES);
+    const next = [...filesRef.current, ...incoming].slice(0, maxAcquisitionFiles);
     filesRef.current = next;
     setFiles([...next]);
     e.target.value = '';          // permette di ri-selezionare lo stesso file
@@ -107,12 +122,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   const openCamera = () => {
-    if (filesRef.current.length >= MAX_ACQUISITION_FILES) return;
+    if (filesRef.current.length >= maxAcquisitionFiles) return;
     cameraInputRef.current?.click();
   };
 
   const openGallery = () => {
-    if (filesRef.current.length >= MAX_ACQUISITION_FILES) return;
+    if (filesRef.current.length >= maxAcquisitionFiles) return;
     galleryInputRef.current?.click();
   };
 
@@ -127,6 +142,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const handleExtract = () => {
     if (!filesRef.current.length) return;
+    if (isFiveFileMode && filesRef.current.length !== 5) {
+      setError('Per l\'analisi a 5 file carica esattamente 5 immagini.');
+      return;
+    }
     const imageCount = filesRef.current.length;
     const controller = createAcquisitionProgressController(imageCount, setExtractProgress);
     progressControllerRef.current = controller;
@@ -683,7 +702,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
   }
 
   // ─── UPLOAD ─────────────────────────────────────────────────────────────────
-  const atLimit = files.length >= MAX_ACQUISITION_FILES;
+  const atLimit = files.length >= maxAcquisitionFiles;
+  const canExtract = files.length > 0 && (!isFiveFileMode || files.length === 5);
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
@@ -691,11 +711,14 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <Sparkles size={26} color="var(--accent)" /> Acquisisci con IA
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
-        Carica fino a {MAX_ACQUISITION_FILES} immagini nell&apos;ordine indicato sotto.
+        {isFiveFileMode
+          ? 'Carica esattamente 5 immagini: riepilogo cassa e report giochi.'
+          : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
-        Includi il riepilogo chiusura cassa (tutti i reparti) più i report Lottomatica, Gratta e Vinci, Sisal.
-        L&apos;ordine delle foto viene riconosciuto automaticamente.
+        {isFiveFileMode
+          ? 'Includi il riepilogo con tutti i reparti più i report Lottomatica, Gratta e Vinci, Sisal. L\'ordine viene riconosciuto automaticamente.'
+          : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
         Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>
@@ -810,7 +833,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
           {atLimit && (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              Hai raggiunto il limite di {MAX_ACQUISITION_FILES} foto. Premi <strong style={{ color: 'white' }}>Avvio estrazione dati</strong> per procedere oppure rimuovi una foto per aggiungerne un&apos;altra.
+              Hai raggiunto il limite di {maxAcquisitionFiles} foto. Premi <strong style={{ color: 'white' }}>Avvio estrazione dati</strong> per procedere oppure rimuovi una foto per aggiungerne un&apos;altra.
             </p>
           )}
         </div>
@@ -819,7 +842,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <div style={{ border: '2px dashed var(--border)', borderRadius: '12px', padding: '3rem 2rem', background: 'rgba(255,255,255,0.02)', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
           <Sparkles size={48} color="var(--accent)" />
           <h3 style={{ margin: 0 }}>Seleziona Immagini</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG — Max {MAX_ACQUISITION_FILES} file</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>PNG, JPG o JPEG — Max {maxAcquisitionFiles} file</p>
           <input type="file" id="ai-file-desktop" multiple accept="image/*" onChange={addFiles} style={{ display: 'none' }} />
           <label htmlFor="ai-file-desktop" style={{
             padding: '0.75rem 1.5rem',
@@ -831,7 +854,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             marginTop: '0.5rem',
             pointerEvents: atLimit ? 'none' : 'auto',
           }}>
-            {atLimit ? `Limite ${MAX_ACQUISITION_FILES} file raggiunto` : 'Sfoglia File'}
+            {atLimit ? `Limite ${maxAcquisitionFiles} file raggiunto` : 'Sfoglia File'}
           </label>
         </div>
       )}
@@ -840,7 +863,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       {files.length > 0 && (
         <div style={{ marginBottom: '1.5rem' }}>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-            {files.length}/{MAX_ACQUISITION_FILES} {files.length === 1 ? 'foto selezionata' : 'foto selezionate'}
+            {files.length}/{maxAcquisitionFiles} {files.length === 1 ? 'foto selezionata' : 'foto selezionate'}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {files.map((file, i) => (
@@ -882,7 +905,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         </div>
       )}
 
-      <button onClick={handleExtract} disabled={!files.length || loading}
+      <button onClick={handleExtract} disabled={!canExtract || loading}
         style={{
           width: '100%', padding: '1rem',
           background: files.length && !loading ? 'var(--accent)' : 'var(--bg-card)',

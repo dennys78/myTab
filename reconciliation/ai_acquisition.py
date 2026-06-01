@@ -3,6 +3,24 @@
 from __future__ import annotations
 
 from .closure_reports import REPORT_DEPARTMENTS, parse_amount
+from .models import AppSetting
+
+AI_ACQUISITION_MODE_TWO = 'two_files'
+AI_ACQUISITION_MODE_FIVE = 'five_files'
+VALID_AI_ACQUISITION_MODES = frozenset({AI_ACQUISITION_MODE_TWO, AI_ACQUISITION_MODE_FIVE})
+AI_ACQUISITION_MAX_FILES = {
+    AI_ACQUISITION_MODE_TWO: 2,
+    AI_ACQUISITION_MODE_FIVE: 5,
+}
+FOOTER_SUMMARY_KEYS = (
+    'contanti',
+    'pag_pos',
+    'cassa_auto',
+    'reso_cont',
+    'reso_auto',
+    'distrib',
+    'totale',
+)
 
 # Ultime 3 foto (ordine upload): Lottomatica, Gratta e Vinci, Sisal
 REPORT_SLOT_ORDER = ('lottomatica', 'gratta', 'sisal')
@@ -50,6 +68,100 @@ Restituisci SOLO JSON: {"type": "main_closure"|"lottomatica"|"gratta"|"sisal"|"o
 - other: anteprima generica non classificabile"""
 
 VALID_IMAGE_TYPES = frozenset({'main_closure', 'lottomatica', 'gratta', 'sisal', 'other'})
+
+FIVE_FILES_SUMMARY_PROMPT = """Analizza il RIEPILOGO CHIUSURA CASSA (tabella reparti + riga totali in fondo).
+Restituisci SOLO JSON valido, senza markdown:
+{
+  "date": "YYYY-MM-DD",
+  "summary": {
+    "contanti": 0.00,
+    "pag_pos": 0.00,
+    "cassa_auto": 0.00,
+    "reso_cont": 0.00,
+    "reso_auto": 0.00,
+    "distrib": 0.00,
+    "totale": 0.00
+  }
+}
+
+Regole sulla riga RIEPILOGO in fondo (7 valori nell'ordine tipico):
+1. Contanti → contanti
+2. Pag.Pos / Pagamento POS → pag_pos
+3. Cassa Auto → cassa_auto
+4. Reso Cont. / Reso contanti → reso_cont
+5. Reso Auto → reso_auto
+6. Distrib. / Distributore → distrib
+7. TOTALE (ultima colonna, mai Pag.Pos) → totale
+
+- Importi float positivi; se non leggibile usa 0.00.
+- Non usare totali di reparto singoli per il campo totale.
+- Data YYYY-MM-DD se visibile sul documento, altrimenti stringa vuota."""
+
+
+def get_ai_acquisition_file_mode(company) -> str:
+    if not company:
+        return AI_ACQUISITION_MODE_FIVE
+    try:
+        mode = AppSetting.objects.get(company=company, key='ai_acquisition_file_mode').value.strip()
+    except AppSetting.DoesNotExist:
+        return AI_ACQUISITION_MODE_FIVE
+    return mode if mode in VALID_AI_ACQUISITION_MODES else AI_ACQUISITION_MODE_FIVE
+
+
+def set_ai_acquisition_file_mode(company, mode: str) -> None:
+    if not company:
+        return
+    mode = str(mode or '').strip()
+    if mode not in VALID_AI_ACQUISITION_MODES:
+        raise ValueError('Modalità acquisizione non valida')
+    AppSetting.objects.update_or_create(
+        company=company,
+        key='ai_acquisition_file_mode',
+        defaults={'value': mode},
+    )
+
+
+def max_acquisition_files_for_mode(mode: str) -> int:
+    return AI_ACQUISITION_MAX_FILES.get(mode, 2)
+
+
+def validate_acquisition_file_count(company, count: int) -> None:
+    mode = get_ai_acquisition_file_mode(company)
+    count = int(count or 0)
+    if count < 1:
+        raise ValueError('Carica almeno un\'immagine.')
+    if mode == AI_ACQUISITION_MODE_FIVE and count != 5:
+        raise ValueError(
+            f'Per l\'analisi a 5 file carica esattamente 5 immagini (ricevute {count}).'
+        )
+    if mode == AI_ACQUISITION_MODE_TWO and count > 2:
+        raise ValueError(
+            f'Per l\'analisi a 2 file carica al massimo 2 immagini (ricevute {count}).'
+        )
+
+
+def merge_five_files_summary(parsed: dict, footer_parsed: dict | None) -> dict:
+    """Integra cassa auto, distributore, totale e resi dall'estrazione dedicata al riepilogo."""
+    if not footer_parsed:
+        return parsed
+    merged = dict(parsed or {})
+    main_summary = dict(merged.get('summary') or {})
+    footer_summary = footer_parsed.get('summary') if isinstance(footer_parsed, dict) else {}
+    if not isinstance(footer_summary, dict):
+        footer_summary = {}
+
+    for key in FOOTER_SUMMARY_KEYS:
+        from_footer = float(parse_amount(footer_summary.get(key, 0)))
+        from_main = float(parse_amount(main_summary.get(key, 0)))
+        if from_footer != 0 or from_main == 0:
+            main_summary[key] = from_footer
+        else:
+            main_summary[key] = from_main
+
+    merged['summary'] = main_summary
+    if footer_parsed.get('date') and not merged.get('date'):
+        merged['date'] = footer_parsed['date']
+    return merged
 
 
 def normalize_image_type(raw: str) -> str:

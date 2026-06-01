@@ -54,23 +54,28 @@ export default function Impostazioni({ section = 'generali' }) {
   const [denominazione, setDenominazione] = useState('');
   const [indirizzo, setIndirizzo] = useState('');
   const [piva, setPiva] = useState('');
+  const [aiAcquisitionFileMode, setAiAcquisitionFileMode] = useState('five_files');
   const [companies, setCompanies] = useState([]);
   const [activeCompanyId, setActiveCompanyId] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [companyMode, setCompanyMode] = useState(null); // null | 'new' | 'edit'
   const [savingCompany, setSavingCompany] = useState(false);
   const [companySaved, setCompanySaved] = useState(false);
+  const [savingAcquisitionMode, setSavingAcquisitionMode] = useState(false);
+  const [acquisitionModeSaved, setAcquisitionModeSaved] = useState(false);
 
   const loadCompanyIntoForm = (company) => {
     if (!company) {
       setDenominazione('');
       setIndirizzo('');
       setPiva('');
+      setAiAcquisitionFileMode('five_files');
       return;
     }
     setDenominazione(company.denominazione || '');
     setIndirizzo(company.indirizzo || '');
     setPiva(company.piva || '');
+    setAiAcquisitionFileMode(company.ai_acquisition_file_mode || 'five_files');
   };
 
   const applyCompaniesFromSettings = (data) => {
@@ -150,6 +155,7 @@ export default function Impostazioni({ section = 'generali' }) {
       denominazione: denominazione.trim(),
       indirizzo: indirizzo.trim(),
       piva: piva.trim(),
+      ai_acquisition_file_mode: aiAcquisitionFileMode,
     };
 
     const url = companyMode === 'new'
@@ -183,6 +189,37 @@ export default function Impostazioni({ section = 'generali' }) {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSavingCompany(false));
+  };
+
+  const handleSaveAcquisitionMode = () => {
+    if (!selectedCompanyId || companyMode === 'new') return;
+    setSavingAcquisitionMode(true);
+    setError(null);
+    setAcquisitionModeSaved(false);
+
+    apiFetch(`/api/companies/${selectedCompanyId}/update/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        denominazione: denominazione.trim(),
+        indirizzo: indirizzo.trim(),
+        piva: piva.trim(),
+        ai_acquisition_file_mode: aiAcquisitionFileMode,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setCompanies(d.companies || []);
+          loadCompanyIntoForm(d.data);
+          setAcquisitionModeSaved(true);
+          setTimeout(() => setAcquisitionModeSaved(false), 3000);
+        } else {
+          setError(d.error || 'Errore salvataggio protocollo acquisizione.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingAcquisitionMode(false));
   };
 
   const handleAttivaCompany = (companyId) => {
@@ -561,6 +598,47 @@ export default function Impostazioni({ section = 'generali' }) {
           </div>
         )}
 
+        {selectedCompanyId && companyMode !== 'new' && (
+          <div style={{
+            marginBottom: '1.25rem',
+            padding: '1rem 1.1rem',
+            borderRadius: '12px',
+            border: '1px solid rgba(79,141,247,0.45)',
+            background: 'rgba(79,141,247,0.08)',
+          }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+              Protocollo acquisizione chiusure (IA)
+            </label>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 0, marginBottom: '0.75rem', lineHeight: 1.45 }}>
+              Scegli come analizzare le foto per questa ragione sociale: 2 file solo riepilogo cassa, oppure 5 file con report giochi e estrazione di cassa auto, distributore, totale e resi.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center' }}>
+              <select
+                value={aiAcquisitionFileMode}
+                onChange={e => setAiAcquisitionFileMode(e.target.value)}
+                style={{ ...inputStyle, flex: '1 1 260px', minWidth: '220px', fontFamily: 'inherit' }}
+              >
+                <option value="two_files">2 file — riepilogo cassa (foglio incasso)</option>
+                <option value="five_files">5 file — riepilogo + Lottomatica, Gratta e Vinci, Sisal</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleSaveAcquisitionMode}
+                disabled={savingAcquisitionMode}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+              >
+                {savingAcquisitionMode ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                Salva protocollo
+              </button>
+            </div>
+            {acquisitionModeSaved && (
+              <p style={{ color: '#22c55e', fontSize: '0.8rem', marginTop: '0.65rem', marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <CheckCircle size={14} /> Protocollo salvato.
+              </p>
+            )}
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
           <button
             type="button"
@@ -615,6 +693,19 @@ export default function Impostazioni({ section = 'generali' }) {
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>PIVA</label>
             <input type="text" value={piva} onChange={e => setPiva(e.target.value)} disabled={!formEditable} style={{ ...inputStyle, fontFamily: 'inherit', width: '100%', maxWidth: '280px', opacity: formEditable ? 1 : 0.7 }} placeholder="IT12345678901" />
           </div>
+          {companyMode === 'new' && (
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Protocollo acquisizione chiusure (IA)</label>
+              <select
+                value={aiAcquisitionFileMode}
+                onChange={e => setAiAcquisitionFileMode(e.target.value)}
+                style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
+              >
+                <option value="two_files">2 file — riepilogo cassa (foglio incasso)</option>
+                <option value="five_files">5 file — riepilogo + Lottomatica, Gratta e Vinci, Sisal</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {companySaved && (

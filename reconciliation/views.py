@@ -343,6 +343,12 @@ def api_companies_create(request):
             indirizzo=data.get('indirizzo', '').strip(),
             piva=data.get('piva', '').strip(),
         )
+        from .ai_acquisition import set_ai_acquisition_file_mode, AI_ACQUISITION_MODE_FIVE, AI_ACQUISITION_MODE_TWO
+
+        mode = str(data.get('ai_acquisition_file_mode', AI_ACQUISITION_MODE_FIVE)).strip()
+        if mode not in {AI_ACQUISITION_MODE_TWO, AI_ACQUISITION_MODE_FIVE}:
+            mode = AI_ACQUISITION_MODE_FIVE
+        set_ai_acquisition_file_mode(company, mode)
         set_active_company(request, company.id)
         return JsonResponse({
             'status': 'success',
@@ -370,6 +376,10 @@ def api_companies_update(request, company_id):
         company.indirizzo = data.get('indirizzo', '').strip()
         company.piva = data.get('piva', '').strip()
         company.save()
+        if 'ai_acquisition_file_mode' in data:
+            from .ai_acquisition import set_ai_acquisition_file_mode
+
+            set_ai_acquisition_file_mode(company, data.get('ai_acquisition_file_mode'))
         active = get_active_company(request)
         return JsonResponse({
             'status': 'success',
@@ -960,11 +970,16 @@ def _resolve_ai_provider(user, company=None, override=None):
 
 
 def _ai_provider_options(user, company=None):
+    from .ai_acquisition import get_ai_acquisition_file_mode, max_acquisition_files_for_mode
+
+    mode = get_ai_acquisition_file_mode(company)
     return {
         'provider': _resolve_ai_provider(user, company),
         'user_provider': _get_user_ai_provider(user) or None,
         'groq_configured': bool(_get_groq_key()),
         'gemini_configured': bool(_get_gemini_key()),
+        'ai_acquisition_file_mode': mode,
+        'max_acquisition_files': max_acquisition_files_for_mode(mode),
     }
 
 
@@ -1685,19 +1700,32 @@ def _classify_acquisition_image(image, company, provider):
         return 'other'
 
 
-def _extract_closure_with_reports(images, company, provider):
-    from .ai_acquisition import split_acquisition_images
+def _extract_closure_two_files(images, company, provider):
+    """Protocollo a 2 file: solo riepilogo cassa, senza classificazione report."""
+    operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
+    parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+    return parsed, operator_label, {}, False
+
+
+def _extract_closure_five_files(images, company, provider):
+    """Protocollo a 5 file: classificazione report + estrazione dedicata riga riepilogo."""
+    from .ai_acquisition import (
+        FIVE_FILES_SUMMARY_PROMPT,
+        merge_five_files_summary,
+        split_acquisition_images,
+    )
 
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-
-    image_types = []
-    if len(images) >= 3:
-        image_types = [_classify_acquisition_image(img, company, provider) for img in images]
-
-    main_images, report_slots = split_acquisition_images(images, image_types or None)
+    image_types = [_classify_acquisition_image(img, company, provider) for img in images]
+    main_images, report_slots = split_acquisition_images(images, image_types)
 
     if main_images:
         parsed = _extract_ai_json(main_images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+        try:
+            footer_parsed = _extract_ai_json(main_images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
+            parsed = merge_five_files_summary(parsed, footer_parsed)
+        except Exception:
+            pass
     elif report_slots:
         parsed = {'date': '', 'summary': {}, 'items': []}
     else:
@@ -1709,8 +1737,23 @@ def _extract_closure_with_reports(images, company, provider):
     return parsed, operator_label, overlays, has_reports
 
 
+def _extract_closure_for_company(images, company, provider):
+    from .ai_acquisition import (
+        AI_ACQUISITION_MODE_TWO,
+        get_ai_acquisition_file_mode,
+        validate_acquisition_file_count,
+    )
+
+    validate_acquisition_file_count(company, len(images))
+    if get_ai_acquisition_file_mode(company) == AI_ACQUISITION_MODE_TWO:
+        return _extract_closure_two_files(images, company, provider)
+    return _extract_closure_five_files(images, company, provider)
+
+
 def _extract_ai_payload(images, company, provider=None):
-    parsed, operator, _overlays, _has_reports = _extract_closure_with_reports(images, company, provider)
+    if provider is None:
+        provider = _resolve_ai_provider(None, company)
+    parsed, operator, _overlays, _has_reports = _extract_closure_for_company(images, company, provider)
     return parsed, operator
 
 
@@ -1780,7 +1823,10 @@ def api_extract_closure_ai(request):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
 
-        parsed, operator, report_overlays, has_reports = _extract_closure_with_reports(images, company, provider)
+        try:
+            parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
+        except ValueError as exc:
+            return JsonResponse({'error': str(exc)}, status=400)
         data = _parse_ai_closure_payload(
             parsed, company, operator=operator, report_overlays=report_overlays,
             with_reports=has_reports,
@@ -2083,7 +2129,10 @@ def api_acquisition_draft_extract(request, draft_id):
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
 
-        parsed, operator, report_overlays, has_reports = _extract_closure_with_reports(images, company, provider)
+        try:
+            parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
+        except ValueError as exc:
+            return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
 
         pag_pos_override = None
         if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:

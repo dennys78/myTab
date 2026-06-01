@@ -13,11 +13,16 @@ def is_admin_user(user):
 def serialize_company(company):
     if not company:
         return None
+    from .ai_acquisition import get_ai_acquisition_file_mode, max_acquisition_files_for_mode
+
+    mode = get_ai_acquisition_file_mode(company)
     return {
         'id': company.id,
         'denominazione': company.denominazione,
         'indirizzo': company.indirizzo,
         'piva': company.piva,
+        'ai_acquisition_file_mode': mode,
+        'max_acquisition_files': max_acquisition_files_for_mode(mode),
     }
 
 
@@ -100,4 +105,7 @@ def create_company_for_user(user, denominazione='', indirizzo='', piva=''):
         piva=(piva or '').strip(),
     )
     ensure_user_membership(user, company)
+    from .ai_acquisition import set_ai_acquisition_file_mode, AI_ACQUISITION_MODE_FIVE
+
+    set_ai_acquisition_file_mode(company, AI_ACQUISITION_MODE_FIVE)
     return company
