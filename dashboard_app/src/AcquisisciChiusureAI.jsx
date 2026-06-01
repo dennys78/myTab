@@ -5,6 +5,11 @@ import { useAuth } from './auth';
 import { MAX_ACQUISITION_FILES } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
 import { buildClosureSavedNotificationPayload } from './closureNotifyUtils';
+import AcquisitionProgressBar from './AcquisitionProgressBar';
+import {
+  createAcquisitionProgressController,
+  postExtractAiWithProgress,
+} from './acquisitionProgress';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -35,6 +40,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [aiProvider, setAiProvider] = useState('groq');
   const loadDraftAbortRef = useRef(null);
   const loadDraftRequestIdRef = useRef(0);
+  const progressControllerRef = useRef(null);
+  const [extractProgress, setExtractProgress] = useState(null);
 
   const fetchDrafts = () => {
     apiFetch('/api/acquisition-drafts/')
@@ -54,6 +61,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   useEffect(() => () => {
     loadDraftAbortRef.current?.abort();
+    progressControllerRef.current?.cancel();
   }, []);
 
   useEffect(() => {
@@ -67,7 +75,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .catch(() => {});
   }, [user?.active_company_id]);
 
-  const analyzeButtonLabel = aiProvider === 'gemini' ? 'Analizza con Gemini IA' : 'Analizza con Groq IA';
   const providerLabel = aiProvider === 'gemini' ? 'Gemini' : 'Groq';
 
   // Rigenera thumbnail ogni volta che cambia la lista file
@@ -95,27 +102,52 @@ export default function AcquisisciChiusureAI({ onBack }) {
     setFiles([...next]);
   };
 
+  const stopProgress = (success = true) => {
+    if (success) {
+      progressControllerRef.current?.complete();
+    } else {
+      progressControllerRef.current?.cancel();
+    }
+    progressControllerRef.current = null;
+  };
+
   const handleExtract = () => {
     if (!filesRef.current.length) return;
+    const imageCount = filesRef.current.length;
+    const controller = createAcquisitionProgressController(imageCount, setExtractProgress);
+    progressControllerRef.current = controller;
+    controller.start();
     setLoading(true);
     setError(null);
+
     const fd = new FormData();
     filesRef.current.forEach((f, i) => fd.append(`file${i}`, f));
-    apiFetch('/api/closures/extract-ai/', { method: 'POST', body: fd })
-      .then(r => r.json())
-      .then(d => {
+
+    postExtractAiWithProgress(fd, {
+      onUploadProgress: (ratio) => controller.setUploadProgress(ratio),
+    })
+      .then((d) => {
         if (d.status === 'success') {
           const enriched = {
             ...d.data,
             items: d.data.items.map((item, i) => ({ ...item, id: `t${i}` })),
           };
           applyPreviewData(enriched);
+          stopProgress(true);
         } else {
           setError(d.error || 'Errore durante l\'estrazione.');
+          stopProgress(false);
         }
       })
-      .catch(() => setError('Errore di rete.'))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          setError(err.message || 'Errore di rete.');
+        }
+        stopProgress(false);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   const applyPreviewData = (data, { cached = false } = {}) => {
@@ -131,9 +163,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const loadDraft = (draftId, { force = false } = {}) => {
     loadDraftAbortRef.current?.abort();
+    progressControllerRef.current?.cancel();
     const controller = new AbortController();
     loadDraftAbortRef.current = controller;
     const requestId = ++loadDraftRequestIdRef.current;
+
+    const draftMeta = drafts.find((item) => item.id === draftId);
+    const imageCount = draftMeta?.photo_count || 1;
+    const progress = createAcquisitionProgressController(imageCount, setExtractProgress, { skipUpload: true });
+    progressControllerRef.current = progress;
+    progress.start();
 
     setLoadingDraftId(draftId);
     setError(null);
@@ -154,13 +193,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
             items: d.data.items.map((item, i) => ({ ...item, id: `d${draftId}_${i}` })),
           };
           applyPreviewData(enriched, { cached: !!d.cached });
+          stopProgress(true);
         } else {
           setError(d.error || 'Errore durante il caricamento della bozza.');
+          stopProgress(false);
         }
       })
       .catch((err) => {
         if (err.name === 'AbortError') return;
         setError('Errore di rete.');
+        stopProgress(false);
       })
       .finally(() => {
         if (requestId !== loadDraftRequestIdRef.current) return;
@@ -353,6 +395,18 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+
+        {(extractProgress || reextracting) && (
+          <div style={{ marginBottom: '1rem' }}>
+            <AcquisitionProgressBar
+              progress={extractProgress || {
+                active: true,
+                percent: 8,
+                message: 'Decodifica immagini in corso…',
+              }}
+            />
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
@@ -719,7 +773,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
           {atLimit && (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              Hai raggiunto il limite di {MAX_ACQUISITION_FILES} foto. Premi <strong style={{ color: 'white' }}>Analizza</strong> per procedere oppure rimuovi una foto per aggiungerne un&apos;altra.
+              Hai raggiunto il limite di {MAX_ACQUISITION_FILES} foto. Premi <strong style={{ color: 'white' }}>Avvio estrazione dati</strong> per procedere oppure rimuovi una foto per aggiungerne un&apos;altra.
             </p>
           )}
         </div>
@@ -779,18 +833,30 @@ export default function AcquisisciChiusureAI({ onBack }) {
         </div>
       )}
 
-      {/* Pulsante analisi */}
+      {loading && (
+        <div style={{ marginBottom: '1rem' }}>
+          <AcquisitionProgressBar
+            progress={extractProgress || {
+              active: true,
+              percent: 2,
+              message: 'Avvio estrazione dati',
+            }}
+          />
+        </div>
+      )}
+
       <button onClick={handleExtract} disabled={!files.length || loading}
         style={{
           width: '100%', padding: '1rem',
-          background: files.length ? 'var(--accent)' : 'var(--bg-card)',
-          color: files.length ? 'white' : 'var(--text-muted)',
+          background: files.length && !loading ? 'var(--accent)' : 'var(--bg-card)',
+          color: files.length && !loading ? 'white' : 'var(--text-muted)',
           border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold',
           cursor: files.length && !loading ? 'pointer' : 'not-allowed',
           display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem',
           minHeight: '54px',
+          opacity: loading ? 0.7 : 1,
         }}>
-        {loading ? <><Loader2 size={22} className="spin" /> Analisi IA in corso...</> : <><Sparkles size={20} /> {analyzeButtonLabel}</>}
+        <Sparkles size={20} /> Avvio estrazione dati
       </button>
     </div>
   );
