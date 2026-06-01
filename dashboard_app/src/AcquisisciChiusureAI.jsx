@@ -10,11 +10,12 @@ import {
   createAcquisitionProgressController,
   postExtractAiWithProgress,
 } from './acquisitionProgress';
+import { useCompactCaptureUI } from './useCompactCaptureUI';
 
 function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 1024px)').matches);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)');
+    const mq = window.matchMedia('(max-width: 1024px)');
     const h = (e) => setMobile(e.matches);
     mq.addEventListener('change', h);
     return () => mq.removeEventListener('change', h);
@@ -24,10 +25,13 @@ function useIsMobile() {
 
 export default function AcquisisciChiusureAI({ onBack }) {
   const isMobile = useIsMobile();
+  const compactCaptureUI = useCompactCaptureUI();
   const { user } = useAuth();
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
-  const filesRef = useRef([]);            // ref stabile per evitare stale closure su mobile
+  const filesRef = useRef([]);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [previewData, setPreviewData] = useState(null);
@@ -100,6 +104,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const next = filesRef.current.filter((_, i) => i !== index);
     filesRef.current = next;
     setFiles([...next]);
+  };
+
+  const openCamera = () => {
+    if (filesRef.current.length >= MAX_ACQUISITION_FILES) return;
+    cameraInputRef.current?.click();
+  };
+
+  const openGallery = () => {
+    if (filesRef.current.length >= MAX_ACQUISITION_FILES) return;
+    galleryInputRef.current?.click();
   };
 
   const stopProgress = (success = true) => {
@@ -735,41 +749,64 @@ export default function AcquisisciChiusureAI({ onBack }) {
         </div>
       )}
 
-      {/* Upload area */}
-      {isMobile ? (
-        /* ── MOBILE: pulsanti grandi ── */
+      {/* Upload area — tablet/touch: fotocamera + galleria; desktop: sfoglia file */}
+      {compactCaptureUI ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-          {/* Fotocamera (rear camera) */}
-          <input type="file" id="ai-camera" accept="image/*" capture="environment" onChange={addFiles} style={{ display: 'none' }} />
-          <label htmlFor="ai-camera" style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-            padding: '1.25rem',
-            background: atLimit ? 'var(--bg-card)' : 'var(--accent)',
-            color: atLimit ? 'var(--text-muted)' : 'white',
-            border: atLimit ? '1px solid var(--border)' : 'none',
-            borderRadius: '12px',
-            cursor: atLimit ? 'not-allowed' : 'pointer',
-            fontSize: '1.1rem', fontWeight: '600',
-            pointerEvents: atLimit ? 'none' : 'auto',
-          }}>
-            <Camera size={26} /> Scatta Foto
-          </label>
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture
+            onChange={addFiles}
+            style={{ display: 'none' }}
+            aria-hidden
+          />
+          <button
+            type="button"
+            onClick={openCamera}
+            disabled={atLimit}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+              width: '100%',
+              padding: '1.25rem',
+              background: atLimit ? 'var(--bg-card)' : 'var(--accent)',
+              color: atLimit ? 'var(--text-muted)' : 'white',
+              border: atLimit ? '1px solid var(--border)' : 'none',
+              borderRadius: '12px',
+              cursor: atLimit ? 'not-allowed' : 'pointer',
+              fontSize: '1.1rem', fontWeight: '600',
+            }}
+          >
+            <Camera size={26} /> Scatta foto
+          </button>
 
-          {/* Galleria */}
-          <input type="file" id="ai-gallery" accept="image/*" multiple onChange={addFiles} style={{ display: 'none' }} />
-          <label htmlFor="ai-gallery" style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-            padding: '1.25rem',
-            background: 'var(--bg-card)',
-            color: atLimit ? 'var(--text-muted)' : 'var(--text-main)',
-            border: `1px solid ${atLimit ? 'var(--border)' : 'var(--accent)'}`,
-            borderRadius: '12px',
-            cursor: atLimit ? 'not-allowed' : 'pointer',
-            fontSize: '1.1rem', fontWeight: '600',
-            pointerEvents: atLimit ? 'none' : 'auto',
-          }}>
-            <Images size={26} /> Dalla Galleria
-          </label>
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={addFiles}
+            style={{ display: 'none' }}
+            aria-hidden
+          />
+          <button
+            type="button"
+            onClick={openGallery}
+            disabled={atLimit}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+              width: '100%',
+              padding: '1.25rem',
+              background: 'var(--bg-card)',
+              color: atLimit ? 'var(--text-muted)' : 'var(--text-main)',
+              border: `1px solid ${atLimit ? 'var(--border)' : 'var(--accent)'}`,
+              borderRadius: '12px',
+              cursor: atLimit ? 'not-allowed' : 'pointer',
+              fontSize: '1.1rem', fontWeight: '600',
+            }}
+          >
+            <Images size={26} /> Dalla galleria
+          </button>
 
           {atLimit && (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
