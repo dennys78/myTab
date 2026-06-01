@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CashClosure, CashClosureItem, BankTransaction, Company, CompanyMembership
+from .models import CashClosure, CashClosureItem, BankTransaction, Cliente, Company, CompanyMembership, ValoreBollato
 
 class CashClosureItemInline(admin.TabularInline):
     model = CashClosureItem
@@ -21,6 +21,20 @@ class CashClosureAdmin(admin.ModelAdmin):
     list_filter = ('date', 'operator')
     search_fields = ('operator',)
     inlines = [CashClosureItemInline]
+
+@admin.register(Cliente)
+class ClienteAdmin(admin.ModelAdmin):
+    list_display = ('ragione_sociale', 'cf_piva', 'email', 'company')
+    search_fields = ('ragione_sociale', 'cf_piva', 'email')
+    list_filter = ('company',)
+
+
+@admin.register(ValoreBollato)
+class ValoreBollatoAdmin(admin.ModelAdmin):
+    list_display = ('descrizione', 'importo', 'company')
+    search_fields = ('descrizione',)
+    list_filter = ('company',)
+
 
 @admin.register(BankTransaction)
 class BankTransactionAdmin(admin.ModelAdmin):

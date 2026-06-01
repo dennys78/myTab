@@ -7,6 +7,7 @@ import AcquisisciChiusure from './AcquisisciChiusure';
 import AcquisisciChiusureAI from './AcquisisciChiusureAI';
 import RepartiManager from './RepartiManager';
 import Impostazioni from './Impostazioni';
+import Ricevute from './Ricevute';
 import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
 import Movimenti from './Movimenti';
@@ -55,6 +56,8 @@ function AppShell() {
   const [movimentoEditId, setMovimentoEditId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState(isAdmin ? 'azienda' : 'generali');
+  const [ricevuteOpen, setRicevuteOpen] = useState(false);
+  const [ricevuteSection, setRicevuteSection] = useState('clienti');
 
   const settingsSubsections = isAdmin
     ? [
@@ -63,6 +66,11 @@ function AppShell() {
         { id: 'generali', label: 'IA ed assistenti' },
       ]
     : [{ id: 'generali', label: 'IA ed assistenti' }];
+
+  const ricevuteSubsections = [
+    { id: 'clienti', label: 'Clienti' },
+    { id: 'valori-bollati', label: 'Valori bollati' },
+  ];
 
   const fetchClosures = useCallback(() => {
     if (!canSeeClosures) return;
@@ -369,6 +377,39 @@ function AppShell() {
                 </div>
               );
             }
+            if (item.id === 'ricevute') {
+              const ricevuteActive = currentView === 'ricevute';
+              return (
+                <div key={item.id}>
+                  <div
+                    className={`nav-item ${ricevuteActive ? 'active' : ''}`}
+                    onClick={() => setRicevuteOpen(o => !o)}
+                  >
+                    <Icon size={20} /><span>{item.label}</span>
+                    {ricevuteOpen
+                      ? <ChevronDown size={16} style={{ marginLeft: 'auto' }} />
+                      : <ChevronRight size={16} style={{ marginLeft: 'auto' }} />}
+                  </div>
+                  {ricevuteOpen && (
+                    <div className="nav-subitems">
+                      {ricevuteSubsections.map(sub => (
+                        <div
+                          key={sub.id}
+                          className={`nav-item nav-subitem ${ricevuteActive && ricevuteSection === sub.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setRicevuteSection(sub.id);
+                            setCurrentView('ricevute');
+                            setIsMobileMenuOpen(false);
+                          }}
+                        >
+                          <span>{sub.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <div
                 key={item.id}
@@ -449,6 +490,8 @@ function AppShell() {
           <RepartiManager />
         ) : currentView === 'impostazioni' ? (
           <Impostazioni section={settingsSection} />
+        ) : currentView === 'ricevute' ? (
+          <Ricevute section={ricevuteSection} />
         ) : currentView === 'utenti' ? (
           <GestioneUtenti />
         ) : currentView === 'versamenti' ? (

@@ -286,6 +286,44 @@ class PushSubscription(models.Model):
         return f'Push {self.user.username} @ {self.company.denominazione}'
 
 
+class Cliente(models.Model):
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='clienti', verbose_name='Azienda',
+    )
+    ragione_sociale = models.CharField(max_length=255, verbose_name='Ragione sociale')
+    indirizzo = models.TextField(blank=True, verbose_name='Indirizzo')
+    cf_piva = models.CharField(max_length=32, blank=True, verbose_name='CF/PIVA')
+    email = models.EmailField(blank=True, verbose_name='Email')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Cliente'
+        verbose_name_plural = 'Clienti'
+        ordering = ['ragione_sociale', 'id']
+
+    def __str__(self):
+        return self.ragione_sociale
+
+
+class ValoreBollato(models.Model):
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='valori_bollati', verbose_name='Azienda',
+    )
+    descrizione = models.CharField(max_length=255, verbose_name='Descrizione')
+    importo = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Importo')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Valore bollato'
+        verbose_name_plural = 'Valori bollati'
+        ordering = ['descrizione', 'id']
+
+    def __str__(self):
+        return self.descrizione
+
+
 class BankTransaction(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bank_transactions', verbose_name='Azienda')
     TRANSACTION_TYPES = [

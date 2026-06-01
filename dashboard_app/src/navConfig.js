@@ -8,6 +8,7 @@ import {
   Tag,
   Users,
   Settings,
+  ScrollText,
 } from 'lucide-react';
 
 export const SIDEBAR_ITEMS = [
@@ -19,6 +20,7 @@ export const SIDEBAR_ITEMS = [
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
   { id: 'reparti', label: 'Reparti', icon: Tag, adminOnly: true },
   { id: 'utenti', label: 'Utenti', icon: Users, adminOnly: true },
+  { id: 'ricevute', label: 'Ricevute', icon: ScrollText, adminOnly: false },
   { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: false, pushToBottom: true },
 ];
 
@@ -33,7 +35,13 @@ export function normalizeSidebarMenu(role, menuIds) {
   const allIds = new Set(SIDEBAR_ITEMS.map(item => item.id));
   const selected = (menuIds || []).filter(id => allIds.has(id));
   if (!selected.length) return getDefaultSidebarMenu(role);
-  return SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
+  const ordered = SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
+  if (!ordered.includes('ricevute') && selected.length > 0) {
+    const impostazioniIdx = ordered.indexOf('impostazioni');
+    if (impostazioniIdx >= 0) ordered.splice(impostazioniIdx, 0, 'ricevute');
+    else ordered.push('ricevute');
+  }
+  return ordered;
 }
 
 export function getVisibleNavItems(role, menuIds) {

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import ricevute_views
 
 urlpatterns = [
     # Auth
@@ -72,4 +73,10 @@ urlpatterns = [
     path('api/settings/telegram/restart-bot/',      views.api_restart_telegram_bot),
     path('api/settings/images/purge/',              views.api_purge_images),
     path('api/settings/company/purge/',             views.api_purge_company_data),
+
+    # Ricevute
+    path('api/ricevute/clienti/',                           ricevute_views.api_clienti),
+    path('api/ricevute/clienti/<int:cliente_id>/',            ricevute_views.api_cliente_detail),
+    path('api/ricevute/valori-bollati/',                      ricevute_views.api_valori_bollati),
+    path('api/ricevute/valori-bollati/<int:valore_id>/',      ricevute_views.api_valore_bollato_detail),
 ]
