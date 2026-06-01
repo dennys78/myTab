@@ -20,12 +20,19 @@ const PERIOD_VALUES = INCASSATO_PERIOD_OPTIONS.map((o) => o.value);
 const DEFAULT_PERIOD = 'month';
 
 const CHART_W = 640;
-const CHART_H = 200;
-const PAD = { top: 16, right: 12, bottom: 36, left: 48 };
+const CHART_H = 220;
+const PAD = { top: 28, right: 12, bottom: 36, left: 48 };
 
 function formatEuroAxis(n) {
   if (n >= 1000) return `€${(n / 1000).toFixed(1)}k`;
   return `€${Math.round(n)}`;
+}
+
+function formatBarValue(n) {
+  const v = Number(n) || 0;
+  if (v >= 10000) return `€${Math.round(v / 1000)}k`;
+  if (v >= 1000) return `€${(v / 1000).toFixed(1).replace('.', ',')}k`;
+  return `€${Math.round(v).toLocaleString('it-IT')}`;
 }
 
 function IncassatoBarChart({ series, period, highlightIndex }) {
@@ -77,6 +84,17 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
       })}
       {bars.map((b) => {
         const isHighlight = highlightIndex != null && b.i === highlightIndex;
+        const showValue = b.value > 0 && b.w >= 10;
+        const label = formatBarValue(b.value);
+        const labelInside = showValue && b.h >= 22;
+        const labelY = labelInside ? b.y + 14 : Math.max(PAD.top + 10, b.y - 6);
+        const valueClass = [
+          'incassato-bar-value',
+          isHighlight ? 'incassato-bar-value--highlight' : '',
+          labelInside ? 'incassato-bar-value--inside' : '',
+          b.w < 18 ? 'incassato-bar-value--compact' : '',
+        ].filter(Boolean).join(' ');
+
         return (
           <g key={b.label + b.i}>
             {b.h > 0 && (
@@ -90,6 +108,16 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
               >
                 <title>{`${b.label}: € ${b.value.toFixed(2)}`}</title>
               </rect>
+            )}
+            {showValue && (
+              <text
+                x={b.x + b.w / 2}
+                y={labelY}
+                textAnchor="middle"
+                className={valueClass}
+              >
+                {label}
+              </text>
             )}
             {(series.length <= 12 || b.i % Math.ceil(series.length / 12) === 0 || b.i === series.length - 1) && (
               <text

@@ -372,6 +372,31 @@ h2 {
   fill: #22c55e;
 }
 
+.incassato-bar-value {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: Inter, sans-serif;
+  fill: #ecfdf5;
+  stroke: rgba(15, 23, 42, 0.9);
+  stroke-width: 2.5px;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+
+.incassato-bar-value--compact {
+  font-size: 7px;
+  stroke-width: 2px;
+}
+
+.incassato-bar-value--inside {
+  fill: #ffffff;
+  stroke: rgba(15, 23, 42, 0.75);
+}
+
+.incassato-bar-value--highlight {
+  fill: #ffffff;
+}
+
 .incassato-chart-empty {
   padding: 2rem 1rem;
   text-align: center;
