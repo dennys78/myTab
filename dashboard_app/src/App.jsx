@@ -69,7 +69,7 @@ function AppShell() {
 
   const ricevuteSubsections = [
     { id: 'clienti', label: 'Clienti' },
-    { id: 'valori-bollati', label: 'Valori bollati' },
+    { id: 'valori-bollati', label: 'Emissione ricevute' },
   ];
 
   const fetchClosures = useCallback(() => {

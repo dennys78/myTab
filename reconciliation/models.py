@@ -324,6 +324,64 @@ class ValoreBollato(models.Model):
         return self.descrizione
 
 
+class Ricevuta(models.Model):
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='ricevute', verbose_name='Azienda',
+    )
+    cliente = models.ForeignKey(
+        Cliente, on_delete=models.PROTECT, related_name='ricevute', verbose_name='Cliente',
+    )
+    date = models.DateField(verbose_name='Data ricevuta')
+    operator = models.CharField(max_length=100, verbose_name='Operatore')
+    note = models.TextField(blank=True, verbose_name='Note')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Ricevuta'
+        verbose_name_plural = 'Ricevute'
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f'Ricevuta {self.date} — {self.cliente.ragione_sociale}'
+
+
+class RicevutaRiga(models.Model):
+    TIPO_VALORE_BOLLATO = 'valore_bollato'
+    TIPO_CONTRIBUTO_UNIFICATO = 'contributo_unificato'
+    TIPO_CHOICES = [
+        (TIPO_VALORE_BOLLATO, 'Valori bollati'),
+        (TIPO_CONTRIBUTO_UNIFICATO, 'Contributo unificato'),
+    ]
+
+    ricevuta = models.ForeignKey(
+        Ricevuta, on_delete=models.CASCADE, related_name='righe', verbose_name='Ricevuta',
+    )
+    tipo = models.CharField(max_length=32, choices=TIPO_CHOICES, verbose_name='Tipo articolo')
+    descrizione = models.CharField(max_length=255, verbose_name='Descrizione')
+    importo_unitario = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Importo unitario')
+    quantita = models.PositiveIntegerField(default=1, verbose_name='Quantità')
+    valore_bollato = models.ForeignKey(
+        ValoreBollato,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='righe_ricevuta',
+        verbose_name='Voce catalogo',
+    )
+
+    class Meta:
+        verbose_name = 'Riga ricevuta'
+        verbose_name_plural = 'Righe ricevuta'
+        ordering = ['id']
+
+    @property
+    def importo_totale(self):
+        return self.importo_unitario * self.quantita
+
+    def __str__(self):
+        return f'{self.descrizione} x{self.quantita}'
+
+
 class BankTransaction(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bank_transactions', verbose_name='Azienda')
     TRANSACTION_TYPES = [

@@ -79,4 +79,6 @@ urlpatterns = [
     path('api/ricevute/clienti/<int:cliente_id>/',            ricevute_views.api_cliente_detail),
     path('api/ricevute/valori-bollati/',                      ricevute_views.api_valori_bollati),
     path('api/ricevute/valori-bollati/<int:valore_id>/',      ricevute_views.api_valore_bollato_detail),
+    path('api/ricevute/emesse/',                              ricevute_views.api_ricevute_emesse),
+    path('api/ricevute/emesse/<int:ricevuta_id>/',            ricevute_views.api_ricevuta_emessa_detail),
 ]
