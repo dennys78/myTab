@@ -46,7 +46,7 @@ function buildLinePayload(line) {
   const importo = parseFloat(String(line.importo_unitario).replace(',', '.')) || 0;
   if (importo <= 0) return null;
   if (line.tipo === TIPO_CONTRIBUTO) {
-    return { tipo: TIPO_CONTRIBUTO, importo_unitario: importo, quantita: 1 };
+    return { tipo: TIPO_CONTRIBUTO, importo_unitario: importo, quantita: qty };
   }
   return { tipo: TIPO_VALORE_BOLLATO, importo_unitario: importo, quantita: qty };
 }
@@ -113,9 +113,9 @@ export default function RicevuteValoriBollati() {
     setLines((prev) => prev.map((line) => {
       if (line._id !== lineId) return line;
       if (tipo === TIPO_CONTRIBUTO) {
-        return { ...line, tipo: TIPO_CONTRIBUTO, quantita: 1 };
+        return { ...line, tipo: TIPO_CONTRIBUTO };
       }
-      return { ...line, tipo: TIPO_VALORE_BOLLATO, quantita: 1 };
+      return { ...line, tipo: TIPO_VALORE_BOLLATO };
     }));
   };
 
@@ -339,18 +339,14 @@ export default function RicevuteValoriBollati() {
                 </div>
 
                 <div>
-                  {line.tipo === TIPO_VALORE_BOLLATO ? (
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      style={ricevuteInputStyle}
-                      value={line.quantita}
-                      onChange={(e) => updateLine(line._id, { quantita: e.target.value })}
-                    />
-                  ) : (
-                    <div style={{ ...ricevuteInputStyle, opacity: 0.35, textAlign: 'center' }} aria-hidden>—</div>
-                  )}
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    style={ricevuteInputStyle}
+                    value={line.quantita}
+                    onChange={(e) => updateLine(line._id, { quantita: e.target.value })}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
