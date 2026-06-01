@@ -360,7 +360,7 @@ async def _complete_versamento(update, context, versamento_date):
     company = context.application.bot_data.get('company')
 
     try:
-        versamento, saldo_prima, saldo_dopo = await sync_to_async(_save_versamento_sync)(
+        versamento, _, saldo_dopo = await sync_to_async(_save_versamento_sync)(
             company,
             operator,
             importo,
@@ -382,9 +382,10 @@ async def _complete_versamento(update, context, versamento_date):
         f"Importo: {_money_text(float(versamento.importo_versato))}\n"
         f"Data: {versamento.date.strftime('%d/%m/%Y')}\n"
         f"Operatore: {versamento.operator}\n\n"
-        f"Saldo cassa prima: {_money_text(saldo_prima)}\n"
-        f"Saldo cassa attuale: {_money_text(saldo_dopo)}\n\n"
         "Lo trovi subito nella webapp, sezione Versamenti."
+    )
+    await update.message.reply_text(
+        f"Saldo cassa attuale: {_money_text(saldo_dopo)}"
     )
     return True
 
