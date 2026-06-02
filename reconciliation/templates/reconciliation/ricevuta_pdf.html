@@ -36,6 +36,23 @@
       margin: 0 0 6px;
     }
 
+    .company-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .company-logo {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 4px;
+      background: #fff;
+      flex: 0 0 auto;
+    }
+
     .muted {
       color: #444;
       margin: 0;
@@ -170,13 +187,20 @@
 <body>
   <header class="header">
     <div>
-      <p class="company-name">{{ company.denominazione }}</p>
-      {% if company.indirizzo %}
-        <p class="muted">{{ company.indirizzo|linebreaksbr }}</p>
-      {% endif %}
-      {% if company.piva %}
-        <p class="muted">P. IVA {{ company.piva }}</p>
-      {% endif %}
+      <div class="company-head">
+        {% if logo_data_uri %}
+          <img class="company-logo" src="{{ logo_data_uri }}" alt="Logo aziendale" />
+        {% endif %}
+        <div>
+          <p class="company-name">{{ company.denominazione }}</p>
+          {% if company.indirizzo %}
+            <p class="muted">{{ company.indirizzo|linebreaksbr }}</p>
+          {% endif %}
+          {% if company.piva %}
+            <p class="muted">P. IVA {{ company.piva }}</p>
+          {% endif %}
+        </div>
+      </div>
     </div>
     <div class="doc-title">
       <h1>Ricevuta</h1>
