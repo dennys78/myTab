@@ -7,7 +7,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from .company_scope import bind_company
-from .models import Cliente, Ricevuta, RicevutaRiga, ValoreBollato
+from .models import AppSetting, Cliente, Ricevuta, RicevutaRiga, ValoreBollato
 from .ricevuta_pdf import render_ricevuta_pdf
 from .views import require_auth
 
@@ -197,6 +197,7 @@ def _serialize_ricevuta(row, *, detail=False):
     totale = sum((r.importo_unitario * int(r.quantita or 1) for r in righe), Decimal('0'))
     payload = {
         'id': row.id,
+        'numero_progressivo': int(row.numero_progressivo or row.id),
         'date': row.date.isoformat(),
         'cliente_id': row.cliente_id,
         'cliente': _serialize_cliente(row.cliente),
@@ -277,6 +278,19 @@ def _parse_ricevuta_body(data, company):
     }
 
 
+def _get_ricevute_counter(company):
+    raw = (
+        AppSetting.objects.filter(company=company, key='ricevute_progressive_counter')
+        .values_list('value', flat=True)
+        .first()
+    )
+    try:
+        value = int(str(raw).strip()) if raw is not None else 0
+    except (TypeError, ValueError):
+        value = 0
+    return max(0, value)
+
+
 @require_auth
 @require_http_methods(['GET', 'POST'])
 def api_ricevute_emesse(request):
@@ -304,15 +318,23 @@ def api_ricevute_emesse(request):
         return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
 
     with transaction.atomic():
+        current_counter = _get_ricevute_counter(company)
+        next_number = current_counter + 1
         ricevuta = Ricevuta.objects.create(
             company=company,
             cliente=fields['cliente'],
             date=fields['date'],
             operator=request.user.username,
             note=fields['note'],
+            numero_progressivo=next_number,
         )
         for riga in fields['righe']:
             RicevutaRiga.objects.create(ricevuta=ricevuta, **riga)
+        AppSetting.objects.update_or_create(
+            company=company,
+            key='ricevute_progressive_counter',
+            defaults={'value': str(next_number)},
+        )
 
     ricevuta = Ricevuta.objects.select_related('cliente').prefetch_related('righe').get(pk=ricevuta.pk)
     return JsonResponse({'status': 'success', 'data': _serialize_ricevuta(ricevuta, detail=True)}, status=201)
@@ -365,5 +387,5 @@ def api_ricevuta_pdf(request, ricevuta_id):
         return JsonResponse({'status': 'error', 'error': str(exc)}, status=503)
 
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
-    response['Content-Disposition'] = f'inline; filename="ricevuta-{row.id}.pdf"'
+    response['Content-Disposition'] = f'inline; filename="ricevuta-{row.numero_progressivo}.pdf"'
     return response

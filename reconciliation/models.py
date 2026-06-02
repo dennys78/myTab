@@ -334,6 +334,7 @@ class Ricevuta(models.Model):
     date = models.DateField(verbose_name='Data ricevuta')
     operator = models.CharField(max_length=100, verbose_name='Operatore')
     note = models.TextField(blank=True, verbose_name='Note')
+    numero_progressivo = models.PositiveIntegerField(default=1, verbose_name='Numero progressivo')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

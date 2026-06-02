@@ -1076,6 +1076,29 @@ def _delete_image_objects(images):
     return count
 
 
+def _get_ricevute_progressive_counter(company):
+    raw = (
+        AppSetting.objects.filter(company=company, key='ricevute_progressive_counter')
+        .values_list('value', flat=True)
+        .first()
+    )
+    try:
+        value = int(str(raw).strip()) if raw is not None else 0
+    except (TypeError, ValueError):
+        value = 0
+    return max(0, value)
+
+
+def _set_ricevute_progressive_counter(company, value):
+    target = max(0, int(value))
+    AppSetting.objects.update_or_create(
+        company=company,
+        key='ricevute_progressive_counter',
+        defaults={'value': str(target)},
+    )
+    return target
+
+
 @require_admin
 def api_get_settings(request):
     if request.method == 'GET':
@@ -1091,6 +1114,7 @@ def api_get_settings(request):
                 'telegram_token_configured': bool(_get_telegram_token(company)),
                 'saldo_cassa': float(_get_saldo_cassa(company)),
                 'fondo_cassa': float(_get_fondo_cassa(company)),
+                'ricevute_progressive_counter': _get_ricevute_progressive_counter(company),
                 'denominazione': company.denominazione,
                 'indirizzo': company.indirizzo,
                 'piva': company.piva,
@@ -1153,11 +1177,22 @@ def api_save_settings(request):
                         descrizione='Rettifica manuale da Impostazioni',
                     )
 
+            if 'ricevute_progressive_counter' in data:
+                raw_counter = data.get('ricevute_progressive_counter')
+                try:
+                    counter = int(raw_counter)
+                except (TypeError, ValueError):
+                    return JsonResponse({'error': 'Contatore ricevute non valido'}, status=400)
+                if counter < 0:
+                    return JsonResponse({'error': 'Il contatore non puo essere negativo'}, status=400)
+                _set_ricevute_progressive_counter(company, counter)
+
             return JsonResponse({
                 'status': 'success',
                 'data': {
                     'saldo_cassa': float(_get_saldo_cassa(company)),
                     'fondo_cassa': float(_get_fondo_cassa(company)),
+                    'ricevute_progressive_counter': _get_ricevute_progressive_counter(company),
                     'denominazione': company.denominazione,
                     'indirizzo': company.indirizzo,
                     'piva': company.piva,

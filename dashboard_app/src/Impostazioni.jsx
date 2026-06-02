@@ -42,8 +42,11 @@ export default function Impostazioni({ section = 'generali' }) {
   const [error, setError] = useState(null);
   const [saldoCassa, setSaldoCassa] = useState('');
   const [fondoCassa, setFondoCassa] = useState('');
+  const [ricevuteCounter, setRicevuteCounter] = useState('0');
   const [savingBalances, setSavingBalances] = useState(false);
   const [balancesSaved, setBalancesSaved] = useState(false);
+  const [savingRicevuteCounter, setSavingRicevuteCounter] = useState(false);
+  const [ricevuteCounterSaved, setRicevuteCounterSaved] = useState(false);
   const [imagePurgeScope, setImagePurgeScope] = useState('month');
   const [imagePurgeMonth, setImagePurgeMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [purgingImages, setPurgingImages] = useState(false);
@@ -114,6 +117,7 @@ export default function Impostazioni({ section = 'generali' }) {
           setTelegramConfigured(d.data.telegram_token_configured);
           setSaldoCassa(Number(d.data.saldo_cassa ?? 0).toFixed(2));
           setFondoCassa(Number(d.data.fondo_cassa ?? 0).toFixed(2));
+          setRicevuteCounter(String(Math.max(0, Number(d.data.ricevute_progressive_counter ?? 0) || 0)));
           applyCompaniesFromSettings(d.data);
         }
       })
@@ -401,6 +405,40 @@ export default function Impostazioni({ section = 'generali' }) {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSavingBalances(false));
+  };
+
+  const handleSaveRicevuteCounter = () => {
+    const next = Number.parseInt(ricevuteCounter, 10);
+    if (!Number.isFinite(next) || next < 0) {
+      setError('Il contatore ricevute deve essere un numero intero maggiore o uguale a 0.');
+      return;
+    }
+    setSavingRicevuteCounter(true);
+    setError(null);
+    setRicevuteCounterSaved(false);
+
+    apiFetch('/api/settings/save/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ricevute_progressive_counter: next }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setRicevuteCounter(String(Math.max(0, Number(d.data.ricevute_progressive_counter ?? next) || 0)));
+          setRicevuteCounterSaved(true);
+          setTimeout(() => setRicevuteCounterSaved(false), 3000);
+        } else {
+          setError(d.error || 'Errore durante il salvataggio del contatore ricevute.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingRicevuteCounter(false));
+  };
+
+  const handleResetRicevuteCounter = () => {
+    setRicevuteCounter('0');
+    setRicevuteCounterSaved(false);
   };
 
   const handlePurgeImages = () => {
@@ -1020,6 +1058,56 @@ export default function Impostazioni({ section = 'generali' }) {
           {savingBalances ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
           Salva Rettifiche
         </button>
+      </div>
+      )}
+
+      {showRettifiche && (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginTop: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <RotateCcw size={20} color="var(--accent)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Contatore ricevute</h2>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Imposta il progressivo da cui partiranno le prossime ricevute emesse. Se inserisci 0, la prossima ricevuta avra numero 1.
+        </p>
+
+        {ricevuteCounterSaved && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '8px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Contatore ricevute aggiornato.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'end', flexWrap: 'wrap' }}>
+          <div style={{ minWidth: '210px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+              Numero progressivo corrente
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={ricevuteCounter}
+              onChange={e => setRicevuteCounter(e.target.value)}
+              style={{ ...inputStyle, width: '100%' }}
+            />
+          </div>
+          <button
+            onClick={handleSaveRicevuteCounter}
+            disabled={savingRicevuteCounter}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+          >
+            {savingRicevuteCounter ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+            Salva contatore
+          </button>
+          <button
+            onClick={handleResetRicevuteCounter}
+            disabled={savingRicevuteCounter}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.15rem', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+          >
+            <RotateCcw size={16} />
+            Azzera campo
+          </button>
+        </div>
       </div>
       )}
       </>

@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <title>Ricevuta n. {{ ricevuta.id }}</title>
+  <title>Ricevuta n. {{ ricevuta.numero_progressivo }}</title>
   <style>
     @page {
       size: A4;
@@ -181,7 +181,7 @@
     <div class="doc-title">
       <h1>Ricevuta</h1>
       <div class="doc-meta">
-        <div>N. {{ ricevuta.id }}</div>
+        <div>N. {{ ricevuta.numero_progressivo }}</div>
         <div>Data {{ data_formattata }}</div>
       </div>
     </div>
