@@ -9,13 +9,22 @@ export default function Impostazioni({ section = 'generali' }) {
   const isAdmin = user?.role === 'amministratore';
   const showAzienda = section === 'azienda';
   const showRettifiche = section === 'rettifiche';
+  const showParametriPosta = section === 'parametri-posta';
   const showGenerali = section === 'generali';
 
-  const sectionTitle = showAzienda ? 'Ragione sociale e archivi' : showRettifiche ? 'Rettifiche' : 'IA ed assistenti';
+  const sectionTitle = showAzienda
+    ? 'Ragione sociale e archivi'
+    : showRettifiche
+      ? 'Rettifiche'
+      : showParametriPosta
+        ? 'Parametri posta'
+        : 'IA ed assistenti';
   const sectionHint = showAzienda
     ? 'Gestisci ragione sociale, archivio immagini e cancellazione dati dell\'azienda attiva.'
     : showRettifiche
       ? 'Allinea i valori di cassa alla situazione reale del punto vendita.'
+      : showParametriPosta
+        ? 'Registra indirizzo email mittente e parametri SMTP direttamente nella webapp.'
       : isAdmin
         ? 'Configura modelli IA, chiavi API e assistente Telegram.'
         : 'Scegli il modello IA usato quando acquisisci le chiusure con le foto.';
@@ -586,11 +595,11 @@ export default function Impostazioni({ section = 'generali' }) {
         <PushNotificheCard />
       )}
 
-      {showGenerali && (
+      {showParametriPosta && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Mail size={20} color="var(--accent)" />
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Invio email ricevute (SMTP)</h2>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Parametri posta</h2>
           {smtpPasswordConfigured && (
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#22c55e', fontSize: '0.8rem', fontWeight: 600 }}>
               <CheckCircle size={14} /> Configurato
@@ -598,7 +607,7 @@ export default function Impostazioni({ section = 'generali' }) {
           )}
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Configura il server SMTP per inviare la ricevuta PDF alla mail registrata del cliente.
+          Registra qui l&apos;indirizzo mittente dell&apos;app e i parametri SMTP per inviare la ricevuta PDF alla mail del cliente.
         </p>
 
         {smtpSaved && (

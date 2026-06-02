@@ -63,6 +63,7 @@ function AppShell() {
     ? [
         { id: 'azienda', label: 'Ragione sociale e archivi' },
         { id: 'rettifiche', label: 'Rettifiche' },
+        { id: 'parametri-posta', label: 'Parametri posta' },
         { id: 'generali', label: 'IA ed assistenti' },
       ]
     : [{ id: 'generali', label: 'IA ed assistenti' }];
