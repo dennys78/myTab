@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2, Plus, Pencil } from 'lucide-react';
+import { Save, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, Zap, Wallet, PiggyBank, Send, RotateCcw, Trash2, Building2, Plus, Pencil, Mail } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import PushNotificheCard from './PushNotificheCard';
@@ -35,6 +35,16 @@ export default function Impostazioni({ section = 'generali' }) {
   const [telegramResetResult, setTelegramResetResult] = useState(null);
   const [restartingTelegramBot, setRestartingTelegramBot] = useState(false);
   const [telegramBotRestarted, setTelegramBotRestarted] = useState(false);
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [smtpPasswordConfigured, setSmtpPasswordConfigured] = useState(false);
+  const [smtpFromEmail, setSmtpFromEmail] = useState('');
+  const [smtpUseTls, setSmtpUseTls] = useState(true);
+  const [smtpUseSsl, setSmtpUseSsl] = useState(false);
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [smtpSaved, setSmtpSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingUserModel, setSavingUserModel] = useState(false);
@@ -115,6 +125,13 @@ export default function Impostazioni({ section = 'generali' }) {
       .then(d => {
         if (d.status === 'success') {
           setTelegramConfigured(d.data.telegram_token_configured);
+          setSmtpHost(d.data.smtp_host || '');
+          setSmtpPort(String(d.data.smtp_port || '587'));
+          setSmtpUsername(d.data.smtp_username || '');
+          setSmtpFromEmail(d.data.smtp_from_email || '');
+          setSmtpUseTls(Boolean(d.data.smtp_use_tls ?? true));
+          setSmtpUseSsl(Boolean(d.data.smtp_use_ssl ?? false));
+          setSmtpPasswordConfigured(Boolean(d.data.smtp_password_configured));
           setSaldoCassa(Number(d.data.saldo_cassa ?? 0).toFixed(2));
           setFondoCassa(Number(d.data.fondo_cassa ?? 0).toFixed(2));
           setRicevuteCounter(String(Math.max(0, Number(d.data.ricevute_progressive_counter ?? 0) || 0)));
@@ -333,6 +350,51 @@ export default function Impostazioni({ section = 'generali' }) {
       .finally(() => setSavingTelegram(false));
   };
 
+  const handleSaveSmtp = () => {
+    if (!smtpHost.trim() || !smtpUsername.trim() || !smtpFromEmail.trim()) {
+      setError('Compila host SMTP, username e mittente.');
+      return;
+    }
+    setSavingSmtp(true);
+    setError(null);
+    setSmtpSaved(false);
+
+    const payload = {
+      smtp_host: smtpHost.trim(),
+      smtp_port: String(smtpPort || '587').trim(),
+      smtp_username: smtpUsername.trim(),
+      smtp_from_email: smtpFromEmail.trim(),
+      smtp_use_tls: smtpUseTls,
+      smtp_use_ssl: smtpUseSsl,
+    };
+    if (smtpPassword.trim()) payload.smtp_password = smtpPassword.trim();
+
+    apiFetch('/api/settings/save/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success') {
+          setSmtpHost(d.data.smtp_host || payload.smtp_host);
+          setSmtpPort(String(d.data.smtp_port || payload.smtp_port));
+          setSmtpUsername(d.data.smtp_username || payload.smtp_username);
+          setSmtpFromEmail(d.data.smtp_from_email || payload.smtp_from_email);
+          setSmtpUseTls(Boolean(d.data.smtp_use_tls ?? payload.smtp_use_tls));
+          setSmtpUseSsl(Boolean(d.data.smtp_use_ssl ?? payload.smtp_use_ssl));
+          setSmtpPassword('');
+          setSmtpPasswordConfigured(Boolean(d.data.smtp_password_configured || smtpPassword.trim()));
+          setSmtpSaved(true);
+          setTimeout(() => setSmtpSaved(false), 3000);
+        } else {
+          setError(d.error || 'Errore durante il salvataggio SMTP.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingSmtp(false));
+  };
+
   const handleResetTelegramSessions = () => {
     setResettingTelegram(true);
     setTelegramResetResult(null);
@@ -522,6 +584,56 @@ export default function Impostazioni({ section = 'generali' }) {
 
       {showGenerali && (
         <PushNotificheCard />
+      )}
+
+      {showGenerali && (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+          <Mail size={20} color="var(--accent)" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Invio email ricevute (SMTP)</h2>
+          {smtpPasswordConfigured && (
+            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#22c55e', fontSize: '0.8rem', fontWeight: 600 }}>
+              <CheckCircle size={14} /> Configurato
+            </span>
+          )}
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+          Configura il server SMTP per inviare la ricevuta PDF alla mail registrata del cliente.
+        </p>
+
+        {smtpSaved && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle size={15} /> Parametri SMTP salvati.
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '0.9rem' }}>
+          <input placeholder="Host SMTP (es. smtp.gmail.com)" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit' }} />
+          <input placeholder="Porta (es. 587)" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit' }} />
+          <input placeholder="Username" value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit' }} />
+          <input placeholder="Email mittente" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit' }} />
+          <input type="password" placeholder={smtpPasswordConfigured ? 'Password SMTP (lascia vuoto per non cambiarla)' : 'Password SMTP'} value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)} style={{ ...inputStyle, fontFamily: 'inherit' }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={smtpUseTls} onChange={(e) => setSmtpUseTls(e.target.checked)} />
+            Usa TLS
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={smtpUseSsl} onChange={(e) => setSmtpUseSsl(e.target.checked)} />
+            Usa SSL
+          </label>
+        </div>
+
+        <button
+          onClick={handleSaveSmtp}
+          disabled={savingSmtp}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+        >
+          {savingSmtp ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+          Salva SMTP
+        </button>
+      </div>
       )}
 
       {showGenerali && (

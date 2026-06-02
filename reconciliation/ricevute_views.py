@@ -1,6 +1,7 @@
 import json
 from decimal import Decimal, InvalidOperation
 
+from django.core.mail import EmailMessage, get_connection
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.utils.dateparse import parse_date
@@ -291,6 +292,40 @@ def _get_ricevute_counter(company):
     return max(0, value)
 
 
+def _get_mail_setting(company, key, default=''):
+    raw = (
+        AppSetting.objects.filter(company=company, key=key)
+        .values_list('value', flat=True)
+        .first()
+    )
+    if raw is None:
+        return default
+    return str(raw).strip()
+
+
+def _get_mail_settings(company):
+    host = _get_mail_setting(company, 'smtp_host')
+    port_raw = _get_mail_setting(company, 'smtp_port', '587')
+    username = _get_mail_setting(company, 'smtp_username')
+    password = _get_mail_setting(company, 'smtp_password')
+    from_email = _get_mail_setting(company, 'smtp_from_email')
+    use_tls = _get_mail_setting(company, 'smtp_use_tls', '1').lower() in {'1', 'true', 'yes', 'on'}
+    use_ssl = _get_mail_setting(company, 'smtp_use_ssl', '0').lower() in {'1', 'true', 'yes', 'on'}
+    try:
+        port = int(port_raw)
+    except (TypeError, ValueError):
+        port = 587
+    return {
+        'host': host,
+        'port': port,
+        'username': username,
+        'password': password,
+        'from_email': from_email,
+        'use_tls': use_tls,
+        'use_ssl': use_ssl,
+    }
+
+
 @require_auth
 @require_http_methods(['GET', 'POST'])
 def api_ricevute_emesse(request):
@@ -389,3 +424,69 @@ def api_ricevuta_pdf(request, ricevuta_id):
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="ricevuta-{row.numero_progressivo}.pdf"'
     return response
+
+
+@require_auth
+@require_http_methods(['POST'])
+def api_ricevuta_send_email(request, ricevuta_id):
+    company, err = bind_company(request)
+    if err:
+        return err
+
+    try:
+        row = (
+            Ricevuta.objects.filter(company=company)
+            .select_related('cliente', 'company')
+            .prefetch_related('righe')
+            .get(id=ricevuta_id)
+        )
+    except Ricevuta.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Ricevuta non trovata'}, status=404)
+
+    recipient = (row.cliente.email or '').strip()
+    if not recipient:
+        return JsonResponse({'status': 'error', 'error': 'Il cliente non ha una email registrata.'}, status=400)
+
+    smtp = _get_mail_settings(company)
+    if not smtp['host'] or not smtp['username'] or not smtp['password'] or not smtp['from_email']:
+        return JsonResponse(
+            {'status': 'error', 'error': 'Configura SMTP in Impostazioni prima di inviare email.'},
+            status=400,
+        )
+
+    try:
+        pdf_bytes = render_ricevuta_pdf(row)
+    except RuntimeError as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=503)
+
+    subject = f'Ricevuta n. {row.numero_progressivo} - {company.denominazione}'
+    body = (
+        f"Buongiorno {row.cliente.ragione_sociale},\n\n"
+        f"in allegato trova la ricevuta n. {row.numero_progressivo} del {row.date.strftime('%d/%m/%Y')}.\n\n"
+        "Cordiali saluti."
+    )
+    filename = f'ricevuta-{row.numero_progressivo}.pdf'
+
+    try:
+        connection = get_connection(
+            backend='django.core.mail.backends.smtp.EmailBackend',
+            host=smtp['host'],
+            port=smtp['port'],
+            username=smtp['username'],
+            password=smtp['password'],
+            use_tls=smtp['use_tls'],
+            use_ssl=smtp['use_ssl'],
+        )
+        message = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=smtp['from_email'],
+            to=[recipient],
+            connection=connection,
+        )
+        message.attach(filename, pdf_bytes, 'application/pdf')
+        message.send(fail_silently=False)
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'error': f'Invio email fallito: {exc}'}, status=502)
+
+    return JsonResponse({'status': 'success', 'data': {'email': recipient}})

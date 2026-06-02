@@ -82,4 +82,5 @@ urlpatterns = [
     path('api/ricevute/emesse/',                              ricevute_views.api_ricevute_emesse),
     path('api/ricevute/emesse/<int:ricevuta_id>/',            ricevute_views.api_ricevuta_emessa_detail),
     path('api/ricevute/emesse/<int:ricevuta_id>/pdf/',        ricevute_views.api_ricevuta_pdf),
+    path('api/ricevute/emesse/<int:ricevuta_id>/send-email/', ricevute_views.api_ricevuta_send_email),
 ]

@@ -1030,6 +1030,15 @@ def _get_setting_money(key, company):
         return MONEY_ZERO
 
 
+def _get_setting_value(key, company, default=''):
+    try:
+        value = AppSetting.objects.get(company=company, key=key).value
+    except AppSetting.DoesNotExist:
+        return default
+    text = str(value).strip()
+    return text if text != '' else default
+
+
 def _set_setting_money(key, value, company):
     AppSetting.objects.update_or_create(
         company=company,
@@ -1112,6 +1121,13 @@ def api_get_settings(request):
                 'gemini_key_configured': bool(_get_gemini_key(company)),
                 'ai_acquisition_provider': _resolve_ai_provider(request.user, company),
                 'telegram_token_configured': bool(_get_telegram_token(company)),
+                'smtp_host': _get_setting_value('smtp_host', company, ''),
+                'smtp_port': _get_setting_value('smtp_port', company, '587'),
+                'smtp_username': _get_setting_value('smtp_username', company, ''),
+                'smtp_password_configured': bool(_get_setting_value('smtp_password', company, '')),
+                'smtp_from_email': _get_setting_value('smtp_from_email', company, ''),
+                'smtp_use_tls': _get_setting_value('smtp_use_tls', company, '1').lower() in {'1', 'true', 'yes', 'on'},
+                'smtp_use_ssl': _get_setting_value('smtp_use_ssl', company, '0').lower() in {'1', 'true', 'yes', 'on'},
                 'saldo_cassa': float(_get_saldo_cassa(company)),
                 'fondo_cassa': float(_get_fondo_cassa(company)),
                 'ricevute_progressive_counter': _get_ricevute_progressive_counter(company),
@@ -1147,6 +1163,60 @@ def api_save_settings(request):
                     company=company,
                     key='telegram_bot_token',
                     defaults={'value': telegram_token},
+                )
+
+            smtp_host = data.get('smtp_host')
+            if smtp_host is not None:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_host',
+                    defaults={'value': str(smtp_host).strip()},
+                )
+
+            smtp_port = data.get('smtp_port')
+            if smtp_port is not None:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_port',
+                    defaults={'value': str(smtp_port).strip() or '587'},
+                )
+
+            smtp_username = data.get('smtp_username')
+            if smtp_username is not None:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_username',
+                    defaults={'value': str(smtp_username).strip()},
+                )
+
+            smtp_password = data.get('smtp_password')
+            if smtp_password is not None and str(smtp_password).strip():
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_password',
+                    defaults={'value': str(smtp_password).strip()},
+                )
+
+            smtp_from_email = data.get('smtp_from_email')
+            if smtp_from_email is not None:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_from_email',
+                    defaults={'value': str(smtp_from_email).strip()},
+                )
+
+            if 'smtp_use_tls' in data:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_use_tls',
+                    defaults={'value': '1' if bool(data.get('smtp_use_tls')) else '0'},
+                )
+
+            if 'smtp_use_ssl' in data:
+                AppSetting.objects.update_or_create(
+                    company=company,
+                    key='smtp_use_ssl',
+                    defaults={'value': '1' if bool(data.get('smtp_use_ssl')) else '0'},
                 )
 
             if 'saldo_cassa' in data:
@@ -1192,6 +1262,13 @@ def api_save_settings(request):
                 'data': {
                     'saldo_cassa': float(_get_saldo_cassa(company)),
                     'fondo_cassa': float(_get_fondo_cassa(company)),
+                    'smtp_host': _get_setting_value('smtp_host', company, ''),
+                    'smtp_port': _get_setting_value('smtp_port', company, '587'),
+                    'smtp_username': _get_setting_value('smtp_username', company, ''),
+                    'smtp_password_configured': bool(_get_setting_value('smtp_password', company, '')),
+                    'smtp_from_email': _get_setting_value('smtp_from_email', company, ''),
+                    'smtp_use_tls': _get_setting_value('smtp_use_tls', company, '1').lower() in {'1', 'true', 'yes', 'on'},
+                    'smtp_use_ssl': _get_setting_value('smtp_use_ssl', company, '0').lower() in {'1', 'true', 'yes', 'on'},
                     'ricevute_progressive_counter': _get_ricevute_progressive_counter(company),
                     'denominazione': company.denominazione,
                     'indirizzo': company.indirizzo,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown,
+  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown, Mail,
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { ricevuteCardStyle, ricevuteInputStyle } from './ricevuteStyles';
@@ -59,6 +59,8 @@ export default function RicevuteValoriBollati() {
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [detailCache, setDetailCache] = useState({});
+  const [sendingEmailId, setSendingEmailId] = useState(null);
+  const [emailSentMsg, setEmailSentMsg] = useState('');
 
   const [clienteId, setClienteId] = useState('');
   const [date, setDate] = useState(todayIso);
@@ -223,6 +225,28 @@ export default function RicevuteValoriBollati() {
       .catch(() => setError('Impossibile generare il PDF.'));
   };
 
+  const sendEmail = (row) => {
+    if (!row?.cliente?.email) {
+      setError('Il cliente non ha una email registrata.');
+      return;
+    }
+    setSendingEmailId(row.id);
+    setEmailSentMsg('');
+    setError(null);
+    apiFetch(`/api/ricevute/emesse/${row.id}/send-email/`, { method: 'POST' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === 'success') {
+          setEmailSentMsg(`Ricevuta inviata a ${d.data?.email || row.cliente.email}.`);
+          setTimeout(() => setEmailSentMsg(''), 5000);
+        } else {
+          setError(d.error || 'Invio email non riuscito.');
+        }
+      })
+      .catch(() => setError('Errore di rete durante invio email.'))
+      .finally(() => setSendingEmailId(null));
+  };
+
   const btnPrimary = {
     display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem',
     background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
@@ -246,6 +270,14 @@ export default function RicevuteValoriBollati() {
           <button type="button" onClick={() => setError(null)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>
             <X size={16} />
           </button>
+        </div>
+      )}
+      {emailSentMsg && (
+        <div style={{
+          background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.75rem 1rem',
+          borderRadius: '8px', color: '#22c55e', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem',
+        }}>
+          <Mail size={18} /> {emailSentMsg}
         </div>
       )}
 
@@ -480,6 +512,15 @@ export default function RicevuteValoriBollati() {
                           style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.8rem', background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
                         >
                           <FileDown size={15} /> Scarica PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendEmail(row)}
+                          disabled={sendingEmailId === row.id}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.8rem', background: 'rgba(79,141,247,0.15)', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', opacity: sendingEmailId === row.id ? 0.7 : 1 }}
+                        >
+                          {sendingEmailId === row.id ? <Loader2 size={15} className="spin" /> : <Mail size={15} />}
+                          Invia email
                         </button>
                         <button
                           type="button"
