@@ -22,6 +22,12 @@ import IncassatoDashboardSection from './IncassatoDashboardSection';
 import MyTabBrand from './MyTabBrand';
 import { getVisibleNavItems, canAccessView } from './navConfig';
 import { useLandscapeOnMobile } from './useLandscapeOnMobile';
+import {
+  calcDifferenza,
+  calcItemSaldo,
+  inferWithReports,
+  roundMoney,
+} from './closureCalc';
 import './index.css';
 
 function AppShell() {
@@ -209,34 +215,58 @@ function AppShell() {
 
   const handleEditClick = (closure) => {
     setEditingId(closure.id);
-    setEditFormData({ ...closure.summary, items: JSON.parse(JSON.stringify(closure.items)), deleted_item_ids: [] });
+    const items = JSON.parse(JSON.stringify(closure.items));
+    setEditFormData({
+      ...closure.summary,
+      items,
+      deleted_item_ids: [],
+      with_reports: inferWithReports(closure.summary, items),
+    });
   };
 
   const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
 
-  const calcDifferenza = (s) => {
-    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
-    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
-  };
-
-  const roundMoney = (value) => Math.round(value * 100) / 100;
+  const recalcEditSummary = (summary, items, withReports) => ({
+    ...summary,
+    differenza: calcDifferenza(summary, items, withReports),
+  });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'differenza') return;
     setEditFormData(prev => {
-      const updated = { ...prev, [name]: parseFloat(value) || 0 };
-      updated.differenza = calcDifferenza(updated);
-      return updated;
+      const parsed = parseFloat(value) || 0;
+      const updated = { ...prev, [name]: parsed };
+      let withReports = prev.with_reports;
+      if (name === 'totale_cassetto' && parsed > 0) withReports = false;
+      if (name === 'totale_cassetto' && parsed === 0 && prev.items?.length) {
+        withReports = inferWithReports(updated, prev.items);
+      }
+      return {
+        ...recalcEditSummary(updated, prev.items, withReports),
+        with_reports: withReports,
+      };
     });
   };
 
   const handleItemInputChange = (itemId, field, value) => {
-    setEditFormData(prev => ({
-      ...prev,
-      items: prev.items.map(item =>
-        item.id === itemId ? { ...item, [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0) } : item
-      )
-    }));
+    setEditFormData(prev => {
+      const items = prev.items.map(item => {
+        if (item.id !== itemId) return item;
+        const next = {
+          ...item,
+          [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0),
+        };
+        if (field === 'entrate' || field === 'uscite') {
+          next.saldo = calcItemSaldo(next);
+        }
+        return next;
+      });
+      return {
+        ...recalcEditSummary(prev, items, prev.with_reports),
+        items,
+      };
+    });
   };
 
   const handleRemoveItem = (itemId) => {
@@ -253,21 +283,33 @@ function AppShell() {
         items: prev.items.filter(i => i.id !== itemId),
         deleted_item_ids: [...(prev.deleted_item_ids || []), itemId],
       };
-      updated.differenza = calcDifferenza(updated);
-      return updated;
+      return {
+        ...recalcEditSummary(updated, updated.items, updated.with_reports ?? prev.with_reports),
+      };
     });
   };
 
   const handleSaveEdit = (id) => {
+    const summary = recalcEditSummary(editFormData, editFormData.items, editFormData.with_reports);
+    const body = {
+      ...summary,
+      with_reports: !!editFormData.with_reports,
+      items: editFormData.items,
+      deleted_item_ids: editFormData.deleted_item_ids || [],
+    };
     setSaving(true);
     apiFetch(`/api/closures/update/${id}/`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editFormData),
+      body: JSON.stringify(body),
     })
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'success') { refreshDashboardData(); setEditingId(null); }
+        if (data.status === 'success') {
+          if (typeof data.saldo_cassa === 'number') setSaldoCassa(data.saldo_cassa);
+          refreshDashboardData();
+          setEditingId(null);
+        }
         else alert('Errore durante il salvataggio: ' + data.error);
       })
       .catch(() => alert('Errore di rete durante il salvataggio.'))
@@ -613,9 +655,16 @@ function AppShell() {
                             <td className="desktop-closure-col" style={{ fontWeight: 'bold', color: 'var(--accent)' }}>€ {closure.summary.totale.toFixed(2)}</td>
                             <td className="mobile-closure-col" style={{ fontWeight: 700, color: 'var(--accent)' }}>€ {closure.summary.totale_cassetto.toFixed(2)}</td>
                             <td className="closure-highlight-col">
-                              <span className={`closure-chip ${closure.summary.differenza > 0 ? 'closure-chip--positive' : closure.summary.differenza < 0 ? 'closure-chip--negative' : 'closure-chip--neutral'}`}>
-                                {closure.summary.differenza >= 0 ? '+' : ''}€ {closure.summary.differenza.toFixed(2)}
+                              {(() => {
+                                const diffVal = editingId === closure.id
+                                  ? (editFormData.differenza ?? closure.summary.differenza)
+                                  : closure.summary.differenza;
+                                return (
+                              <span className={`closure-chip ${diffVal > 0 ? 'closure-chip--positive' : diffVal < 0 ? 'closure-chip--negative' : 'closure-chip--neutral'}`}>
+                                {diffVal >= 0 ? '+' : ''}€ {Number(diffVal).toFixed(2)}
                               </span>
+                                );
+                              })()}
                             </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -678,6 +727,13 @@ function AppShell() {
                                         );
                                       })}
                                     </div>
+                                    {editingId === closure.id && (
+                                      <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.75rem 0 0' }}>
+                                        {editFormData.with_reports
+                                          ? 'Differenza ricalcolata: Totale − somma saldi reparti'
+                                          : 'Differenza ricalcolata: Totale scassettato − (Totale − Pag.Pos − Distrib. − Resi)'}
+                                      </p>
+                                    )}
                                   </div>
 
                                   <div style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>

@@ -700,7 +700,6 @@ def api_update_closure(request, closure_id):
                 return err
             closure = CashClosure.objects.get(id=closure_id, company=company)
             data = json.loads(request.body)
-            
             # Aggiorna solo se presenti nel payload
             if 'contanti' in data: closure.contanti = _money(data['contanti'])
             if 'pag_pos' in data: closure.pag_pos = _money(data['pag_pos'])
@@ -710,15 +709,11 @@ def api_update_closure(request, closure_id):
             if 'distrib' in data: closure.distrib = _money(data['distrib'])
             if 'totale' in data: closure.totale_generale = _money(data['totale'])
             if 'totale_cassetto' in data: closure.totale_cassetto = _money(data['totale_cassetto'])
-            if 'differenza' in data: closure.differenza = _money(data['differenza'])
-            
-            closure.save()
 
             deleted_item_ids = data.get('deleted_item_ids', [])
             if deleted_item_ids:
                 CashClosureItem.objects.filter(id__in=deleted_item_ids, closure=closure).delete()
-            
-            # Aggiorna gli items se presenti
+
             items_data = data.get('items', [])
             for item_data in items_data:
                 item_id = item_data.get('id')
@@ -726,14 +721,39 @@ def api_update_closure(request, closure_id):
                     try:
                         item = CashClosureItem.objects.get(id=item_id, closure=closure)
                         if 'entrate' in item_data: item.incomes = _money(item_data['entrate'])
-                        if 'uscite' in item_data: item.expenses = _money(item_data['uscite'])
-                        if 'saldo' in item_data: item.balance = _money(item_data['saldo'])
+                        if 'uscite' in item_data: item.expenses = abs(_money(item_data['uscite']))
+                        if 'saldo' in item_data:
+                            item.balance = _money(item_data['saldo'])
+                        elif 'entrate' in item_data or 'uscite' in item_data:
+                            item.balance = _money(item.incomes) - _money(item.expenses)
                         if 'descrizione' in item_data: item.department_name = _dept_name(item_data['descrizione'])
                         item.save()
                     except CashClosureItem.DoesNotExist:
-                        pass # Ignora gli ID non validi
-                        
-            return JsonResponse({'status': 'success', 'message': 'Chiusura aggiornata correttamente.'})
+                        pass
+
+            closure.differenza = _recalc_closure_differenza_for_update(
+                closure,
+                items_data,
+                with_reports=data.get('with_reports'),
+            )
+            closure.save()
+
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Chiusura aggiornata correttamente.',
+                'saldo_cassa': float(_get_saldo_cassa(company)),
+                'summary': {
+                    'contanti': float(closure.contanti),
+                    'pag_pos': float(closure.pag_pos),
+                    'cassa_auto': float(closure.cassa_auto),
+                    'reso_cont': float(closure.reso_cont),
+                    'reso_auto': float(closure.reso_auto),
+                    'distrib': float(closure.distrib),
+                    'totale': float(closure.totale_generale),
+                    'totale_cassetto': float(closure.totale_cassetto),
+                    'differenza': float(closure.differenza),
+                },
+            })
             
         except CashClosure.DoesNotExist:
             return JsonResponse({'error': 'Chiusura non trovata'}, status=404)
@@ -1567,6 +1587,17 @@ def _reconcile_totale_cassa(summary, items, pag_pos_override=None):
     return totale
 
 
+def _closure_uses_report_differenza(totale_cassetto, totale, differenza, items):
+    """Chiusure acquisite con report giochi: differenza = totale − saldi reparti."""
+    if _money(totale_cassetto) > 0:
+        return False
+    totale = _money(totale)
+    if totale <= 0 or not items:
+        return False
+    saldo_reparti = _saldo_reparti(items)
+    return abs(_money(differenza) - (totale - saldo_reparti)) <= Decimal('2.01')
+
+
 def _calc_closure_differenza(totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, totale_scassettato=None):
     if with_reports:
         return _money(totale - _saldo_reparti(items)), MONEY_ZERO
@@ -1574,6 +1605,43 @@ def _calc_closure_differenza(totale, pag_pos, distrib, reso_auto, reso_cont, ite
     atteso = totale - pag_pos - distrib - reso_auto - reso_cont
     differenza = _money(cassetto - atteso) if totale_scassettato is not None else MONEY_ZERO
     return differenza, cassetto
+
+
+def _recalc_closure_differenza_for_update(closure, items_payload, with_reports=None):
+    """Ricalcola differenza (e coerenza cassetto) dopo modifica riepilogo/reparti."""
+    items_for_calc = []
+    for item_data in items_payload or []:
+        entrate = _money(item_data.get('entrate', 0))
+        uscite = abs(_money(item_data.get('uscite', 0)))
+        items_for_calc.append({'entrate': float(entrate), 'uscite': float(uscite)})
+    if not items_for_calc:
+        for item in closure.items.all():
+            items_for_calc.append({
+                'entrate': float(item.incomes),
+                'uscite': float(item.expenses),
+            })
+
+    if with_reports is None:
+        with_reports = _closure_uses_report_differenza(
+            closure.totale_cassetto,
+            closure.totale_generale,
+            closure.differenza,
+            items_for_calc,
+        )
+    else:
+        with_reports = bool(with_reports)
+    totale_scassettato = None if with_reports else closure.totale_cassetto
+    differenza, _cassetto = _calc_closure_differenza(
+        closure.totale_generale,
+        closure.pag_pos,
+        closure.distrib,
+        closure.reso_auto,
+        closure.reso_cont,
+        items_for_calc,
+        with_reports,
+        totale_scassettato,
+    )
+    return differenza
 
 
 def _refresh_draft_extract_payload(draft, payload):

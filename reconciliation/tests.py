@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import SimpleTestCase
 
 from reconciliation.draft_notifications import build_closure_incasso_summary
-from reconciliation.views import _reconcile_totale_cassa
+from reconciliation.views import _calc_closure_differenza, _reconcile_totale_cassa
 
 
 class ReconcileTotaleCassaTests(SimpleTestCase):
@@ -51,6 +51,40 @@ class ReconcileTotaleCassaTests(SimpleTestCase):
         }
         result = _reconcile_totale_cassa(summary, items)
         self.assertEqual(result, Decimal('800.00'))
+
+
+class CalcClosureDifferenzaTests(SimpleTestCase):
+    def test_cassetto_mode(self):
+        items = [{'entrate': 100, 'uscite': 0}]
+        diff, tc = _calc_closure_differenza(
+            Decimal('1000'),
+            Decimal('200'),
+            Decimal('50'),
+            Decimal('0'),
+            Decimal('0'),
+            items,
+            with_reports=False,
+            totale_scassettato=Decimal('800'),
+        )
+        self.assertEqual(diff, Decimal('50.00'))
+        self.assertEqual(tc, Decimal('800.00'))
+
+    def test_report_mode(self):
+        items = [
+            {'entrate': 665, 'uscite': 283},
+            {'entrate': 100, 'uscite': 10},
+        ]
+        diff, tc = _calc_closure_differenza(
+            Decimal('1000'),
+            Decimal('0'),
+            Decimal('0'),
+            Decimal('0'),
+            Decimal('0'),
+            items,
+            with_reports=True,
+        )
+        self.assertEqual(diff, Decimal('528.00'))
+        self.assertEqual(tc, Decimal('0.00'))
 
 
 class ClosureIncassoSummaryTests(SimpleTestCase):
