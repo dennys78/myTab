@@ -778,7 +778,7 @@ export default function Impostazioni({ section = 'generali' }) {
                 style={{ ...inputStyle, flex: '1 1 260px', minWidth: '220px', fontFamily: 'inherit' }}
               >
                 <option value="two_files">2 file — riepilogo cassa (foglio incasso)</option>
-                <option value="five_files">5 file — riepilogo + Lottomatica, Gratta e Vinci, Sisal</option>
+                <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
               </select>
               <button
                 type="button"
@@ -861,7 +861,7 @@ export default function Impostazioni({ section = 'generali' }) {
                 style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
               >
                 <option value="two_files">2 file — riepilogo cassa (foglio incasso)</option>
-                <option value="five_files">5 file — riepilogo + Lottomatica, Gratta e Vinci, Sisal</option>
+                <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
               </select>
             </div>
           )}

@@ -1481,7 +1481,7 @@ Regole:
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
-- Per LOTTOMATICA e SISAL: se compaiono solo come totali di servizio, metti 0.00 (verranno dai report dedicati).
+- Per LOTTOMATICA, SISAL e MOONEY: se compaiono nel riepilogo, metti 0.00 in entrate/uscite (verranno sostituiti dai report dedicati).
 - Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
   verranno dal report premi separato.
 - Unisci le righe reparto visibili senza duplicarle.
@@ -1845,7 +1845,7 @@ def _extract_footer_summary(images, company, provider):
 
 
 def _extract_closure_five_files(images, company, provider):
-    """Protocollo a 5 file: classificazione report + estrazione dedicata riga riepilogo."""
+    """Protocollo a 5/6 file: classificazione report + estrazione dedicata riga riepilogo."""
     from .ai_acquisition import (
         merge_five_files_summary,
         split_acquisition_images,

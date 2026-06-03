@@ -1,4 +1,4 @@
-"""Acquisizione IA multi-immagine: riepilogo cassa + report reparti (foto 3–5)."""
+"""Acquisizione IA multi-immagine: riepilogo cassa + report reparti (fino a 6 foto con Mooney)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,19 @@ from .models import AppSetting
 AI_ACQUISITION_MODE_TWO = 'two_files'
 AI_ACQUISITION_MODE_FIVE = 'five_files'
 VALID_AI_ACQUISITION_MODES = frozenset({AI_ACQUISITION_MODE_TWO, AI_ACQUISITION_MODE_FIVE})
-AI_ACQUISITION_MAX_FILES = {
+AI_ACQUISITION_MIN_FILES = {
     AI_ACQUISITION_MODE_TWO: 2,
     AI_ACQUISITION_MODE_FIVE: 5,
 }
+AI_ACQUISITION_MAX_FILES = {
+    AI_ACQUISITION_MODE_TWO: 2,
+    AI_ACQUISITION_MODE_FIVE: 6,
+}
+# Report esterni (foto dedicate): ordine logico, non dipende dall'upload
+REPORT_SLOT_ORDER = ('lottomatica', 'gratta', 'sisal')
+OPTIONAL_REPORT_SLOTS = ('mooney',)
+ALL_REPORT_SLOTS = REPORT_SLOT_ORDER + OPTIONAL_REPORT_SLOTS
+DEPARTMENTS_FULL_REPORT_OVERLAY = frozenset({'lottomatica', 'sisal', 'mooney'})
 FOOTER_SUMMARY_KEYS = (
     'contanti',
     'pag_pos',
@@ -22,17 +31,16 @@ FOOTER_SUMMARY_KEYS = (
     'totale',
 )
 
-# Ultime 3 foto (ordine upload): Lottomatica, Gratta e Vinci, Sisal
-REPORT_SLOT_ORDER = ('lottomatica', 'gratta', 'sisal')
-
 LOTTO_PROMPT = """Questa immagine è un report Contabile Giornaliero Lottomatica (tabaccheria).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = importo della riga "Entrate Gioco" (o Entrate gioco / Entrate Giochi)
-- uscite = importo della riga "Uscite Gioco" (o Uscite gioco)
-- Numeri float positivi; se non leggibile usa 0.00"""
+- entrate = importo della riga "Entrate Gioco" (o Entrate gioco / Entrate Giochi) — OBBLIGATORIO se visibile
+- uscite = importo della riga "Uscite Gioco" (o Uscite gioco / Uscite Giochi) — OBBLIGATORIO se visibile
+- Estrai SEMPRE entrambi i valori quando presenti nel documento (es. Entrate 665,00 e Uscite 283,00)
+- NON usare Aggio Gioco, Saldo o totali parziali al posto di entrate/uscite
+- Numeri float positivi; se una riga non è leggibile usa 0.00"""
 
 GRATTA_PROMPT = """Questa immagine è il report Gratta e Vinci "Premi pagati nel giorno" (tabella Gioco / Quantità / Importo).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
@@ -48,29 +56,42 @@ Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = "Vendite" nel riquadro TOTALE in basso (es. 76,50 → 76.50)
-- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -69,00 → 69.00)
-- NON usare il saldo/netto finale (es. 7,50); solo vendite e pagamenti del TOTALE.
+- entrate = "Vendite" nel riquadro TOTALE in basso (es. 68,00 → 68.00)
+- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -26,31 → 26.31)
+- Estrai SEMPRE entrate e uscite dal riquadro TOTALE, non dalle singole sezioni Win for Life/Eurojackpot
+- NON usare il saldo/netto finale (es. 41,69); solo vendite e pagamenti del TOTALE
+- Numeri float positivi; se non leggibile usa 0.00"""
+
+MOONEY_PROMPT = """Questa immagine è il report Mooney "MOVIMENTO CONTANTE" (ricevuta giornaliera).
+Restituisci SOLO un oggetto JSON valido, senza markdown:
+{"entrate": 0.00, "uscite": 0.00}
+
+Regole:
+- entrate = importo nella riga "Totale" in fondo (totale incassato del giorno), es. 1467,59 → 1467.59
+- uscite = 0.00 se il documento non mostra uscite/pagamenti espliciti (solo righe Incassato)
+- NON sommare manualmente Ricariche/Carte/Pagamenti se è già presente il Totale
 - Numeri float positivi; se non leggibile usa 0.00"""
 
 REPORT_PROMPTS = {
     'lottomatica': LOTTO_PROMPT,
     'gratta': GRATTA_PROMPT,
     'sisal': SISAL_PROMPT,
+    'mooney': MOONEY_PROMPT,
 }
 
 CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
-Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"other"}
+Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other"}
 
 - main_closure: tabella "Riepilogo Chiusure di Cassa" con molte righe reparto (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, Pag fornitori, ecc.) e colonne Entrate/Uscite/Saldo
 - summary_footer: SOLO la riga/box riepilogo finale con etichette Contanti, Pag.Pos (o Pagamento POS), Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza elenco reparti sopra
 - lottomatica: "Contabile Giornaliero" Lottomatica con righe "Entrate Gioco" e "Uscite Gioco" (e Aggio/Saldo)
 - gratta: schermata "Premi pagati nel giorno" Gratta e Vinci con tabella Gioco/Quantità/Importo e riga Totale
 - sisal: schermata Sisal tab RICONSEGNA o ESPOSIZIONE con Vendite, Pagamenti e riquadro TOTALE
+- mooney: documento Mooney "MOVIMENTO CONTANTE" con righe Incassato (Ricariche, Carte prepagate, Pagamenti e servizi) e Totale
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
 VALID_IMAGE_TYPES = frozenset({
-    'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'other',
+    'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'mooney', 'other',
 })
 
 FIVE_FILES_SUMMARY_PROMPT = """Analizza l'immagine del RIEPILOGO FINALE CHIUSURA CASSA POS (riga con Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE).
@@ -132,14 +153,22 @@ def max_acquisition_files_for_mode(mode: str) -> int:
     return AI_ACQUISITION_MAX_FILES.get(mode, 2)
 
 
+def min_acquisition_files_for_mode(mode: str) -> int:
+    return AI_ACQUISITION_MIN_FILES.get(mode, 1)
+
+
+def is_valid_five_mode_file_count(count: int) -> bool:
+    return int(count or 0) in (5, 6)
+
+
 def validate_acquisition_file_count(company, count: int) -> None:
     mode = get_ai_acquisition_file_mode(company)
     count = int(count or 0)
     if count < 1:
         raise ValueError('Carica almeno un\'immagine.')
-    if mode == AI_ACQUISITION_MODE_FIVE and count != 5:
+    if mode == AI_ACQUISITION_MODE_FIVE and not is_valid_five_mode_file_count(count):
         raise ValueError(
-            f'Per l\'analisi a 5 file carica esattamente 5 immagini (ricevute {count}).'
+            f'Per l\'analisi a 5/6 file carica 5 immagini (standard) oppure 6 con report Mooney (ricevute {count}).'
         )
     if mode == AI_ACQUISITION_MODE_TWO and count > 2:
         raise ValueError(
@@ -209,6 +238,9 @@ def normalize_image_type(raw: str) -> str:
 def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, dict], list]:
     """Fallback se la classificazione IA non è disponibile."""
     n = len(images)
+    if n == 6:
+        report_keys = ('lottomatica', 'mooney', 'gratta', 'sisal')
+        return list(images[:-4]), dict(zip(report_keys, images[-4:])), []
     if n == 5:
         # Ordine upload non affidabile: non assegnare le ultime 3 ai report a caso.
         return list(images), {}, []
@@ -242,7 +274,7 @@ def split_acquisition_images(
             footer.append(image)
         elif img_type == 'main_closure':
             main.append(image)
-        elif img_type in REPORT_SLOT_ORDER and img_type not in slots:
+        elif img_type in ALL_REPORT_SLOTS and img_type not in slots:
             slots[img_type] = image
 
     if not main:
@@ -257,7 +289,7 @@ def split_acquisition_images(
 
 
 def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict]) -> list[dict]:
-    """I report esterni (foto 3–5) sovrascrivono i reparti gioco."""
+    """I report esterni sovrascrivono i reparti gioco nella maschera di acquisizione."""
     by_name = {item['descrizione']: item for item in items}
     gratta_dept = REPORT_DEPARTMENTS['gratta']
 
@@ -268,7 +300,7 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
         if not dept:
             continue
 
-        # Gratta e Vinci: entrate dal riepilogo cassa (foto 1), uscite dal report premi (foto 4)
+        # Gratta e Vinci: entrate dal riepilogo cassa, uscite dal report premi
         if key == 'gratta':
             existing = by_name.get(gratta_dept, {})
             entrate = float(parse_amount(existing.get('entrate', 0)))
@@ -277,6 +309,18 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
                 continue
             by_name[gratta_dept] = {
                 'descrizione': gratta_dept,
+                'entrate': entrate,
+                'uscite': uscite,
+                'saldo': round(entrate - uscite, 2),
+            }
+            continue
+
+        # Lottomatica, Sisal, Mooney: sostituisci sempre entrate e uscite dal report dedicato
+        if key in DEPARTMENTS_FULL_REPORT_OVERLAY:
+            entrate = float(parse_amount(amounts.get('entrate', 0)))
+            uscite = float(parse_amount(amounts.get('uscite', 0)))
+            by_name[dept] = {
+                'descrizione': dept,
                 'entrate': entrate,
                 'uscite': uscite,
                 'saldo': round(entrate - uscite, 2),
@@ -304,10 +348,14 @@ def normalize_report_overlay(key: str, parsed: dict) -> dict | None:
         uscite = parse_amount(parsed.get('uscite', 0))
         if uscite == 0:
             return None
-        # Solo uscite dal report; le entrate restano dal riepilogo cassa (foto 1)
+        # Solo uscite dal report; le entrate restano dal riepilogo cassa
         return {'uscite': float(uscite)}
     entrate = parse_amount(parsed.get('entrate', 0))
     uscite = parse_amount(parsed.get('uscite', 0))
+    if key in DEPARTMENTS_FULL_REPORT_OVERLAY:
+        if entrate == 0 and uscite == 0:
+            return None
+        return {'entrate': float(entrate), 'uscite': float(uscite)}
     if entrate == 0 and uscite == 0:
         return None
     return {'entrate': float(entrate), 'uscite': float(uscite)}

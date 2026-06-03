@@ -4,6 +4,7 @@ import { apiFetch } from './api';
 import { useAuth } from './auth';
 import {
   ACQUISITION_MODE_FIVE,
+  isValidFiveModeFileCount,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
@@ -142,8 +143,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const handleExtract = () => {
     if (!filesRef.current.length) return;
-    if (isFiveFileMode && filesRef.current.length !== 5) {
-      setError('Per l\'analisi a 5 file carica esattamente 5 immagini.');
+    if (isFiveFileMode && !isValidFiveModeFileCount(filesRef.current.length)) {
+      setError('Carica 5 immagini (standard) oppure 6 con il report Mooney aggiuntivo.');
       return;
     }
     const imageCount = filesRef.current.length;
@@ -703,7 +704,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   // ─── UPLOAD ─────────────────────────────────────────────────────────────────
   const atLimit = files.length >= maxAcquisitionFiles;
-  const canExtract = files.length > 0 && (!isFiveFileMode || files.length === 5);
+  const canExtract = files.length > 0 && (!isFiveFileMode || isValidFiveModeFileCount(files.length));
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
@@ -712,12 +713,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         {isFiveFileMode
-          ? 'Carica esattamente 5 immagini: riepilogo cassa e report giochi.'
+          ? 'Carica 5 o 6 immagini: riepilogo cassa e report giochi (6ª foto = Mooney opzionale).'
           : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
-          ? 'Includi il riepilogo con tutti i reparti più i report Lottomatica, Gratta e Vinci, Sisal. L\'ordine viene riconosciuto automaticamente.'
+          ? 'Report Lottomatica e Sisal: entrate e uscite sostituite dai documenti dedicati. Con 6 foto anche Mooney. L\'ordine viene riconosciuto automaticamente.'
           : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
