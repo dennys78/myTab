@@ -25,6 +25,11 @@ from reconciliation.models import (
     Versamento,
 )
 from reconciliation.draft_notifications import notify_new_acquisition_draft, send_unviewed_draft_reminders
+from reconciliation.telegram_movimenti import (
+    parse_movimento_entrata_message,
+    save_movimento_from_telegram,
+    message_local_date,
+)
 from reconciliation.views import _get_saldo_cassa, _money
 
 STEP_AWAITING_POS = 'awaiting_pos'
@@ -248,6 +253,46 @@ def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
     return versamento, float(saldo_prec), saldo_attuale
 
 
+async def _try_register_movimento_entrata(update, context, text):
+    try:
+        parsed = parse_movimento_entrata_message(text)
+    except ValueError as exc:
+        await update.message.reply_text(str(exc))
+        return True
+
+    if not parsed:
+        return False
+
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
+    movimento_date = await sync_to_async(message_local_date)(update)
+
+    try:
+        movimento, _, saldo_dopo = await sync_to_async(save_movimento_from_telegram)(
+            company,
+            operator,
+            parsed,
+            movimento_date,
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"Movimento non registrato: {exc}")
+        return True
+
+    segno = '+' if movimento.tipo == 'ENTRATA' else '-'
+    await update.message.reply_text(
+        "Movimento registrato in myTab.\n\n"
+        f"Tipo: {movimento.get_tipo_display()}\n"
+        f"Descrizione: {movimento.note}\n"
+        f"Importo: {segno}{_money_text(float(movimento.importo))}\n"
+        f"Data: {movimento.date.strftime('%d/%m/%Y')}\n"
+        f"Operatore: {movimento.operator}\n\n"
+        "Contanti aggiornati."
+    )
+    await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo_dopo)}")
+    return True
+
+
 async def _watch_restart_requests(app):
     company = app.bot_data.get('company')
     initial_token = app.bot_data.get('telegram_token')
@@ -284,6 +329,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Versamento: scrivi ad esempio\n"
         "Versati 2343,20\n"
         "e segui le istruzioni per la data.\n\n"
+        "Movimento entrata: scrivi ad esempio\n"
+        "Distributore 505\n"
+        "(descrizione + importo, data del messaggio).\n\n"
         "Saldo cassa: comando /saldo oppure scrivi «saldo cassa»."
     )
 
@@ -421,6 +469,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         await _complete_versamento(update, context, versamento_date)
+        return
+
+    if await _try_register_movimento_entrata(update, context, text):
         return
 
     try:
