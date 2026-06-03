@@ -547,20 +547,36 @@ def api_insert_closure(request):
 
             push_sent = 0
             push_devices = 0
+            confirmation_message = ''
+            saldo_cassa = float(_get_saldo_cassa(company))
+            fondo_cassa = float(_get_fondo_cassa(company))
             try:
-                from .draft_notifications import notify_closure_saved, push_subscriptions_for_company
+                from .draft_notifications import (
+                    build_closure_incasso_summary,
+                    build_closure_saved_message,
+                    notify_closure_saved,
+                    push_subscriptions_for_company,
+                )
                 push_devices = push_subscriptions_for_company(company).count()
                 push_sent = notify_closure_saved(company, closure, items, summary, operator)
+                incasso = build_closure_incasso_summary(items, summary or {})
+                confirmation_message = build_closure_saved_message(
+                    closure, incasso, operator=operator,
+                    saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+                )
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception('Push riepilogo chiusura non inviata')
 
             return JsonResponse({
-                'status': 'success', 
+                'status': 'success',
                 'message': f'Chiusura cassa inserita correttamente con {len(items)} voci.',
                 'id': closure.id,
                 'push_sent': push_sent,
                 'push_devices': push_devices,
+                'confirmation_message': confirmation_message,
+                'saldo_cassa': saldo_cassa,
+                'fondo_cassa': fondo_cassa,
             }, status=201)
             
         except json.JSONDecodeError:
@@ -2214,6 +2230,35 @@ def api_push_test(request):
             'push_removed': push_removed,
             'company_devices': company_devices,
             'push_errors': push_errors[:3],
+        },
+    })
+
+
+@require_auth
+def api_push_forward_last_closure(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    if not _user_can_receive_push(request.user, company):
+        return JsonResponse({'status': 'error', 'error': 'Permesso negato'}, status=403)
+    from .draft_notifications import push_subscriptions_for_company, send_last_closure_balances
+    company_devices = push_subscriptions_for_company(company).count()
+    try:
+        result = send_last_closure_balances(company)
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'error': f'Inoltro saldi fallito: {exc}'}, status=500)
+    if not result.get('ok'):
+        return JsonResponse({'status': 'error', 'error': result.get('error', 'Nessuna chiusura registrata.')}, status=404)
+    return JsonResponse({
+        'status': 'success',
+        'data': {
+            'closure_id': result.get('closure_id'),
+            'push_sent': result.get('push_sent', 0),
+            'telegram_sent': result.get('telegram_sent', 0),
+            'company_devices': company_devices,
+            'confirmation_message': result.get('confirmation_message', ''),
         },
     })
 

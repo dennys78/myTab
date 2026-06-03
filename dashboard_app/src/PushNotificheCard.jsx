@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, CheckCircle, Loader2, AlertCircle, Send } from 'lucide-react';
+import { Bell, CheckCircle, Loader2, AlertCircle, Send, Share2 } from 'lucide-react';
 import {
   ensurePushSubscription,
   fetchPushStatus,
+  forwardLastClosurePush,
   isDevicePushRegistrationCurrent,
   isWebPushSupported,
   pushUnavailableReason,
@@ -29,6 +30,8 @@ export default function PushNotificheCard() {
   const [registerResult, setRegisterResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [forwarding, setForwarding] = useState(false);
+  const [forwardResult, setForwardResult] = useState(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -143,6 +146,38 @@ export default function PushNotificheCard() {
       });
   };
 
+  const handleForwardLastClosure = () => {
+    setForwarding(true);
+    setForwardResult(null);
+    forwardLastClosurePush()
+      .then((result) => {
+        if (!result.ok) {
+          setForwardResult({ ok: false, message: result.error || 'Inoltro saldi fallito.' });
+          return;
+        }
+        const sent = result.push_sent ?? 0;
+        const tg = result.telegram_sent ?? 0;
+        const total = result.company_devices ?? 0;
+        let message = 'Ultima chiusura inoltrata.';
+        if (sent > 0) {
+          message = `Saldi inviati a ${sent} dispositivo${sent === 1 ? '' : 'i'} push`;
+          if (total > sent) message += ` su ${total} registrati`;
+          message += '.';
+        } else {
+          message = 'Nessun dispositivo push ha ricevuto il messaggio. Registra gli smartphone e riprova.';
+        }
+        if (tg > 0) message += ` Telegram: ${tg} chat.`;
+        setForwardResult({ ok: sent > 0 || tg > 0, message });
+      })
+      .catch(() => {
+        setForwardResult({ ok: false, message: 'Errore di rete durante l\'inoltro saldi.' });
+      })
+      .finally(() => {
+        setForwarding(false);
+        setTimeout(() => setForwardResult(null), 10000);
+      });
+  };
+
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
@@ -210,6 +245,24 @@ export default function PushNotificheCard() {
         }}>
           {testResult.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
           {testResult.message}
+        </div>
+      )}
+
+      {forwardResult && (
+        <div style={{
+          background: forwardResult.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          border: `1px solid ${forwardResult.ok ? '#22c55e' : 'var(--danger)'}`,
+          padding: '0.75rem',
+          borderRadius: '8px',
+          color: forwardResult.ok ? '#22c55e' : 'var(--danger)',
+          marginBottom: '1rem',
+          fontSize: '0.85rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}>
+          {forwardResult.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+          {forwardResult.message}
         </div>
       )}
 
@@ -300,6 +353,30 @@ export default function PushNotificheCard() {
         >
           {testing ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
           Invia notifica di test
+        </button>
+
+        <button
+          type="button"
+          onClick={handleForwardLastClosure}
+          disabled={forwarding || loading || !status?.vapid_configured}
+          title="Invia push e Telegram con l'ultima chiusura registrata e i saldi attuali"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.65rem 1rem',
+            background: 'var(--bg-dark)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            cursor: (forwarding || loading || !status?.vapid_configured) ? 'not-allowed' : 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            opacity: (forwarding || loading || !status?.vapid_configured) ? 0.55 : 1,
+          }}
+        >
+          {forwarding ? <Loader2 size={16} className="spin" /> : <Share2 size={16} />}
+          Inoltra saldi ultima chiusura
         </button>
       </div>
     </div>

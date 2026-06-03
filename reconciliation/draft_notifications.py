@@ -407,11 +407,9 @@ def _item_incassato(item):
 def build_closure_incasso_summary(items, summary):
     tabacchi = 0.0
     gratta = 0.0
-    totale = 0.0
     for item in items or []:
         name = item.get('descrizione') or item.get('department_name') or ''
         inc = _item_incassato(item)
-        totale += inc
         if _is_tabacchi(name):
             tabacchi += inc
         if _is_gratta_e_vinci(name):
@@ -424,22 +422,39 @@ def build_closure_incasso_summary(items, summary):
         'tabacchi': round(tabacchi, 2),
         'gratta': round(gratta, 2),
         'differenza': differenza,
-        'totale': round(totale, 2),
     }
 
 
-def _closure_saved_push_payload(closure, incasso_summary, operator):
+def _company_saldi(company):
+    from .views import _get_fondo_cassa, _get_saldo_cassa
+    return float(_get_saldo_cassa(company)), float(_get_fondo_cassa(company))
+
+
+def build_closure_saved_message(closure, incasso_summary, operator='', saldo_cassa=0.0, fondo_cassa=0.0):
     date_str = closure.date.strftime('%d/%m/%Y') if closure.date else ''
-    body = '\n'.join([
+    return '\n'.join([
+        f'Chiusura registrata · {date_str}',
+        '',
+        f'Operatore: {operator or getattr(closure, "operator", "") or "—"}',
         f"Incassato tabacchi: {_money_text(incasso_summary['tabacchi'])}",
         f"Incassato gratta e vinci: {_money_text(incasso_summary['gratta'])}",
         f"Differenza: {_money_text(incasso_summary['differenza'])}",
-        f"Totale incassato: {_money_text(incasso_summary['totale'])}",
+        f'Totale contanti in cassa: {_money_text(saldo_cassa)}',
+        f'Totale Fondo cassa: {_money_text(fondo_cassa)}',
     ])
-    op = (operator or closure.operator or '').strip()
-    title = f"Chiusura registrata · {date_str}"
-    if op:
-        title = f"{title} · {op}"
+
+
+def _closure_saved_push_payload(closure, incasso_summary, operator, saldo_cassa=0.0, fondo_cassa=0.0):
+    date_str = closure.date.strftime('%d/%m/%Y') if closure.date else ''
+    title = f'Chiusura registrata · {date_str}'
+    body = '\n'.join([
+        f'Operatore: {operator or closure.operator or "—"}',
+        f"Incassato tabacchi: {_money_text(incasso_summary['tabacchi'])}",
+        f"Incassato gratta e vinci: {_money_text(incasso_summary['gratta'])}",
+        f"Differenza: {_money_text(incasso_summary['differenza'])}",
+        f'Totale contanti in cassa: {_money_text(saldo_cassa)}',
+        f'Totale Fondo cassa: {_money_text(fondo_cassa)}',
+    ])
     return {
         'title': title,
         'body': body,
@@ -448,25 +463,21 @@ def _closure_saved_push_payload(closure, incasso_summary, operator):
     }
 
 
-def _closure_telegram_message(closure, incasso_summary, operator):
-    date_str = closure.date.strftime('%d/%m/%Y') if closure.date else ''
-    lines = [
-        f'Chiusura registrata · {date_str}',
-        '',
-        f'Operatore: {operator or closure.operator or "—"}',
-        f"Incassato tabacchi: {_money_text(incasso_summary['tabacchi'])}",
-        f"Incassato gratta e vinci: {_money_text(incasso_summary['gratta'])}",
-        f"Differenza: {_money_text(incasso_summary['differenza'])}",
-        f"Totale incassato: {_money_text(incasso_summary['totale'])}",
-    ]
-    return '\n'.join(lines)
+def _closure_telegram_message(closure, incasso_summary, operator, saldo_cassa=0.0, fondo_cassa=0.0):
+    return build_closure_saved_message(
+        closure, incasso_summary, operator=operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
 
 
-def send_telegram_closure_saved(company, closure, incasso_summary, operator=''):
+def send_telegram_closure_saved(company, closure, incasso_summary, operator='', saldo_cassa=0.0, fondo_cassa=0.0):
     token = _get_telegram_token(company)
     if not token:
         return 0
-    message = _closure_telegram_message(closure, incasso_summary, operator)
+    message = _closure_telegram_message(
+        closure, incasso_summary, operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
     sent = 0
     for chat_id in _get_telegram_chat_ids(company):
         try:
@@ -482,7 +493,69 @@ def notify_closure_saved(company, closure, items, summary, operator=''):
     if not company or not closure:
         return 0
     incasso = build_closure_incasso_summary(items, summary or {})
-    payload = _closure_saved_push_payload(closure, incasso, operator)
+    saldo_cassa, fondo_cassa = _company_saldi(company)
+    payload = _closure_saved_push_payload(
+        closure, incasso, operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
     push_sent = send_web_push_to_company(company, payload)
-    send_telegram_closure_saved(company, closure, incasso, operator)
+    send_telegram_closure_saved(
+        company, closure, incasso, operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
     return push_sent
+
+
+def closure_items_payload(closure):
+    return [
+        {
+            'descrizione': item.department_name,
+            'entrate': float(item.incomes),
+            'uscite': float(item.expenses),
+        }
+        for item in closure.items.all()
+    ]
+
+
+def send_last_closure_balances(company):
+    """Invia push + Telegram con l'ultima chiusura registrata e i saldi attuali."""
+    from .models import CashClosure
+
+    closure = (
+        CashClosure.objects.filter(company=company)
+        .prefetch_related('items')
+        .order_by('-date', '-id')
+        .first()
+    )
+    if not closure:
+        return {
+            'ok': False,
+            'error': 'Nessuna chiusura registrata.',
+            'push_sent': 0,
+            'telegram_sent': 0,
+        }
+
+    items = closure_items_payload(closure)
+    summary = {'differenza': float(closure.differenza)}
+    incasso = build_closure_incasso_summary(items, summary)
+    saldo_cassa, fondo_cassa = _company_saldi(company)
+    operator = closure.operator or closure.submitted_by or ''
+    payload = _closure_saved_push_payload(
+        closure, incasso, operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
+    push_sent = send_web_push_to_company(company, payload)
+    telegram_sent = send_telegram_closure_saved(
+        company, closure, incasso, operator,
+        saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+    )
+    return {
+        'ok': True,
+        'closure_id': closure.id,
+        'push_sent': push_sent,
+        'telegram_sent': telegram_sent,
+        'confirmation_message': build_closure_saved_message(
+            closure, incasso, operator=operator,
+            saldo_cassa=saldo_cassa, fondo_cassa=fondo_cassa,
+        ),
+    }

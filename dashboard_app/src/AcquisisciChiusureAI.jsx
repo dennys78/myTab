@@ -8,7 +8,7 @@ import {
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
-import { buildClosureSavedNotificationPayload } from './closureNotifyUtils';
+import { buildClosureSavedMessage, buildClosureSavedNotificationPayload } from './closureNotifyUtils';
 import AcquisitionProgressBar from './AcquisitionProgressBar';
 import {
   createAcquisitionProgressController,
@@ -333,13 +333,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
     setError(null);
     await ensurePushSubscription({ requestPermission: true, forceRenew: true }).catch(() => {});
 
-    const notifyPayload = buildClosureSavedNotificationPayload({
-      date: previewData.date,
-      operator: user?.username,
-      items: previewData.items,
-      summary: summaryPayload,
-    });
-
     apiFetch('/api/closures/insert/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -360,27 +353,38 @@ export default function AcquisisciChiusureAI({ onBack }) {
         if (d.status === 'success' || d.id) {
           const devices = d.push_devices ?? 0;
           const sent = d.push_sent ?? 0;
+          const confirmationMessage = d.confirmation_message
+            || buildClosureSavedMessage({
+              date: previewData.date,
+              operator: user?.username,
+              items: previewData.items,
+              summary: summaryPayload,
+              saldoCassa: d.saldo_cassa ?? 0,
+              fondoCassa: d.fondo_cassa ?? 0,
+            });
           let shown = false;
           if (sent === 0) {
-            shown = await showLocalPushNotification(notifyPayload).catch(() => false);
+            shown = await showLocalPushNotification(
+              buildClosureSavedNotificationPayload({
+                date: previewData.date,
+                operator: user?.username,
+                items: previewData.items,
+                summary: summaryPayload,
+                saldoCassa: d.saldo_cassa ?? 0,
+                fondoCassa: d.fondo_cassa ?? 0,
+              }),
+            ).catch(() => false);
           }
+          let alertMessage = confirmationMessage;
           if (!shown && sent === 0) {
-            alert(
-              'Chiusura registrata.\n\n'
-              + 'Nessuna notifica push inviata. Vai in Impostazioni → Notifiche browser '
-              + 'e premi "Registra questo smartphone" su ogni telefono.'
-            );
-          } else if (devices <= 1 && sent <= 1) {
-            alert(
-              'Chiusura registrata.\n\n'
-              + `Notifica push inviata a ${sent} dispositivo `
-              + `(registrati in azienda: ${devices}). `
-              + 'Su ogni altro smartphone: Impostazioni → Registra questo smartphone. '
-              + 'Riceverai anche il riepilogo su Telegram se il bot è attivo.'
-            );
-          } else {
-            alert(`Chiusura registrata. Riepilogo inviato a ${sent} dispositivi.`);
+            alertMessage += '\n\nNessuna notifica push inviata. Vai in Impostazioni → Notifiche browser '
+              + 'e premi "Registra questo smartphone" su ogni telefono.';
+          } else if (sent > 0) {
+            alertMessage += `\n\nRiepilogo inviato a ${sent} dispositivo${sent === 1 ? '' : 'i'}`
+              + (devices > sent ? ` (registrati in azienda: ${devices})` : '')
+              + '. Riceverai anche Telegram se il bot è attivo.';
           }
+          alert(alertMessage);
           fetchDrafts();
           onBack();
         } else {

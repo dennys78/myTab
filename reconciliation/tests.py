@@ -98,5 +98,4 @@ class ClosureIncassoSummaryTests(SimpleTestCase):
         result = build_closure_incasso_summary(items, summary)
         self.assertEqual(result['tabacchi'], 1200.0)
         self.assertEqual(result['gratta'], 350.0)
-        self.assertEqual(result['totale'], 1650.0)
         self.assertEqual(result['differenza'], -12.5)
