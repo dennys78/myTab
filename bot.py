@@ -32,10 +32,13 @@ from reconciliation.telegram_movimenti import (
 )
 from reconciliation.telegram_fondo_cassa import (
     OPERATOR_HELP_TEXT,
+    PRELEVA_DEST_PROMPT,
     is_fondo_saldo_query,
     parse_fondo_command,
+    parse_preleva_destinazione,
     save_aggiungi_fondo_from_telegram,
-    save_preleva_fondo_from_telegram,
+    save_preleva_fondo_personale,
+    save_preleva_fondo_to_cassa,
 )
 from reconciliation.views import _get_fondo_cassa, _get_saldo_cassa, _money
 
@@ -76,6 +79,15 @@ def _initial_session():
 def _reset(context):
     context.user_data['draft_session'] = _initial_session()
     context.user_data.pop('versamento_session', None)
+    context.user_data.pop('preleva_fondo_session', None)
+
+
+def _preleva_fondo_session(context):
+    return context.user_data.get('preleva_fondo_session')
+
+
+def _start_preleva_fondo_session(context, importo):
+    context.user_data['preleva_fondo_session'] = {'importo': importo}
 
 
 def _versamento_session(context):
@@ -328,9 +340,65 @@ async def _try_register_fondo_command(update, context, text):
     company = context.application.bot_data.get('company')
     movimento_date = await sync_to_async(message_local_date)(update)
 
+    if kind == 'preleva':
+        _start_preleva_fondo_session(context, importo)
+        await update.message.reply_text(
+            f'Prelievo da fondo: {_money_text(importo)}\n\n{PRELEVA_DEST_PROMPT}'
+        )
+        return True
+
     try:
-        if kind == 'aggiungi':
-            result = await sync_to_async(save_aggiungi_fondo_from_telegram)(
+        result = await sync_to_async(save_aggiungi_fondo_from_telegram)(
+            company, operator, importo, movimento_date,
+        )
+        await update.message.reply_text(
+            'Trasferimento registrato in myTab.\n\n'
+            f'Importo: {_money_text(importo)}\n'
+            f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
+            f'Operatore: {operator}\n\n'
+            'Contanti prelevati dalla cassa e versati sul fondo.'
+        )
+    except Exception as exc:
+        await update.message.reply_text(f'Operazione non registrata: {exc}')
+        return True
+
+    await update.message.reply_text(
+        f"Saldo contanti in cassa: {_money_text(result['saldo_cassa'])}\n"
+        f"Saldo fondo cassa: {_money_text(result['fondo_cassa'])}"
+    )
+    return True
+
+
+async def _complete_preleva_fondo(update, context, destinazione):
+    session = _preleva_fondo_session(context)
+    if not session:
+        return False
+
+    importo = session.get('importo')
+    if importo is None:
+        context.user_data.pop('preleva_fondo_session', None)
+        await update.message.reply_text('Sessione prelievo non valida. Riprova con «preleva da fondo 50».')
+        return True
+
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
+    movimento_date = await sync_to_async(message_local_date)(update)
+
+    try:
+        if destinazione == 'personale':
+            result = await sync_to_async(save_preleva_fondo_personale)(
+                company, operator, importo, movimento_date,
+            )
+            await update.message.reply_text(
+                'Prelievo personale registrato in myTab.\n\n'
+                f'Importo: {_money_text(importo)}\n'
+                f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
+                f'Operatore: {operator}\n\n'
+                'Decremento solo sul fondo cassa.'
+            )
+        else:
+            result = await sync_to_async(save_preleva_fondo_to_cassa)(
                 company, operator, importo, movimento_date,
             )
             await update.message.reply_text(
@@ -338,23 +406,14 @@ async def _try_register_fondo_command(update, context, text):
                 f'Importo: {_money_text(importo)}\n'
                 f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
                 f'Operatore: {operator}\n\n'
-                'Contanti prelevati dalla cassa e versati sul fondo.'
-            )
-        else:
-            result = await sync_to_async(save_preleva_fondo_from_telegram)(
-                company, operator, importo, movimento_date,
-            )
-            await update.message.reply_text(
-                'Prelievo fondo registrato in myTab.\n\n'
-                f'Importo: {_money_text(importo)}\n'
-                f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
-                f'Operatore: {operator}\n\n'
-                'Decremento solo sul fondo cassa.'
+                'Importo spostato dal fondo cassa ai contanti in cassa.'
             )
     except Exception as exc:
         await update.message.reply_text(f'Operazione non registrata: {exc}')
+        context.user_data.pop('preleva_fondo_session', None)
         return True
 
+    context.user_data.pop('preleva_fondo_session', None)
     await update.message.reply_text(
         f"Saldo contanti in cassa: {_money_text(result['saldo_cassa'])}\n"
         f"Saldo fondo cassa: {_money_text(result['fondo_cassa'])}"
@@ -400,7 +459,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Versati importo — versamento in banca\n"
         "• Descrizione importo — entrata in cassa\n"
         "• aggiungi a fondo importo — cassa → fondo\n"
-        "• preleva da fondo importo — prelievo fondo\n"
+        "• preleva da fondo importo — poi personale o cassa\n"
         "• /saldo o «saldo cassa» — contanti in cassa\n"
         "• «saldo fondo» — totale fondo cassa"
     )
@@ -437,6 +496,12 @@ async def saldo_cassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
+    if _preleva_fondo_session(context):
+        await update.message.reply_text(
+            "Stai completando un prelievo da fondo.\n\n"
+            "Rispondi «personale» oppure «cassa», oppure usa /annulla."
+        )
+        return
     if _versamento_session(context):
         await update.message.reply_text(
             "Stai registrando un versamento.\n\n"
@@ -558,6 +623,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         await _complete_versamento(update, context, versamento_date)
+        return
+
+    if _preleva_fondo_session(context):
+        destinazione = parse_preleva_destinazione(text)
+        if not destinazione:
+            await update.message.reply_text(PRELEVA_DEST_PROMPT)
+            return
+        await _complete_preleva_fondo(update, context, destinazione)
         return
 
     if await _try_register_fondo_command(update, context, text):

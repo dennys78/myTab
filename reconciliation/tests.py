@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import SimpleTestCase
 
 from reconciliation.draft_notifications import build_closure_incasso_summary
-from reconciliation.telegram_fondo_cassa import parse_fondo_command
+from reconciliation.telegram_fondo_cassa import parse_fondo_command, parse_preleva_destinazione
 from reconciliation.views import _calc_closure_differenza, _reconcile_totale_cassa
 
 
@@ -101,6 +101,11 @@ class TelegramFondoCommandTests(SimpleTestCase):
 
     def test_parse_unknown_returns_none(self):
         self.assertIsNone(parse_fondo_command('Versati 100'))
+
+    def test_parse_preleva_destinazione(self):
+        self.assertEqual(parse_preleva_destinazione('personale'), 'personale')
+        self.assertEqual(parse_preleva_destinazione('contanti in cassa'), 'cassa')
+        self.assertIsNone(parse_preleva_destinazione('altro'))
 
 
 class ClosureIncassoSummaryTests(SimpleTestCase):

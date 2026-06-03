@@ -21,7 +21,19 @@ FONDO_SALDO_QUERY_RE = re.compile(r'(?i)^(?:saldo\s+)?fondo(?:\s+cassa)?\s*$')
 
 FONDO_AGGIUNGI_CASSA_NOTE = 'Trasferimento a fondo cassa'
 FONDO_ENTRATA_DESC = 'Trasferimento da contanti'
-FONDO_USCITA_DESC = 'Prelievo da fondo cassa'
+FONDO_USCITA_PERSONALE_DESC = 'Prelievo personale'
+FONDO_VERSO_CASSA_DESC = 'Trasferimento a contanti in cassa'
+FONDO_CASSA_ENTRATA_DESC = 'Trasferimento da fondo cassa'
+
+PRELEVA_DEST_PERSONALE = 'personale'
+PRELEVA_DEST_CASSA = 'cassa'
+
+PRELEVA_PERSONALE_ALIASES = frozenset({
+    'personale', 'prelievo personale', 'privato', '1', 'p',
+})
+PRELEVA_CASSA_ALIASES = frozenset({
+    'cassa', 'contanti', 'contanti in cassa', 'in cassa', '2', 'c',
+})
 
 OPERATOR_HELP_TEXT = (
     'Comandi operatore myTab (Telegram)\n\n'
@@ -44,13 +56,23 @@ OPERATOR_HELP_TEXT = (
     'Preleva dai contanti in cassa e versa sul fondo.\n\n'
     'preleva da fondo importo\n'
     'Esempio: preleva da fondo 50\n'
-    'Decrementa solo il fondo cassa.\n\n'
+    'Poi scegli la destinazione:\n'
+    '• «personale» — prelievo personale (scala solo il fondo)\n'
+    '• «cassa» — sposta l\'importo sui contanti in cassa\n\n'
     '── Saldi ──\n'
     '/saldo oppure «saldo cassa» — contanti in cassa\n'
     '«saldo fondo» — totale fondo cassa\n\n'
     '── Altro ──\n'
     '/aiuto — questo messaggio\n'
     '/annulla — annulla operazione in corso'
+)
+
+PRELEVA_DEST_PROMPT = (
+    'Come destinare l\'importo?\n\n'
+    '• «personale» — prelievo personale (scala solo il fondo cassa)\n'
+    '• «cassa» — sposta l\'importo sui contanti in cassa\n\n'
+    'Rispondi personale oppure cassa.\n'
+    '/annulla per annullare.'
 )
 
 
@@ -97,6 +119,24 @@ def is_fondo_saldo_query(text):
     return bool(FONDO_SALDO_QUERY_RE.match((text or '').strip()))
 
 
+def parse_preleva_destinazione(text):
+    """Ritorna 'personale', 'cassa' oppure None."""
+    normalized = re.sub(r'\s+', ' ', (text or '').strip().lower())
+    if normalized in PRELEVA_PERSONALE_ALIASES:
+        return PRELEVA_DEST_PERSONALE
+    if normalized in PRELEVA_CASSA_ALIASES:
+        return PRELEVA_DEST_CASSA
+    return None
+
+
+def _validate_preleva_importo(company, importo_dec):
+    fondo_attuale = _get_fondo_cassa(company)
+    if importo_dec > fondo_attuale:
+        raise ValueError(
+            f'Fondo cassa insufficiente ({_money_text(fondo_attuale)} disponibili).'
+        )
+
+
 def save_aggiungi_fondo_from_telegram(company, operator, importo, movimento_date, *, source='Telegram'):
     if not company:
         raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
@@ -140,7 +180,7 @@ def save_aggiungi_fondo_from_telegram(company, operator, importo, movimento_date
     }
 
 
-def save_preleva_fondo_from_telegram(company, operator, importo, movimento_date, *, source='Telegram'):
+def save_preleva_fondo_personale(company, operator, importo, movimento_date, *, source='Telegram'):
     if not company:
         raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
 
@@ -148,11 +188,7 @@ def save_preleva_fondo_from_telegram(company, operator, importo, movimento_date,
     if importo_dec <= 0:
         raise ValueError('Importo deve essere maggiore di zero')
 
-    fondo_attuale = _get_fondo_cassa(company)
-    if importo_dec > fondo_attuale:
-        raise ValueError(
-            f'Fondo cassa insufficiente ({_money_text(fondo_attuale)} disponibili).'
-        )
+    _validate_preleva_importo(company, importo_dec)
 
     operator_label = (operator or source or 'Telegram')[:100]
     fondo = FondoCassaMovimento.objects.create(
@@ -160,10 +196,58 @@ def save_preleva_fondo_from_telegram(company, operator, importo, movimento_date,
         date=movimento_date,
         tipo=FondoCassaMovimento.TIPO_USCITA,
         importo=_money(importo_dec),
-        descrizione=f'{FONDO_USCITA_DESC} ({source}) — {operator_label}',
+        descrizione=f'{FONDO_USCITA_PERSONALE_DESC} ({source}) — {operator_label}',
     )
     return {
         'fondo': fondo,
+        'destinazione': PRELEVA_DEST_PERSONALE,
         'saldo_cassa': float(_get_saldo_cassa(company)),
         'fondo_cassa': float(_get_fondo_cassa(company)),
     }
+
+
+def save_preleva_fondo_to_cassa(company, operator, importo, movimento_date, *, source='Telegram'):
+    if not company:
+        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
+
+    importo_dec = Decimal(str(importo)).quantize(Decimal('0.01'))
+    if importo_dec <= 0:
+        raise ValueError('Importo deve essere maggiore di zero')
+
+    _validate_preleva_importo(company, importo_dec)
+
+    operator_label = (operator or source or 'Telegram')[:100]
+    with transaction.atomic():
+        saldo_prec = _get_saldo_cassa(company)
+        fondo = FondoCassaMovimento.objects.create(
+            company=company,
+            date=movimento_date,
+            tipo=FondoCassaMovimento.TIPO_USCITA,
+            importo=_money(importo_dec),
+            descrizione=f'{FONDO_VERSO_CASSA_DESC} ({source})',
+        )
+        movimento = MovimentoCassa.objects.create(
+            company=company,
+            date=movimento_date,
+            operator=operator_label,
+            tipo=MovimentoCassa.TIPO_ENTRATA,
+            importo=_money(importo_dec),
+            saldo_precedente=saldo_prec,
+            note=FONDO_CASSA_ENTRATA_DESC,
+            ricorda_promemoria=False,
+        )
+
+    return {
+        'fondo': fondo,
+        'movimento': movimento,
+        'destinazione': PRELEVA_DEST_CASSA,
+        'saldo_cassa': float(_get_saldo_cassa(company)),
+        'fondo_cassa': float(_get_fondo_cassa(company)),
+    }
+
+
+def save_preleva_fondo_from_telegram(company, operator, importo, movimento_date, *, source='Telegram'):
+    """Retrocompatibilità: prelievo personale."""
+    return save_preleva_fondo_personale(
+        company, operator, importo, movimento_date, source=source,
+    )
