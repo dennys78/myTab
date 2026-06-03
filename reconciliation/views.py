@@ -2397,10 +2397,9 @@ def _get_movimenti_cassa_net(company):
 
 def _get_saldo_cassa_base(company):
     from django.db.models import Sum
-    tc   = CashClosure.objects.filter(company=company).aggregate(s=Sum('totale_cassetto'))['s'] or 0
-    diff = CashClosure.objects.filter(company=company).aggregate(s=Sum('differenza'))['s'] or 0
+    tc = CashClosure.objects.filter(company=company).aggregate(s=Sum('totale_cassetto'))['s'] or 0
     vers = Versamento.objects.filter(company=company).aggregate(s=Sum('importo_versato'))['s'] or 0
-    return _money(tc) + _money(diff) - _money(vers) + _get_movimenti_cassa_net(company)
+    return _money(tc) - _money(vers) + _get_movimenti_cassa_net(company)
 
 
 def _get_saldo_cassa(company):

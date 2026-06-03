@@ -43,7 +43,7 @@ export function calcDifferenza(summary, items, withReports) {
   return withReports ? calcDifferenzaReparti(summary, items) : calcDifferenzaCassetto(summary);
 }
 
-/** Contributo di una chiusura al saldo cassa (totale_cassetto + differenza). */
+/** Contributo di una chiusura al saldo cassa (solo totale_cassetto). */
 export function closureCashImpact(summary) {
-  return roundMoney((Number(summary?.totale_cassetto) || 0) + (Number(summary?.differenza) || 0));
+  return roundMoney(Number(summary?.totale_cassetto) || 0);
 }

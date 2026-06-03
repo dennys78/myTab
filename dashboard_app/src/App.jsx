@@ -171,7 +171,7 @@ function AppShell() {
   const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
   const hasPromemoriaVersamenti = versamenti.some(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1);
   const hasPromemoriaMovimenti = movimentiCassa.some(m => m.ricorda_promemoria === true || m.ricorda_promemoria === 1);
-  const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0) + (c.summary.differenza || 0), 0) - totaleVersato;
+  const totalContantiCalcolato = closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0), 0) - totaleVersato;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
   const isSameOrAfter = (date, start) => date.getTime() >= start.getTime();
