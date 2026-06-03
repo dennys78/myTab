@@ -8,6 +8,12 @@ export const calcItemSaldo = (item) =>
 export const calcSaldoReparti = (items) =>
   roundMoney((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0));
 
+export const calcTotalsReparti = (items) => ({
+  entrate: roundMoney((items || []).reduce((sum, item) => sum + (Number(item.entrate) || 0), 0)),
+  uscite: roundMoney((items || []).reduce((sum, item) => sum + Math.abs(Number(item.uscite) || 0), 0)),
+  saldo: calcSaldoReparti(items),
+});
+
 /** Chiusure 5/6 file: totale_cassetto=0 e differenza coerente con i reparti. */
 export function inferWithReports(summary, items) {
   const totaleCassetto = Number(summary?.totale_cassetto) || 0;

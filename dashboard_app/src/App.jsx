@@ -25,6 +25,7 @@ import { useLandscapeOnMobile } from './useLandscapeOnMobile';
 import {
   calcDifferenza,
   calcItemSaldo,
+  calcTotalsReparti,
   inferWithReports,
   roundMoney,
 } from './closureCalc';
@@ -257,6 +258,7 @@ function AppShell() {
           ...item,
           [field]: field === 'descrizione' ? value.toUpperCase() : (parseFloat(value) || 0),
         };
+        if (field === 'uscite') next.uscite = Math.abs(next.uscite);
         if (field === 'entrate' || field === 'uscite') {
           next.saldo = calcItemSaldo(next);
         }
@@ -294,7 +296,11 @@ function AppShell() {
     const body = {
       ...summary,
       with_reports: !!editFormData.with_reports,
-      items: editFormData.items,
+      items: editFormData.items.map(item => ({
+        ...item,
+        uscite: Math.abs(Number(item.uscite) || 0),
+        saldo: calcItemSaldo(item),
+      })),
       deleted_item_ids: editFormData.deleted_item_ids || [],
     };
     setSaving(true);
@@ -783,14 +789,38 @@ function AppShell() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {closure.items.length > 0 ? closure.items.map(item => {
-                                        const editItem = editingId === closure.id ? editFormData.items.find(i => i.id === item.id) : item;
+                                      {(() => {
+                                        const editItems = editingId === closure.id ? (editFormData.items || []) : closure.items;
+                                        const repartiTotals = editingId === closure.id
+                                          ? calcTotalsReparti(editItems)
+                                          : calcTotalsReparti(closure.items);
+                                        const rows = editingId === closure.id ? editItems : closure.items;
+                                        return (
+                                          <>
+                                      {rows.length > 0 ? rows.map(item => {
+                                        const editItem = editingId === closure.id ? item : item;
+                                        const displayItem = editingId === closure.id ? editItem : item;
+                                        const rowSaldo = editingId === closure.id ? calcItemSaldo(displayItem) : displayItem.saldo;
                                         return (
                                           <tr key={item.id} style={{ cursor: 'default' }}>
-                                            <td>{editingId === closure.id ? <input type="text" value={editItem?.descrizione || ''} onChange={(e) => handleItemInputChange(item.id, 'descrizione', e.target.value)} style={{ width: '100%', minWidth: '120px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : item.descrizione}</td>
-                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.entrate === 0 ? '' : editItem?.entrate} onChange={(e) => handleItemInputChange(item.id, 'entrate', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.entrate > 0 ? 'var(--success)' : 'inherit' }}>€ {item.entrate.toFixed(2)}</span>}</td>
-                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.uscite === 0 ? '' : editItem?.uscite} onChange={(e) => handleItemInputChange(item.id, 'uscite', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.uscite > 0 ? 'var(--danger)' : 'inherit' }}>€ {item.uscite.toFixed(2)}</span>}</td>
-                                            <td>{editingId === closure.id ? <input type="number" value={editItem?.saldo === 0 ? '' : editItem?.saldo} onChange={(e) => handleItemInputChange(item.id, 'saldo', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span>€ {item.saldo.toFixed(2)}</span>}</td>
+                                            <td>{editingId === closure.id ? <input type="text" value={displayItem?.descrizione || ''} onChange={(e) => handleItemInputChange(item.id, 'descrizione', e.target.value)} style={{ width: '100%', minWidth: '120px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : item.descrizione}</td>
+                                            <td>{editingId === closure.id ? <input type="number" value={displayItem?.entrate === 0 ? '' : displayItem?.entrate} onChange={(e) => handleItemInputChange(item.id, 'entrate', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.entrate > 0 ? 'var(--success)' : 'inherit' }}>€ {item.entrate.toFixed(2)}</span>}</td>
+                                            <td>{editingId === closure.id ? <input type="number" value={displayItem?.uscite === 0 ? '' : displayItem?.uscite} onChange={(e) => handleItemInputChange(item.id, 'uscite', e.target.value)} style={{ width: '80px', padding: '0.25rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-main)', borderRadius: '4px' }} /> : <span style={{ color: item.uscite > 0 ? 'var(--danger)' : 'inherit' }}>€ {item.uscite.toFixed(2)}</span>}</td>
+                                            <td>
+                                              {editingId === closure.id ? (
+                                                <span style={{
+                                                  display: 'inline-block',
+                                                  minWidth: '80px',
+                                                  padding: '0.25rem 0.5rem',
+                                                  fontWeight: 600,
+                                                  color: rowSaldo > 0 ? 'var(--success)' : rowSaldo < 0 ? 'var(--danger)' : 'var(--text-muted)',
+                                                }}>
+                                                  {rowSaldo.toFixed(2)}
+                                                </span>
+                                              ) : (
+                                                <span>€ {item.saldo.toFixed(2)}</span>
+                                              )}
+                                            </td>
                                             {editingId === closure.id && (
                                               <td>
                                                 <button
@@ -807,6 +837,30 @@ function AppShell() {
                                       }) : (
                                         <tr><td colSpan={editingId === closure.id ? 5 : 4} style={{ textAlign: 'center' }}>Nessuna voce trovata</td></tr>
                                       )}
+                                      {rows.length > 0 && editingId === closure.id && (
+                                        <tr className="acq-total-row">
+                                          <td>Totale</td>
+                                          <td>
+                                            <span className={repartiTotals.entrate > 0 ? 'success' : ''}>
+                                              {repartiTotals.entrate.toFixed(2)}
+                                            </span>
+                                          </td>
+                                          <td>
+                                            <span className={repartiTotals.uscite > 0 ? 'danger' : ''}>
+                                              {repartiTotals.uscite.toFixed(2)}
+                                            </span>
+                                          </td>
+                                          <td>
+                                            <span className={repartiTotals.saldo > 0 ? 'success' : repartiTotals.saldo < 0 ? 'danger' : ''}>
+                                              {repartiTotals.saldo.toFixed(2)}
+                                            </span>
+                                          </td>
+                                          <td></td>
+                                        </tr>
+                                      )}
+                                          </>
+                                        );
+                                      })()}
                                     </tbody>
                                   </table>
                                 </div>
