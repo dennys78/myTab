@@ -103,23 +103,21 @@ def users_with_acquisisci_access(company):
 
 
 def users_with_company_push_access(company):
-    if not company:
-        return []
-    eligible = []
-    for user in User.objects.filter(is_active=True):
-        if is_admin_user(user):
-            if user_companies(user).filter(id=company.id).exists():
-                eligible.append(user)
-        else:
-            assigned = get_user_assigned_company(user)
-            if assigned and assigned.id == company.id:
-                eligible.append(user)
-    return eligible
+    from .user_notifications import company_users_for_company
+    return company_users_for_company(company)
 
 
 def push_subscriptions_for_company(company, user_ids=None):
+    from .user_notifications import company_users_with_notifications, user_receives_notifications
     if user_ids is None:
-        user_ids = [u.id for u in users_with_company_push_access(company)]
+        user_ids = [u.id for u in company_users_with_notifications(company)]
+    else:
+        filtered = []
+        for uid in user_ids:
+            user = User.objects.filter(id=uid).select_related('profile').first()
+            if user and user_receives_notifications(user):
+                filtered.append(uid)
+        user_ids = filtered
     if not user_ids:
         return PushSubscription.objects.none()
     return PushSubscription.objects.filter(user_id__in=user_ids).select_related('user')
@@ -151,13 +149,8 @@ def _get_telegram_token(company):
 
 
 def _get_telegram_chat_ids(company):
-    chat_ids = set()
-    try:
-        raw = AppSetting.objects.get(company=company, key='telegram_chat_ids').value
-        chat_ids.update(str(chat_id) for chat_id in json.loads(raw))
-    except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
-        pass
-    return sorted(chat_id for chat_id in chat_ids if chat_id.strip())
+    from .user_notifications import telegram_chat_ids_for_company
+    return telegram_chat_ids_for_company(company)
 
 
 def _send_telegram_message(token, chat_id, text):
@@ -297,9 +290,12 @@ def send_test_push(company):
 
 
 def send_web_push_for_draft(draft, user_ids=None, *, reminder=False):
+    from .user_notifications import filter_users_with_notifications
+
     payload = _push_payload_for_draft(draft, reminder=reminder)
     if user_ids is None:
-        user_ids = [u.id for u in users_with_acquisisci_access(draft.company)]
+        users = filter_users_with_notifications(users_with_acquisisci_access(draft.company))
+        user_ids = [u.id for u in users]
     qs = push_subscriptions_for_company(draft.company, user_ids=user_ids)
 
     sent = 0

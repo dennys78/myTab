@@ -187,6 +187,12 @@ async def _prepare_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id if update.effective_chat else None
     if chat_id is not None and company:
         await sync_to_async(_remember_chat_sync)(company, chat_id)
+        telegram_user = update.effective_user
+        if telegram_user and telegram_user.username:
+            from reconciliation.user_notifications import link_telegram_chat_to_user
+            await sync_to_async(link_telegram_chat_to_user)(
+                company, chat_id, telegram_user.username,
+            )
 
     reset_marker = await sync_to_async(_get_reset_marker_sync)(company)
     seen_marker = context.user_data.get('telegram_reset_seen')

@@ -40,6 +40,11 @@ class UserProfile(models.Model):
         default='',
         verbose_name='Modello IA acquisizione (preferenza operatore)',
     )
+    receive_notifications = models.BooleanField(
+        default=True,
+        verbose_name='Ricevi notifiche push e Telegram',
+    )
+    telegram_chat_id = models.CharField(max_length=64, blank=True, verbose_name='Chat Telegram collegata')
 
     class Meta:
         verbose_name = 'Profilo utente'

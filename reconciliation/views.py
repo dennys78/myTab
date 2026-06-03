@@ -102,12 +102,23 @@ def _set_user_sidebar_menu(user, menu_ids):
     return normalized
 
 
+def _user_receives_notifications(user):
+    from .user_notifications import user_receives_notifications
+    return user_receives_notifications(user)
+
+
+def _set_user_receive_notifications(user, enabled):
+    from .user_notifications import set_user_receive_notifications
+    return set_user_receive_notifications(user, enabled)
+
+
 def _user_info(user, request=None):
     info = {
         'id': user.id,
         'username': user.username,
         'role': 'amministratore' if _is_admin(user) else 'utente',
         'sidebar_menu': _get_user_sidebar_menu(user),
+        'receive_notifications': _user_receives_notifications(user),
     }
     assigned = get_user_assigned_company(user)
     info['assigned_company'] = serialize_company(assigned)
@@ -218,6 +229,8 @@ def api_user_create(request):
             _set_user_sidebar_menu(user, data.get('sidebar_menu'))
         else:
             _set_user_sidebar_menu(user, default_sidebar_menu(user.is_staff))
+        if 'receive_notifications' in data:
+            _set_user_receive_notifications(user, bool(data.get('receive_notifications')))
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
@@ -291,6 +304,8 @@ def api_user_update(request, user_id):
             _set_user_sidebar_menu(user, data.get('sidebar_menu'))
         elif was_admin != user.is_staff:
             _set_user_sidebar_menu(user, default_sidebar_menu(user.is_staff))
+        if 'receive_notifications' in data:
+            _set_user_receive_notifications(user, bool(data.get('receive_notifications')))
         if user.id == request.user.id and password:
             update_session_auth_hash(request, user)
         return JsonResponse({'status': 'success', 'data': _user_info(user, request)})
@@ -1084,18 +1099,8 @@ def _set_setting_money(key, value, company):
 
 
 def _get_telegram_chat_ids(company):
-    chat_ids = set(
-        AcquisitionDraft.objects
-        .filter(company=company)
-        .exclude(telegram_chat_id='')
-        .values_list('telegram_chat_id', flat=True)
-    )
-    try:
-        raw = AppSetting.objects.get(company=company, key='telegram_chat_ids').value
-        chat_ids.update(str(chat_id) for chat_id in json.loads(raw))
-    except (AppSetting.DoesNotExist, json.JSONDecodeError, TypeError):
-        pass
-    return sorted(str(chat_id) for chat_id in chat_ids if str(chat_id).strip())
+    from .user_notifications import telegram_chat_ids_for_company
+    return telegram_chat_ids_for_company(company)
 
 
 def _send_telegram_message(token, chat_id, text):

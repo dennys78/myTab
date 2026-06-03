@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Loader2, Shield, User, Building2, Save, X, Menu,
+  Plus, Trash2, Pencil, Loader2, Shield, User, Building2, Save, X, Menu, Bell,
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   role: 'utente',
   companyId: '',
   sidebarMenu: [],
+  receiveNotifications: true,
 };
 
 export default function GestioneUtenti() {
@@ -109,6 +110,7 @@ export default function GestioneUtenti() {
         ? String(selectedUser.assigned_company.id)
         : (companies[0]?.id ? String(companies[0].id) : ''),
       sidebarMenu: selectedUser.sidebar_menu || getDefaultSidebarMenu(selectedUser.role),
+      receiveNotifications: selectedUser.receive_notifications !== false,
     });
     setFormError(null);
   };
@@ -161,6 +163,7 @@ export default function GestioneUtenti() {
       password: form.password,
       role: form.role,
       sidebar_menu: form.sidebarMenu,
+      receive_notifications: !!form.receiveNotifications,
     };
     if (form.role === 'utente') payload.company_id = Number(form.companyId);
 
@@ -343,6 +346,37 @@ export default function GestioneUtenti() {
                 </div>
               </div>
 
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.55rem',
+                  padding: '0.75rem 0.85rem',
+                  borderRadius: '8px',
+                  border: `1px solid ${form.receiveNotifications ? 'rgba(79,141,247,0.35)' : 'var(--border)'}`,
+                  background: form.receiveNotifications ? 'rgba(79,141,247,0.08)' : 'var(--bg-dark)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  color: 'var(--text-main)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!form.receiveNotifications}
+                  onChange={e => setForm(f => ({ ...f, receiveNotifications: e.target.checked }))}
+                  style={{ marginTop: '0.15rem', accentColor: 'var(--accent)' }}
+                />
+                <span>
+                  <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Bell size={14} color="var(--accent)" />
+                    Notifiche Telegram e browser
+                  </strong>
+                  <span style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                    Se disattivata, l&apos;operatore non riceve push Android/iPhone né messaggi Telegram da myTab.
+                  </span>
+                </span>
+              </label>
+
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                 <button type="submit" disabled={saving} style={{ ...btn(true), border: 'none' }}>
                   {saving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
@@ -459,6 +493,13 @@ export default function GestioneUtenti() {
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         <Building2 size={12} /> {companyLabel(u)}
+                      </span>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', fontWeight: 600,
+                        color: u.receive_notifications !== false ? '#22c55e' : 'var(--text-muted)',
+                      }}>
+                        <Bell size={11} />
+                        {u.receive_notifications !== false ? 'Notifiche attive' : 'Notifiche disattivate'}
                       </span>
                     </div>
                   </button>
