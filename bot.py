@@ -30,7 +30,14 @@ from reconciliation.telegram_movimenti import (
     save_movimento_from_telegram,
     message_local_date,
 )
-from reconciliation.views import _get_saldo_cassa, _money
+from reconciliation.telegram_fondo_cassa import (
+    OPERATOR_HELP_TEXT,
+    is_fondo_saldo_query,
+    parse_fondo_command,
+    save_aggiungi_fondo_from_telegram,
+    save_preleva_fondo_from_telegram,
+)
+from reconciliation.views import _get_fondo_cassa, _get_saldo_cassa, _money
 
 STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
@@ -237,6 +244,12 @@ def _saldo_cassa_sync(company):
     return float(_get_saldo_cassa(company))
 
 
+def _fondo_cassa_sync(company):
+    if not company:
+        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
+    return float(_get_fondo_cassa(company))
+
+
 def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
     if not company:
         raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
@@ -299,6 +312,56 @@ async def _try_register_movimento_entrata(update, context, text):
     return True
 
 
+async def _try_register_fondo_command(update, context, text):
+    try:
+        parsed = parse_fondo_command(text)
+    except ValueError as exc:
+        await update.message.reply_text(str(exc))
+        return True
+
+    if not parsed:
+        return False
+
+    kind, importo = parsed
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
+    movimento_date = await sync_to_async(message_local_date)(update)
+
+    try:
+        if kind == 'aggiungi':
+            result = await sync_to_async(save_aggiungi_fondo_from_telegram)(
+                company, operator, importo, movimento_date,
+            )
+            await update.message.reply_text(
+                'Trasferimento registrato in myTab.\n\n'
+                f'Importo: {_money_text(importo)}\n'
+                f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
+                f'Operatore: {operator}\n\n'
+                'Contanti prelevati dalla cassa e versati sul fondo.'
+            )
+        else:
+            result = await sync_to_async(save_preleva_fondo_from_telegram)(
+                company, operator, importo, movimento_date,
+            )
+            await update.message.reply_text(
+                'Prelievo fondo registrato in myTab.\n\n'
+                f'Importo: {_money_text(importo)}\n'
+                f'Data: {movimento_date.strftime("%d/%m/%Y")}\n'
+                f'Operatore: {operator}\n\n'
+                'Decremento solo sul fondo cassa.'
+            )
+    except Exception as exc:
+        await update.message.reply_text(f'Operazione non registrata: {exc}')
+        return True
+
+    await update.message.reply_text(
+        f"Saldo contanti in cassa: {_money_text(result['saldo_cassa'])}\n"
+        f"Saldo fondo cassa: {_money_text(result['fondo_cassa'])}"
+    )
+    return True
+
+
 async def _watch_restart_requests(app):
     company = app.bot_data.get('company')
     initial_token = app.bot_data.get('telegram_token')
@@ -331,15 +394,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _reset(context)
     await update.message.reply_text(
         "Bot myTab pronto.\n\n"
-        "Chiusura cassa: invia una o più foto, poi totale POS e importo scassettato.\n\n"
-        "Versamento: scrivi ad esempio\n"
-        "Versati 2343,20\n"
-        "e segui le istruzioni per la data.\n\n"
-        "Movimento entrata: scrivi ad esempio\n"
-        "Distributore 505\n"
-        "(descrizione + importo, data del messaggio).\n\n"
-        "Saldo cassa: comando /saldo oppure scrivi «saldo cassa»."
+        "Scrivi /aiuto per l'elenco completo dei comandi operatore.\n\n"
+        "In sintesi:\n"
+        "• Chiusura cassa: foto → POS → scassettato\n"
+        "• Versati importo — versamento in banca\n"
+        "• Descrizione importo — entrata in cassa\n"
+        "• aggiungi a fondo importo — cassa → fondo\n"
+        "• preleva da fondo importo — prelievo fondo\n"
+        "• /saldo o «saldo cassa» — contanti in cassa\n"
+        "• «saldo fondo» — totale fondo cassa"
     )
+
+
+async def aiuto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _prepare_context(update, context)
+    await update.message.reply_text(OPERATOR_HELP_TEXT)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -356,10 +425,14 @@ async def saldo_cassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     company = context.application.bot_data.get('company')
     try:
         saldo = await sync_to_async(_saldo_cassa_sync)(company)
+        fondo = await sync_to_async(_fondo_cassa_sync)(company)
     except Exception as exc:
-        await update.message.reply_text(f"Impossibile leggere il saldo cassa: {exc}")
+        await update.message.reply_text(f"Impossibile leggere i saldi: {exc}")
         return
-    await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo)}")
+    await update.message.reply_text(
+        f"Saldo contanti in cassa: {_money_text(saldo)}\n"
+        f"Saldo fondo cassa: {_money_text(fondo)}"
+    )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,6 +528,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (update.message.text or '').strip()
 
+    if is_fondo_saldo_query(text):
+        company = context.application.bot_data.get('company')
+        try:
+            fondo = await sync_to_async(_fondo_cassa_sync)(company)
+        except Exception as exc:
+            await update.message.reply_text(f"Impossibile leggere il fondo cassa: {exc}")
+            return
+        await update.message.reply_text(f"Saldo fondo cassa: {_money_text(fondo)}")
+        return
+
     if SALDO_QUERY_RE.match(text):
         company = context.application.bot_data.get('company')
         try:
@@ -462,7 +545,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as exc:
             await update.message.reply_text(f"Impossibile leggere il saldo cassa: {exc}")
             return
-        await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo)}")
+        await update.message.reply_text(f"Saldo contanti in cassa: {_money_text(saldo)}")
         return
 
     if _versamento_session(context):
@@ -475,6 +558,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         await _complete_versamento(update, context, versamento_date)
+        return
+
+    if await _try_register_fondo_command(update, context, text):
         return
 
     if await _try_register_movimento_entrata(update, context, text):
@@ -561,6 +647,8 @@ def run_bot():
         app.bot_data['company'] = company
         app.bot_data['restart_marker'] = _get_restart_marker_sync(company)
         app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("aiuto", aiuto))
+        app.add_handler(CommandHandler("help", aiuto))
         app.add_handler(CommandHandler("annulla", cancel))
         app.add_handler(CommandHandler("saldo", saldo_cassa))
         app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

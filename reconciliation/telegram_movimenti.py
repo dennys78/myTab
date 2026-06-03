@@ -82,6 +82,10 @@ def parse_movimento_entrata_message(text):
         return None
     if re.match(r'(?i)^versat[oi]\s', raw):
         return None
+    if re.match(r'(?i)^aggiungi\s+a\s+fondo\s', raw):
+        return None
+    if re.match(r'(?i)^preleva\s+da\s+fondo\s', raw):
+        return None
 
     match = MOVIMENTO_LINE_RE.match(raw)
     if not match:
