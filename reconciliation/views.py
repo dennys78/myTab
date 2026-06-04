@@ -53,7 +53,7 @@ from .company_scope import (
 )
 from .ocr_parser import parse_closure_receipt
 import pytesseract
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
 
 
 MONEY_ZERO = Decimal('0.00')
@@ -415,6 +415,34 @@ def _preprocess(img):
     img = ImageEnhance.Contrast(img).enhance(2.0)
     img = ImageEnhance.Sharpness(img).enhance(2.0)
     return img
+
+
+def _prepare_ai_image(file_bytes):
+    """
+    Normalizza foto (HEIC/JPEG/PNG) in JPEG per le API vision.
+    Evita errori post-decodifica quando le foto arrivano dalla fotocamera del telefono.
+    """
+    if not file_bytes:
+        raise ValueError('File immagine vuoto.')
+    try:
+        img = Image.open(io.BytesIO(file_bytes))
+        img = ImageOps.exif_transpose(img)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        buf = io.BytesIO()
+        max_side = 2400
+        if max(img.size) > max_side:
+            img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        img.save(buf, format='JPEG', quality=90, optimize=True)
+        normalized = buf.getvalue()
+        if not normalized:
+            raise ValueError('conversione JPEG fallita')
+        b64 = base64.standard_b64encode(normalized).decode('utf-8')
+        return 'image/jpeg', b64, normalized
+    except Exception as exc:
+        raise ValueError(
+            f'Immagine non leggibile ({exc}). Riprova scattando di nuovo o importa JPG/PNG dalla galleria.'
+        ) from exc
 
 
 def _resolve_dept(name: str, known: list) -> str | None:
@@ -1758,6 +1786,12 @@ def _parse_ai_closure_payload(
     differenza, cassetto = _calc_closure_differenza(
         totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, totale_scassettato,
     )
+    if not with_reports and totale_scassettato is None:
+        from_summary = summary.get('totale_cassetto', summary.get('totale_scassettato'))
+        if from_summary not in (None, '') and _money(from_summary) > 0:
+            cassetto = _money(from_summary)
+            atteso = totale - pag_pos - distrib - reso_auto - reso_cont
+            differenza = _money(cassetto - atteso)
 
     data = {
         'date': parsed.get('date', ''),
@@ -2035,13 +2069,15 @@ def api_extract_closure_ai(request):
         draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
         for file_key in _sort_upload_file_keys(request.FILES.keys()):
             f = request.FILES[file_key]
-            mime = f.content_type or 'image/jpeg'
             file_bytes = f.read()
+            try:
+                mime, b64, normalized_bytes = _prepare_ai_image(file_bytes)
+            except ValueError as exc:
+                return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
             AcquisitionDraftImage.objects.create(
                 draft=draft,
-                image=ContentFile(file_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}_{f.name}'),
+                image=ContentFile(normalized_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}.jpg'),
             )
-            b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             images.append({'mime': mime, 'b64': b64})
 
         provider = _resolve_ai_provider(request.user, company)
@@ -2369,13 +2405,17 @@ def api_acquisition_draft_extract(request, draft_id):
         for draft_image in draft.images.order_by('id'):
             try:
                 with draft_image.image.open('rb') as img:
-                    b64 = base64.standard_b64encode(img.read()).decode('utf-8')
+                    raw = img.read()
             except FileNotFoundError:
                 return JsonResponse({
                     'status': 'error',
                     'error': 'Le foto di questa bozza non sono più disponibili sul server. Aggiorna myTab e fai reinviare le foto all’operatore.',
                 }, status=400)
-            images.append({'mime': 'image/jpeg', 'b64': b64})
+            try:
+                mime, b64, _ = _prepare_ai_image(raw)
+            except ValueError as exc:
+                return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
+            images.append({'mime': mime, 'b64': b64})
         if not images:
             return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
 

@@ -1,6 +1,6 @@
 /** Fasi stimate durante upload + estrazione IA (allineate al backend). */
 
-export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false } = {}) {
+export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, twoFileMode = false } = {}) {
   const n = Math.max(1, Number(imageCount) || 1);
   const steps = [];
 
@@ -25,8 +25,10 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false }
     });
   }
 
-  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: 28 });
-  steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 14 });
+  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : 28 });
+  if (!twoFileMode) {
+    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 14 });
+  }
   steps.push({ phase: 'finalize', label: 'Finalizzazione…', weight: 6 });
   return steps;
 }
@@ -179,10 +181,14 @@ export function postExtractAiWithProgress(formData, { onUploadProgress, signal }
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(data);
-      } else {
+        if (data.status === 'success' || data.data) {
+          resolve(data);
+          return;
+        }
         reject(new Error(data.error || data.message || 'Errore estrazione.'));
+        return;
       }
+      reject(new Error(data.error || data.message || 'Errore estrazione.'));
     };
 
     xhr.onerror = () => reject(new Error('Errore di rete.'));

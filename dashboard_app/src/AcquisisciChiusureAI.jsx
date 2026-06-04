@@ -4,6 +4,7 @@ import { apiFetch } from './api';
 import { useAuth } from './auth';
 import {
   ACQUISITION_MODE_FIVE,
+  ACQUISITION_MODE_TWO,
   isValidFiveModeFileCount,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
@@ -148,7 +149,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return;
     }
     const imageCount = filesRef.current.length;
-    const controller = createAcquisitionProgressController(imageCount, setExtractProgress);
+    const controller = createAcquisitionProgressController(imageCount, setExtractProgress, {
+      twoFileMode: acquisitionFileMode === ACQUISITION_MODE_TWO,
+    });
     progressControllerRef.current = controller;
     controller.start();
     setLoading(true);
@@ -161,15 +164,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
       onUploadProgress: (ratio) => controller.setUploadProgress(ratio),
     })
       .then((d) => {
-        if (d.status === 'success') {
-          const enriched = {
-            ...d.data,
-            items: d.data.items.map((item, i) => ({ ...item, id: `t${i}` })),
-          };
-          applyPreviewData(enriched);
-          stopProgress(true);
+        if (d?.status === 'success' && d.data) {
+          try {
+            applyPreviewData(d.data);
+            stopProgress(true);
+          } catch (err) {
+            setError(err?.message || 'Errore elaborazione dati estratti.');
+            stopProgress(false);
+          }
         } else {
-          setError(d.error || 'Errore durante l\'estrazione.');
+          setError(d?.error || d?.message || 'Errore durante l\'estrazione.');
           stopProgress(false);
         }
       })
@@ -185,14 +189,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   const applyPreviewData = (data, { cached = false } = {}) => {
+    const items = Array.isArray(data?.items) ? data.items : [];
     const enriched = {
       ...data,
-      items: data.items.map((item, i) => ({ ...item, id: item.id || `p${i}_${Date.now()}` })),
+      summary: { ...(data?.summary || {}) },
+      items: items.map((item, i) => ({ ...item, id: item.id || `p${i}_${Date.now()}` })),
       extract_cached: cached,
     };
     if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
     setPreviewEditable(!isMobile);
     setPreviewData(enriched);
+    setError(null);
   };
 
   const loadDraft = (draftId, { force = false } = {}) => {
@@ -204,7 +211,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
     const draftMeta = drafts.find((item) => item.id === draftId);
     const imageCount = draftMeta?.photo_count || 1;
-    const progress = createAcquisitionProgressController(imageCount, setExtractProgress, { skipUpload: true });
+    const progress = createAcquisitionProgressController(imageCount, setExtractProgress, {
+      skipUpload: true,
+      twoFileMode: acquisitionFileMode === ACQUISITION_MODE_TWO,
+    });
     progressControllerRef.current = progress;
     progress.start();
 
@@ -221,12 +231,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .then(r => r.json())
       .then(d => {
         if (requestId !== loadDraftRequestIdRef.current) return;
-        if (d.status === 'success') {
-          const enriched = {
-            ...d.data,
-            items: d.data.items.map((item, i) => ({ ...item, id: `d${draftId}_${i}` })),
-          };
-          applyPreviewData(enriched, { cached: !!d.cached });
+        if (d.status === 'success' && d.data) {
+          applyPreviewData(d.data, { cached: !!d.cached });
           stopProgress(true);
         } else {
           setError(d.error || 'Errore durante il caricamento della bozza.');
@@ -411,6 +417,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   });
 
   const fieldsLocked = isMobile && !previewEditable;
+  const summaryEditable = true;
 
   const summaryLabel = (key) => ({
     totale: 'Totale riportato da cassa',
@@ -511,8 +518,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
                   <input type="number" name={key}
                     value={val === 0 ? '' : val}
                     onChange={handleSummaryChange} placeholder="0.00"
-                    readOnly={fieldsLocked}
-                    className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'}
+                    readOnly={!summaryEditable}
+                    className={summaryEditable ? 'acq-edit-input' : 'acq-readonly-input'}
                     style={{ ...numInp(), width: '100%' }} />
                 </div>
               );
@@ -555,8 +562,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
                   value={totaleScassettato === 0 ? '' : totaleScassettato}
                   onChange={handleSummaryChange}
                   placeholder="0.00"
-                  readOnly={fieldsLocked}
-                  className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'}
+                  readOnly={!summaryEditable}
+                  className={summaryEditable ? 'acq-edit-input' : 'acq-readonly-input'}
                   style={{ ...numInp({ width: '100%', fontSize: '1.1rem', fontWeight: 700, borderColor: 'var(--accent)' }) }}
                 />
               </div>
@@ -581,7 +588,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.6rem 0 0' }}>
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
-              : 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Resi)'}
+              : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
           </p>
         </div>
 
