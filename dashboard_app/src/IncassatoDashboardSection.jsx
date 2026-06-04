@@ -22,6 +22,25 @@ const DEFAULT_PERIOD = 'month';
 const CHART_W = 640;
 const CHART_H = 220;
 const PAD = { top: 28, right: 12, bottom: 36, left: 48 };
+const PAD_MOBILE = { top: 32, right: 8, bottom: 42, left: 56 };
+
+function useMobileChartLayout() {
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = (e) => setMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return mobile;
+}
+
+function chartFontSizes(mobile) {
+  if (mobile) {
+    return { axisY: 14, axisX: 12, value: 13, compact: 11 };
+  }
+  return { axisY: 11, axisX: 10, value: 11, compact: 9 };
+}
 
 function formatEuroAxis(n) {
   if (n >= 1000) return `€${(n / 1000).toFixed(1)}k`;
@@ -36,8 +55,11 @@ function formatBarValue(n) {
 }
 
 function IncassatoBarChart({ series, period, highlightIndex }) {
-  const plotW = CHART_W - PAD.left - PAD.right;
-  const plotH = CHART_H - PAD.top - PAD.bottom;
+  const mobile = useMobileChartLayout();
+  const pad = mobile ? PAD_MOBILE : PAD;
+  const fs = chartFontSizes(mobile);
+  const plotW = CHART_W - pad.left - pad.right;
+  const plotH = CHART_H - pad.top - pad.bottom;
 
   const chart = useMemo(() => {
     if (!series.length) return null;
@@ -47,8 +69,8 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
 
     const bars = series.map((p, i) => {
       const h = p.value > 0 ? (p.value / maxVal) * plotH : 0;
-      const x = PAD.left + i * (barW + barGap);
-      const y = PAD.top + plotH - h;
+      const x = pad.left + i * (barW + barGap);
+      const y = pad.top + plotH - h;
       return { ...p, x, y, w: barW, h, i };
     });
 
@@ -72,11 +94,17 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
       aria-label={period === 'year' ? 'Incassato per mese nell anno corrente' : 'Incassato giornaliero nel mese corrente'}
     >
       {yTicks.map((tick) => {
-        const y = PAD.top + plotH - (tick / maxVal) * plotH;
+        const y = pad.top + plotH - (tick / maxVal) * plotH;
         return (
           <g key={tick}>
-            <line x1={PAD.left} y1={y} x2={CHART_W - PAD.right} y2={y} className="incassato-chart-grid" />
-            <text x={PAD.left - 8} y={y + 4} textAnchor="end" className="incassato-chart-axis">
+            <line x1={pad.left} y1={y} x2={CHART_W - pad.right} y2={y} className="incassato-chart-grid" />
+            <text
+              x={pad.left - 8}
+              y={y + 4}
+              textAnchor="end"
+              className="incassato-chart-axis"
+              fontSize={fs.axisY}
+            >
               {formatEuroAxis(tick)}
             </text>
           </g>
@@ -86,13 +114,13 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
         const isHighlight = highlightIndex != null && b.i === highlightIndex;
         const showValue = b.value > 0 && b.w >= 10;
         const label = formatBarValue(b.value);
-        const labelInside = showValue && b.h >= 22;
-        const labelY = labelInside ? b.y + 14 : Math.max(PAD.top + 10, b.y - 6);
+        const labelInside = showValue && b.h >= (mobile ? 26 : 22);
+        const labelY = labelInside ? b.y + (mobile ? 16 : 14) : Math.max(pad.top + 10, b.y - 6);
         const valueClass = [
           'incassato-bar-value',
           isHighlight ? 'incassato-bar-value--highlight' : '',
           labelInside ? 'incassato-bar-value--inside' : '',
-          b.w < 18 ? 'incassato-bar-value--compact' : '',
+          b.w < (mobile ? 22 : 18) ? 'incassato-bar-value--compact' : '',
         ].filter(Boolean).join(' ');
 
         return (
@@ -115,6 +143,7 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
                 y={labelY}
                 textAnchor="middle"
                 className={valueClass}
+                fontSize={b.w < (mobile ? 22 : 18) ? fs.compact : fs.value}
               >
                 {label}
               </text>
@@ -122,9 +151,10 @@ function IncassatoBarChart({ series, period, highlightIndex }) {
             {(series.length <= 12 || b.i % Math.ceil(series.length / 12) === 0 || b.i === series.length - 1) && (
               <text
                 x={b.x + b.w / 2}
-                y={CHART_H - 8}
+                y={CHART_H - (mobile ? 10 : 8)}
                 textAnchor="middle"
                 className="incassato-chart-axis incassato-chart-axis--x"
+                fontSize={fs.axisX}
               >
                 {b.label}
               </text>
