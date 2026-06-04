@@ -11,65 +11,27 @@ import {
 } from './repartiChartUtils';
 import { useAuth } from './auth';
 import { loadUserPreference, loadUserPreferenceJson, saveUserPreference, saveUserPreferenceJson } from './userPreferences';
+import BarColumnChart from './BarColumnChart';
+import { BAR_CHART_H } from './chartBarShared';
 
 const REPARTI_PERIOD_VALUES = REPARTI_CHART_PERIOD_OPTIONS.map((o) => o.value);
 const DEFAULT_REPARTI_PERIOD = 'month';
 const PREF_REPARTI_PERIOD = 'repartiChartPeriod';
 const PREF_REPARTI_DEPTS = 'repartiChartDepts';
 
-const CHART_W = 400;
-const CHART_H = 160;
-const PAD = { top: 12, right: 12, bottom: 28, left: 44 };
-
 function formatShortDate(iso) {
   const d = new Date(`${iso}T12:00:00`);
   return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
 }
 
-function formatEuro(n) {
-  if (n >= 1000) return `€${(n / 1000).toFixed(1)}k`;
-  return `€${Math.round(n)}`;
-}
-
-function MiniLineChart({ title, subtitle, color, series, periodLabel, average }) {
-  const plotW = CHART_W - PAD.left - PAD.right;
-  const plotH = CHART_H - PAD.top - PAD.bottom;
-
-  const chart = useMemo(() => {
-    if (!series.length) {
-      return { path: '', areaPath: '', points: [], yTicks: [0], xLabels: [], minVal: 0, maxVal: 1, range: 1 };
-    }
-
-    const values = series.map((p) => p.value);
-    const maxVal = Math.max(...values, 1);
-    const minVal = Math.min(0, ...values);
-    const range = maxVal - minVal || 1;
-
-    const pts = series.map((p, i) => {
-      const x = PAD.left + (series.length === 1 ? plotW / 2 : (i / (series.length - 1)) * plotW);
-      const y = PAD.top + plotH - ((p.value - minVal) / range) * plotH;
-      return { x, y, ...p };
-    });
-
-    const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-    const area = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)} ${(PAD.top + plotH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(PAD.top + plotH).toFixed(1)} Z`;
-
-    const ticks = [minVal, minVal + range * 0.5, maxVal];
-    const labels = series.length <= 6
-      ? series.map((p) => formatShortDate(p.date))
-      : [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]].map((p) => formatShortDate(p.date));
-
-    return {
-      path: linePath,
-      areaPath: area,
-      points: pts,
-      yTicks: ticks,
-      xLabels: labels,
-      minVal,
-      maxVal,
-      range,
-    };
-  }, [series, plotW, plotH]);
+function MiniBarChart({ title, subtitle, color, series, periodLabel, average }) {
+  const barSeries = useMemo(
+    () => series.map((p) => ({
+      label: formatShortDate(p.date),
+      value: p.value,
+    })),
+    [series],
+  );
 
   if (!series.length) {
     return (
@@ -86,8 +48,6 @@ function MiniLineChart({ title, subtitle, color, series, periodLabel, average })
     );
   }
 
-  const { path, areaPath, points, yTicks, xLabels, minVal, range } = chart;
-
   return (
     <article className="reparti-chart-card">
       <header className="reparti-chart-card__head">
@@ -102,39 +62,15 @@ function MiniLineChart({ title, subtitle, color, series, periodLabel, average })
           </span>
         </div>
       </header>
-      <svg
-        className="reparti-chart-svg"
-        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        role="img"
-        aria-label={`${title}: andamento entrate per giorno`}
-      >
-        {yTicks.map((tick) => {
-          const y = PAD.top + plotH - ((tick - minVal) / range) * plotH;
-          return (
-            <g key={tick}>
-              <line x1={PAD.left} y1={y} x2={CHART_W - PAD.right} y2={y} className="reparti-chart-grid" />
-              <text x={PAD.left - 6} y={y + 4} textAnchor="end" className="reparti-chart-axis">
-                {formatEuro(tick)}
-              </text>
-            </g>
-          );
-        })}
-        <path d={areaPath} fill={color} fillOpacity="0.12" />
-        <path d={path} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        {points.map((p) => (
-          <circle key={p.date} cx={p.x} cy={p.y} r="3.5" fill={color} stroke="var(--bg-card)" strokeWidth="1.5">
-            <title>{`${formatShortDate(p.date)}: € ${p.value.toFixed(2)}`}</title>
-          </circle>
-        ))}
-        {xLabels.map((label, i) => {
-          const x = PAD.left + (xLabels.length === 1 ? plotW / 2 : (i / (xLabels.length - 1)) * plotW);
-          return (
-            <text key={label + i} x={x} y={CHART_H - 6} textAnchor="middle" className="reparti-chart-axis">
-              {label}
-            </text>
-          );
-        })}
-      </svg>
+      <BarColumnChart
+        series={barSeries}
+        chartH={BAR_CHART_H}
+        barColor={color}
+        barMutedOpacity={0.58}
+        ariaLabel={`${title}: entrate per giorno`}
+        svgClassName="bar-column-chart-svg reparti-chart-svg"
+        emptyClassName="reparti-chart-empty"
+      />
     </article>
   );
 }
@@ -309,7 +245,7 @@ export default function RepartiTrendCharts({ closures }) {
       </div>
       {hasDepartments && (
         <div className="reparti-charts-grid">
-          <MiniLineChart
+          <MiniBarChart
             title={label1}
             subtitle="Entrate per giorno"
             color={CHART_SLOT_COLORS[0]}
@@ -317,7 +253,7 @@ export default function RepartiTrendCharts({ closures }) {
             periodLabel={periodLabel}
             average={average1}
           />
-          <MiniLineChart
+          <MiniBarChart
             title={label2}
             subtitle="Entrate per giorno"
             color={CHART_SLOT_COLORS[1]}

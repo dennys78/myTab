@@ -343,17 +343,20 @@ h2 {
   color: var(--text-muted);
 }
 
-.incassato-chart-svg {
+.incassato-chart-svg,
+.bar-column-chart-svg {
   display: block;
   width: 100%;
   height: auto;
 }
 
+.bar-column-chart-grid,
 .incassato-chart-grid {
   stroke: rgba(148, 163, 184, 0.12);
   stroke-width: 1;
 }
 
+.bar-column-chart-axis,
 .incassato-chart-axis {
   fill: var(--text-main);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -362,9 +365,34 @@ h2 {
   letter-spacing: 0.01em;
 }
 
+.bar-column-chart-axis--x,
 .incassato-chart-axis--x {
   fill: var(--text-muted);
   font-weight: 600;
+}
+
+.bar-column-chart-value {
+  font-weight: 700;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  fill: #ecfdf5;
+  stroke: rgba(15, 23, 42, 0.85);
+  stroke-width: 3px;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+
+.bar-column-chart-value--compact {
+  stroke-width: 2.5px;
+}
+
+.bar-column-chart-value--inside {
+  fill: #ffffff;
+  stroke: rgba(15, 23, 42, 0.75);
+}
+
+.bar-column-chart-value--highlight {
+  fill: #ffffff;
 }
 
 .incassato-bar {
@@ -399,7 +427,8 @@ h2 {
   fill: #ffffff;
 }
 
-.incassato-chart-empty {
+.incassato-chart-empty,
+.bar-column-chart-empty {
   padding: 2rem 1rem;
   text-align: center;
   color: var(--text-muted);
@@ -415,6 +444,7 @@ h2 {
     padding: 1rem;
   }
 
+  .bar-column-chart-svg text,
   .incassato-chart-svg text {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   }
@@ -551,15 +581,17 @@ h2 {
   height: auto;
 }
 
-.reparti-chart-grid {
+.reparti-chart-grid,
+.bar-column-chart-grid {
   stroke: rgba(148, 163, 184, 0.12);
   stroke-width: 1;
 }
 
 .reparti-chart-axis {
-  fill: var(--text-muted);
-  font-size: 9px;
-  font-family: Inter, sans-serif;
+  fill: var(--text-main);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .reparti-chart-empty {
