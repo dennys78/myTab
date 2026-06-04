@@ -168,6 +168,7 @@ function AppShell() {
     };
   }, []);
 
+  const totaleVersato = versamenti.reduce((acc, v) => acc + v.importo_versato, 0);
   const hasPromemoriaVersamenti = versamenti.some(v => v.ricorda_promemoria === true || v.ricorda_promemoria === 1);
   const hasPromemoriaMovimenti = movimentiCassa.some(m => m.ricorda_promemoria === true || m.ricorda_promemoria === 1);
   const movimentiCassaNet = movimentiCassa.reduce((acc, m) => {
@@ -175,7 +176,7 @@ function AppShell() {
     return acc + (m.tipo === 'USCITA' ? -imp : imp);
   }, 0);
   const totalContantiCalcolato =
-    closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0), 0) + movimentiCassaNet;
+    closures.reduce((acc, c) => acc + (c.summary.totale_cassetto || 0), 0) - totaleVersato + movimentiCassaNet;
   const totalContanti = saldoCassa ?? totalContantiCalcolato;
 
   const isSameOrAfter = (date, start) => date.getTime() >= start.getTime();

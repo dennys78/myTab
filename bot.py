@@ -564,8 +564,8 @@ async def _complete_versamento(update, context, versamento_date):
         f"Importo: {_money_text(float(versamento.importo_versato))}\n"
         f"Data: {versamento.date.strftime('%d/%m/%Y')}\n"
         f"Operatore: {versamento.operator}\n\n"
-        "Registrato anche come movimento di uscita in cassa.\n"
-        "Lo trovi in Versamenti e in Movimenti cassa."
+        "Uscita da cassa verso banca registrata.\n"
+        "Lo trovi in Versamenti."
     )
     await update.message.reply_text(
         f"Saldo cassa attuale: {_money_text(saldo_dopo)}"
