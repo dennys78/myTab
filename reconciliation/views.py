@@ -2448,8 +2448,8 @@ def _get_movimenti_cassa_net(company):
 def _get_saldo_cassa_base(company):
     from django.db.models import Sum
     tc = CashClosure.objects.filter(company=company).aggregate(s=Sum('totale_cassetto'))['s'] or 0
-    vers = Versamento.objects.filter(company=company).aggregate(s=Sum('importo_versato'))['s'] or 0
-    return _money(tc) - _money(vers) + _get_movimenti_cassa_net(company)
+    # I versamenti in banca sono movimenti cassa in USCITA (vedi versamento_cassa.py).
+    return _money(tc) + _get_movimenti_cassa_net(company)
 
 
 def _get_saldo_cassa(company):
@@ -2499,16 +2499,15 @@ def api_versamenti_create(request):
             return JsonResponse({'status': 'error', 'error': 'Importo deve essere maggiore di zero'})
         if accantonamento < 0 or accantonamento > importo:
             return JsonResponse({'status': 'error', 'error': 'Accantonamento non valido'})
-        saldo_prec = _get_saldo_cassa(company)
         ricorda = bool(data.get('ricorda_promemoria'))
-        v = Versamento.objects.create(
-            company=company,
-            date=parsed_date,
+        from .versamento_cassa import register_versamento
+        v, saldo_prec, _ = register_versamento(
+            company,
             operator=data.get('operator', ''),
             importo_versato=importo,
-            accantonamento=accantonamento,
-            saldo_precedente=saldo_prec,
+            versamento_date=parsed_date,
             note=data.get('note', '').strip(),
+            accantonamento=accantonamento,
             ricorda_promemoria=ricorda,
         )
         if accantonamento > 0:
@@ -2533,8 +2532,10 @@ def api_versamenti_delete(request, vers_id):
         company, err = bind_company(request)
         if err:
             return err
+        from .versamento_cassa import delete_movimento_for_versamento
         versamento = Versamento.objects.get(id=vers_id, company=company)
         FondoCassaMovimento.objects.filter(versamento=versamento).delete()
+        delete_movimento_for_versamento(versamento)
         versamento.delete()
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
@@ -2591,6 +2592,8 @@ def api_versamenti_update(request, vers_id):
         else:
             fondo_qs.delete()
         v.save()
+        from .versamento_cassa import sync_movimento_uscita_for_versamento
+        sync_movimento_uscita_for_versamento(v)
         return JsonResponse({'status': 'success'})
     except Versamento.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Non trovato'}, status=404)

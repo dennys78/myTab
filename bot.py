@@ -22,7 +22,6 @@ from reconciliation.models import (
     AcquisitionDraftImage,
     AppSetting,
     Company,
-    Versamento,
 )
 from reconciliation.draft_notifications import notify_new_acquisition_draft, send_unviewed_draft_reminders
 from reconciliation.telegram_movimenti import (
@@ -263,25 +262,16 @@ def _fondo_cassa_sync(company):
 
 
 def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
-    if not company:
-        raise RuntimeError('Nessuna azienda configurata per il bot Telegram.')
-    importo_dec = Decimal(str(importo)).quantize(Decimal('0.01'))
-    if importo_dec <= 0:
-        raise ValueError('Importo deve essere maggiore di zero')
-
-    saldo_prec = _get_saldo_cassa(company)
-    versamento = Versamento.objects.create(
-        company=company,
-        date=versamento_date,
-        operator=(operator or 'Telegram')[:100],
-        importo_versato=importo_dec,
+    from reconciliation.versamento_cassa import register_versamento
+    return register_versamento(
+        company,
+        operator=operator or 'Telegram',
+        importo_versato=importo,
+        versamento_date=versamento_date,
+        note=note or 'Registrato da Telegram',
         accantonamento=Decimal('0.00'),
-        saldo_precedente=saldo_prec,
-        note=(note or '').strip(),
         ricorda_promemoria=False,
     )
-    saldo_attuale = float(_get_saldo_cassa(company))
-    return versamento, float(saldo_prec), saldo_attuale
 
 
 async def _try_register_movimento_entrata(update, context, text):
@@ -574,7 +564,8 @@ async def _complete_versamento(update, context, versamento_date):
         f"Importo: {_money_text(float(versamento.importo_versato))}\n"
         f"Data: {versamento.date.strftime('%d/%m/%Y')}\n"
         f"Operatore: {versamento.operator}\n\n"
-        "Lo trovi subito nella webapp, sezione Versamenti."
+        "Registrato anche come movimento di uscita in cassa.\n"
+        "Lo trovi in Versamenti e in Movimenti cassa."
     )
     await update.message.reply_text(
         f"Saldo cassa attuale: {_money_text(saldo_dopo)}"
@@ -636,9 +627,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _try_register_fondo_command(update, context, text):
         return
 
-    if await _try_register_movimento_entrata(update, context, text):
-        return
-
     try:
         versamento_importo = _match_versamento_trigger(text)
     except ValueError:
@@ -648,6 +636,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if versamento_importo is not None:
         _start_versamento_session(context, versamento_importo)
         await _ask_versamento_date(update, versamento_importo)
+        return
+
+    if await _try_register_movimento_entrata(update, context, text):
         return
 
     session = context.user_data.setdefault('draft_session', _initial_session())

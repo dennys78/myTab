@@ -80,7 +80,9 @@ def parse_movimento_entrata_message(text):
         return None
     if re.match(r'(?i)^saldo(?:\s+cassa)?\s*$', raw):
         return None
-    if re.match(r'(?i)^versat[oi]\s', raw):
+    if re.match(r'(?i)^versat[oi]\b', raw):
+        return None
+    if re.match(r'(?i)^versament', raw):
         return None
     if re.match(r'(?i)^aggiungi\s+a\s+fondo\s', raw):
         return None

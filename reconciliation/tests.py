@@ -88,6 +88,14 @@ class CalcClosureDifferenzaTests(SimpleTestCase):
         self.assertEqual(tc, Decimal('0.00'))
 
 
+class TelegramMovimentoVersamentoTests(SimpleTestCase):
+    def test_versati_not_parsed_as_entrata(self):
+        from reconciliation.telegram_movimenti import parse_movimento_entrata_message
+        self.assertIsNone(parse_movimento_entrata_message('Versati 100'))
+        self.assertIsNone(parse_movimento_entrata_message('Versato 2343,20'))
+        self.assertIsNone(parse_movimento_entrata_message('Versamento 100'))
+
+
 class TelegramFondoCommandTests(SimpleTestCase):
     def test_parse_aggiungi_fondo(self):
         kind, amount = parse_fondo_command('aggiungi a fondo 200')
