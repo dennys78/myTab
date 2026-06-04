@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown, Mail,
+  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown, Mail, Check,
 } from 'lucide-react';
 import { apiFetch } from './api';
 import { ricevuteCardStyle, ricevuteInputStyle } from './ricevuteStyles';
@@ -61,6 +61,10 @@ export default function RicevuteValoriBollati() {
   const [detailCache, setDetailCache] = useState({});
   const [sendingEmailId, setSendingEmailId] = useState(null);
   const [emailSentMsg, setEmailSentMsg] = useState('');
+  const [prossimoProgressivo, setProssimoProgressivo] = useState(1);
+  const [numeroProgressivo, setNumeroProgressivo] = useState('1');
+  const [savingProgressivoId, setSavingProgressivoId] = useState(null);
+  const [progressivoEdits, setProgressivoEdits] = useState({});
 
   const [clienteId, setClienteId] = useState('');
   const [date, setDate] = useState(todayIso);
@@ -78,7 +82,12 @@ export default function RicevuteValoriBollati() {
     ])
       .then(([c, rec]) => {
         if (c.status === 'success') setClienti(c.data);
-        if (rec.status === 'success') setRicevute(rec.data);
+        if (rec.status === 'success') {
+          setRicevute(rec.data);
+          const next = rec.prossimo_progressivo ?? 1;
+          setProssimoProgressivo(next);
+          setNumeroProgressivo(String(next));
+        }
         if (c.status !== 'success' || rec.status !== 'success') {
           setError('Errore caricamento dati ricevute.');
         }
@@ -135,11 +144,12 @@ export default function RicevuteValoriBollati() {
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l._id !== lineId)));
   };
 
-  const resetForm = () => {
+  const resetForm = (nextProg = prossimoProgressivo) => {
     setClienteId('');
     setDate(todayIso());
     setNote('');
     setLines([emptyLine()]);
+    setNumeroProgressivo(String(nextProg));
   };
 
   const handleSaveRicevuta = () => {
@@ -154,6 +164,11 @@ export default function RicevuteValoriBollati() {
       setError('Aggiungi almeno un articolo valido.');
       return;
     }
+    const prog = parseInt(String(numeroProgressivo).trim(), 10);
+    if (!Number.isFinite(prog) || prog < 1) {
+      setError('Inserisci un numero progressivo valido (≥ 1).');
+      return;
+    }
     setSaving(true);
     setError(null);
     apiFetch('/api/ricevute/emesse/', {
@@ -164,6 +179,7 @@ export default function RicevuteValoriBollati() {
         date,
         note: note.trim(),
         righe,
+        numero_progressivo: prog,
       }),
     })
       .then((r) => r.json())
@@ -191,9 +207,52 @@ export default function RicevuteValoriBollati() {
       .then((d) => {
         if (d.status === 'success') {
           setDetailCache((prev) => ({ ...prev, [id]: d.data }));
+          setProgressivoEdits((prev) => ({
+            ...prev,
+            [id]: String(d.data.numero_progressivo ?? ''),
+          }));
         }
       })
       .catch(() => {});
+  };
+
+  const getProgressivoEdit = (row) => {
+    if (progressivoEdits[row.id] !== undefined) return progressivoEdits[row.id];
+    return String(row.numero_progressivo ?? '');
+  };
+
+  const handleSaveProgressivo = (row) => {
+    const raw = String(getProgressivoEdit(row)).trim();
+    const prog = parseInt(raw, 10);
+    if (!Number.isFinite(prog) || prog < 1) {
+      setError('Numero progressivo non valido.');
+      return;
+    }
+    if (prog === row.numero_progressivo) return;
+
+    setSavingProgressivoId(row.id);
+    setError(null);
+    apiFetch(`/api/ricevute/emesse/${row.id}/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero_progressivo: prog }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === 'success') {
+          setDetailCache((prev) => ({ ...prev, [row.id]: d.data }));
+          setProgressivoEdits((prev) => ({ ...prev, [row.id]: String(d.data.numero_progressivo) }));
+          if (d.prossimo_progressivo != null) {
+            setProssimoProgressivo(d.prossimo_progressivo);
+            setNumeroProgressivo(String(d.prossimo_progressivo));
+          }
+          loadAll();
+        } else {
+          setError(d.error || 'Errore aggiornamento progressivo.');
+        }
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingProgressivoId(null));
   };
 
   const handleDeleteRicevuta = (row) => {
@@ -237,8 +296,14 @@ export default function RicevuteValoriBollati() {
       .then((r) => r.json())
       .then((d) => {
         if (d.status === 'success') {
-          setEmailSentMsg(`Ricevuta inviata a ${d.data?.email || row.cliente.email}.`);
-          setTimeout(() => setEmailSentMsg(''), 5000);
+          const email = d.data?.email || row.cliente.email;
+          const nProg = d.data?.numero_progressivo ?? row.numero_progressivo;
+          const msg = d.message || `Email inviata con successo a ${email}.`;
+          setEmailSentMsg(msg);
+          window.alert(
+            `Conferma invio\n\n${msg}\nRicevuta n. ${nProg}`,
+          );
+          setTimeout(() => setEmailSentMsg(''), 8000);
         } else {
           setError(d.error || 'Invio email non riuscito.');
         }
@@ -277,7 +342,7 @@ export default function RicevuteValoriBollati() {
           background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.75rem 1rem',
           borderRadius: '8px', color: '#22c55e', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem',
         }}>
-          <Mail size={18} /> {emailSentMsg}
+          <Check size={18} /> {emailSentMsg}
         </div>
       )}
 
@@ -307,6 +372,20 @@ export default function RicevuteValoriBollati() {
           <div>
             <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Data ricevuta</label>
             <input type="date" style={ricevuteInputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>N. progressivo</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              style={ricevuteInputStyle}
+              value={numeroProgressivo}
+              onChange={(e) => setNumeroProgressivo(e.target.value)}
+            />
+            <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              Prossimo suggerito: {prossimoProgressivo}. Puoi modificarlo prima del salvataggio.
+            </p>
           </div>
         </div>
 
@@ -474,6 +553,8 @@ export default function RicevuteValoriBollati() {
                   >
                     {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                     <span style={{ flex: 1 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>n. {row.numero_progressivo}</span>
+                      {' · '}
                       <strong>{new Date(row.date).toLocaleDateString('it-IT')}</strong>
                       {' — '}
                       {row.cliente?.ragione_sociale}
@@ -482,6 +563,42 @@ export default function RicevuteValoriBollati() {
                   </button>
                   {open && detail && (
                     <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)' }}>
+                      <div style={{
+                        display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.65rem',
+                        marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px',
+                        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                      }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                            Numero progressivo
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            style={{ ...ricevuteInputStyle, width: '8rem' }}
+                            value={getProgressivoEdit(row)}
+                            onChange={(e) => setProgressivoEdits((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveProgressivo(row)}
+                          disabled={
+                            savingProgressivoId === row.id
+                            || parseInt(getProgressivoEdit(row), 10) === row.numero_progressivo
+                          }
+                          style={{
+                            ...btnPrimary,
+                            padding: '0.5rem 0.9rem',
+                            fontSize: '0.85rem',
+                            opacity: parseInt(getProgressivoEdit(row), 10) === row.numero_progressivo ? 0.5 : 1,
+                          }}
+                        >
+                          {savingProgressivoId === row.id ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                          Salva progressivo
+                        </button>
+                      </div>
                       <table className="closures-table" style={{ marginBottom: '0.75rem' }}>
                         <thead>
                           <tr>

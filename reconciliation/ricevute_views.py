@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.mail import EmailMessage, get_connection
 from django.db import transaction
+from django.db.models import Max
 from django.http import HttpResponse, JsonResponse
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
@@ -292,6 +293,42 @@ def _get_ricevute_counter(company):
     return max(0, value)
 
 
+def _max_numero_progressivo(company):
+    agg = Ricevuta.objects.filter(company=company).aggregate(m=Max('numero_progressivo'))['m']
+    return int(agg or 0)
+
+
+def _prossimo_numero_progressivo(company):
+    return max(_get_ricevute_counter(company), _max_numero_progressivo(company)) + 1
+
+
+def _sync_ricevute_counter(company):
+    """Allinea il contatore al massimo progressivo già emesso."""
+    effective = max(_get_ricevute_counter(company), _max_numero_progressivo(company))
+    AppSetting.objects.update_or_create(
+        company=company,
+        key='ricevute_progressive_counter',
+        defaults={'value': str(effective)},
+    )
+    return effective
+
+
+def _parse_numero_progressivo(value, company, *, exclude_id=None):
+    try:
+        numero = int(value)
+    except (TypeError, ValueError):
+        raise ValueError('Numero progressivo non valido.')
+    if numero < 1:
+        raise ValueError('Il numero progressivo deve essere almeno 1.')
+
+    qs = Ricevuta.objects.filter(company=company, numero_progressivo=numero)
+    if exclude_id is not None:
+        qs = qs.exclude(id=exclude_id)
+    if qs.exists():
+        raise ValueError(f'Il numero progressivo {numero} è già assegnato a un\'altra ricevuta.')
+    return numero
+
+
 def _get_mail_setting(company, key, default=''):
     raw = (
         AppSetting.objects.filter(company=company, key=key)
@@ -342,6 +379,7 @@ def api_ricevute_emesse(request):
         return JsonResponse({
             'status': 'success',
             'data': [_serialize_ricevuta(r) for r in rows],
+            'prossimo_progressivo': _prossimo_numero_progressivo(company),
         })
 
     try:
@@ -352,9 +390,15 @@ def api_ricevute_emesse(request):
     except ValueError as exc:
         return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
 
+    try:
+        if 'numero_progressivo' in data and data.get('numero_progressivo') not in (None, ''):
+            next_number = _parse_numero_progressivo(data.get('numero_progressivo'), company)
+        else:
+            next_number = _prossimo_numero_progressivo(company)
+    except ValueError as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
+
     with transaction.atomic():
-        current_counter = _get_ricevute_counter(company)
-        next_number = current_counter + 1
         ricevuta = Ricevuta.objects.create(
             company=company,
             cliente=fields['cliente'],
@@ -365,18 +409,14 @@ def api_ricevute_emesse(request):
         )
         for riga in fields['righe']:
             RicevutaRiga.objects.create(ricevuta=ricevuta, **riga)
-        AppSetting.objects.update_or_create(
-            company=company,
-            key='ricevute_progressive_counter',
-            defaults={'value': str(next_number)},
-        )
+        _sync_ricevute_counter(company)
 
     ricevuta = Ricevuta.objects.select_related('cliente').prefetch_related('righe').get(pk=ricevuta.pk)
     return JsonResponse({'status': 'success', 'data': _serialize_ricevuta(ricevuta, detail=True)}, status=201)
 
 
 @require_auth
-@require_http_methods(['GET', 'DELETE'])
+@require_http_methods(['GET', 'PUT', 'DELETE'])
 def api_ricevuta_emessa_detail(request, ricevuta_id):
     company, err = bind_company(request)
     if err:
@@ -394,7 +434,39 @@ def api_ricevuta_emessa_detail(request, ricevuta_id):
 
     if request.method == 'DELETE':
         row.delete()
+        _sync_ricevute_counter(company)
         return JsonResponse({'status': 'success'})
+
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body or '{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+
+        if 'numero_progressivo' not in data:
+            return JsonResponse({'status': 'error', 'error': 'numero_progressivo obbligatorio'}, status=400)
+        try:
+            row.numero_progressivo = _parse_numero_progressivo(
+                data.get('numero_progressivo'),
+                company,
+                exclude_id=row.id,
+            )
+        except ValueError as exc:
+            return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
+
+        row.save(update_fields=['numero_progressivo'])
+        _sync_ricevute_counter(company)
+        row = (
+            Ricevuta.objects.filter(company=company)
+            .select_related('cliente')
+            .prefetch_related('righe')
+            .get(id=ricevuta_id)
+        )
+        return JsonResponse({
+            'status': 'success',
+            'data': _serialize_ricevuta(row, detail=True),
+            'prossimo_progressivo': _prossimo_numero_progressivo(company),
+        })
 
     return JsonResponse({'status': 'success', 'data': _serialize_ricevuta(row, detail=True)})
 
@@ -489,4 +561,11 @@ def api_ricevuta_send_email(request, ricevuta_id):
     except Exception as exc:
         return JsonResponse({'status': 'error', 'error': f'Invio email fallito: {exc}'}, status=502)
 
-    return JsonResponse({'status': 'success', 'data': {'email': recipient}})
+    return JsonResponse({
+        'status': 'success',
+        'message': f'Email inviata con successo a {recipient}.',
+        'data': {
+            'email': recipient,
+            'numero_progressivo': int(row.numero_progressivo),
+        },
+    })
