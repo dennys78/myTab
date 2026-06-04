@@ -5,8 +5,6 @@ import {
   Wallet,
   ArrowLeftRight,
   PiggyBank,
-  Tag,
-  Users,
   Settings,
   ScrollText,
 } from 'lucide-react';
@@ -18,8 +16,6 @@ export const SIDEBAR_ITEMS = [
   { id: 'versamenti', label: 'Versamenti', icon: Wallet, adminOnly: false },
   { id: 'movimenti', label: 'Movimenti', icon: ArrowLeftRight, adminOnly: false },
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
-  { id: 'reparti', label: 'Reparti', icon: Tag, adminOnly: true },
-  { id: 'utenti', label: 'Utenti', icon: Users, adminOnly: true },
   { id: 'ricevute', label: 'Ricevute', icon: ScrollText, adminOnly: false },
   { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: false, pushToBottom: true },
 ];

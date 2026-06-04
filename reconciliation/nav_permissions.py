@@ -5,8 +5,6 @@ SIDEBAR_ITEMS = [
     {'id': 'versamenti', 'label': 'Versamenti', 'admin_only': False},
     {'id': 'movimenti', 'label': 'Movimenti', 'admin_only': False},
     {'id': 'fondo-cassa', 'label': 'Fondo Cassa', 'admin_only': False},
-    {'id': 'reparti', 'label': 'Reparti', 'admin_only': True},
-    {'id': 'utenti', 'label': 'Utenti', 'admin_only': True},
     {'id': 'impostazioni', 'label': 'Impostazioni', 'admin_only': False},
 ]
 

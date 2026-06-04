@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Edit2, Save, X, Calculator, Trash2, Menu, Tag, Sparkles, Users, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, Receipt, Settings, ChevronDown, ChevronRight, Euro, Edit2, Save, X, Calculator, Trash2, Menu, Sparkles, LogOut, Loader2, Wallet, PiggyBank, Image as ImageIcon, Upload, ArrowLeftRight } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import Login from './Login';
@@ -70,6 +70,8 @@ function AppShell() {
     ? [
         { id: 'azienda', label: 'Ragione sociale e archivi' },
         { id: 'rettifiche', label: 'Rettifiche' },
+        { id: 'reparti', label: 'Reparti' },
+        { id: 'utenti', label: 'Utenti' },
         { id: 'parametri-posta', label: 'Parametri posta' },
         { id: 'generali', label: 'IA ed assistenti' },
       ]
@@ -90,21 +92,41 @@ function AppShell() {
 
   useEffect(() => {
     if (!user || !navItems.length) return;
+    if (currentView === 'reparti' || currentView === 'utenti') {
+      if (isAdmin) {
+        setSettingsSection(currentView);
+        setSettingsOpen(true);
+        setCurrentView('impostazioni');
+      } else {
+        setCurrentView(navItems[0]?.id || 'acquisisci-ai');
+      }
+      return;
+    }
     const ids = navItems.map(item => item.id);
     if (!ids.includes(currentView)) {
       setCurrentView(ids[0]);
     }
-  }, [user, navItems, currentView]);
+  }, [user, navItems, currentView, isAdmin]);
 
   useEffect(() => {
     if (!user) return;
     const params = new URLSearchParams(window.location.search);
     const view = params.get('view');
-    if (view && canAccessView(user.role, user.sidebar_menu, view)) {
+    if (!view) return;
+    if (view === 'reparti' || view === 'utenti') {
+      if (isAdmin) {
+        setSettingsSection(view);
+        setSettingsOpen(true);
+        setCurrentView('impostazioni');
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+    if (canAccessView(user.role, user.sidebar_menu, view)) {
       setCurrentView(view);
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [user]);
+  }, [user, isAdmin]);
 
 
   const fetchVersamenti = useCallback(() => {
@@ -540,14 +562,16 @@ function AppShell() {
           <AcquisisciChiusure onBack={() => { navigate('dashboard'); refreshDashboardData(); }} />
         ) : currentView === 'acquisisci-ai' ? (
           <AcquisisciChiusureAI onBack={() => { navigate(isAdmin ? 'dashboard' : 'acquisisci-ai'); refreshDashboardData(); }} />
-        ) : currentView === 'reparti' ? (
-          <RepartiManager />
         ) : currentView === 'impostazioni' ? (
-          <Impostazioni section={settingsSection} />
+          settingsSection === 'reparti' ? (
+            <RepartiManager />
+          ) : settingsSection === 'utenti' ? (
+            <GestioneUtenti />
+          ) : (
+            <Impostazioni section={settingsSection} />
+          )
         ) : currentView === 'ricevute' ? (
           <Ricevute section={ricevuteSection} />
-        ) : currentView === 'utenti' ? (
-          <GestioneUtenti />
         ) : currentView === 'versamenti' ? (
           <Versamenti
             initialEditId={versamentoEditId}
