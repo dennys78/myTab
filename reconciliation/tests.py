@@ -88,12 +88,48 @@ class CalcClosureDifferenzaTests(SimpleTestCase):
         self.assertEqual(tc, Decimal('0.00'))
 
 
+class TelegramVersamentoParserTests(SimpleTestCase):
+    def test_parse_with_amount_synonyms(self):
+        from reconciliation.telegram_versamento import parse_versamento_message
+        cases = [
+            ('Versati 2343,20', 2343.20),
+            ('versato 100', 100.0),
+            ('versamento 500', 500.0),
+            ('versamenti 1200,50', 1200.50),
+            ('versamento in banca 800', 800.0),
+            ('versato in banca 250,75', 250.75),
+            ('deposito banca 400', 400.0),
+            ('Versamento banca 99', 99.0),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                result = parse_versamento_message(text)
+                self.assertEqual(result, {'importo': expected})
+
+    def test_keyword_only_needs_amount(self):
+        from reconciliation.telegram_versamento import parse_versamento_message
+        for text in ('versamenti', 'versamento', 'versati', 'versato', 'deposito banca'):
+            with self.subTest(text=text):
+                self.assertEqual(parse_versamento_message(text), {'needs_amount': True})
+
+    def test_ambiguous_versamento(self):
+        from reconciliation.telegram_versamento import parse_versamento_message
+        self.assertEqual(parse_versamento_message('versamento ieri'), {'ambiguous': True})
+        self.assertIsNone(parse_versamento_message('Distributore 505'))
+
+    def test_invalid_amount_is_ambiguous(self):
+        from reconciliation.telegram_versamento import parse_versamento_message
+        result = parse_versamento_message('versati abc')
+        self.assertTrue(result.get('ambiguous'))
+
+
 class TelegramMovimentoVersamentoTests(SimpleTestCase):
     def test_versati_not_parsed_as_entrata(self):
         from reconciliation.telegram_movimenti import parse_movimento_entrata_message
         self.assertIsNone(parse_movimento_entrata_message('Versati 100'))
         self.assertIsNone(parse_movimento_entrata_message('Versato 2343,20'))
         self.assertIsNone(parse_movimento_entrata_message('Versamento 100'))
+        self.assertIsNone(parse_movimento_entrata_message('versamenti 50'))
 
 
 class TelegramFondoCommandTests(SimpleTestCase):

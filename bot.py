@@ -39,15 +39,17 @@ from reconciliation.telegram_fondo_cassa import (
     save_preleva_fondo_personale,
     save_preleva_fondo_to_cassa,
 )
+from reconciliation.telegram_versamento import (
+    VERSAMENTO_HINT,
+    VERSAMENTO_NEEDS_AMOUNT,
+    parse_versamento_message,
+)
 from reconciliation.views import _get_fondo_cassa, _get_saldo_cassa, _money
 
 STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
+STEP_VERSAMENTO_AMOUNT = 'awaiting_versamento_amount'
 STEP_VERSAMENTO_DATE = 'awaiting_versamento_date'
-
-VERSAMENTO_TRIGGER_RE = re.compile(
-    r'(?i)^versat[oi]\s*([\d.,\s€]+)$',
-)
 
 SALDO_QUERY_RE = re.compile(r'(?i)^saldo(?:\s+cassa)?\s*$')
 
@@ -100,6 +102,13 @@ def _start_versamento_session(context, importo):
     }
 
 
+def _start_versamento_awaiting_amount(context):
+    context.user_data['versamento_session'] = {
+        'step': STEP_VERSAMENTO_AMOUNT,
+        'importo_versato': None,
+    }
+
+
 def _parse_versamento_date(text):
     normalized = (text or '').strip().lower()
     if normalized in DATE_TODAY_ALIASES:
@@ -123,13 +132,6 @@ def _parse_versamento_date(text):
         return date(year, month, day)
     except ValueError as exc:
         raise ValueError('Data non valida') from exc
-
-
-def _match_versamento_trigger(text):
-    match = VERSAMENTO_TRIGGER_RE.match((text or '').strip())
-    if not match:
-        return None
-    return _parse_amount(match.group(1))
 
 
 def _parse_amount(text):
@@ -446,7 +448,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Scrivi /aiuto per l'elenco completo dei comandi operatore.\n\n"
         "In sintesi:\n"
         "• Chiusura cassa: foto → POS → scassettato\n"
-        "• Versati importo — versamento in banca\n"
+        "• Versati / Versamento importo — versamento in banca\n"
         "• Descrizione importo — entrata in cassa\n"
         "• aggiungi a fondo importo — cassa → fondo\n"
         "• preleva da fondo importo — poi personale o cassa\n"
@@ -465,7 +467,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _reset(context)
     await update.message.reply_text(
         "Operazione annullata. Invia una nuova foto per la chiusura cassa "
-        "oppure scrivi «Versati 1234,50» per un versamento."
+        "oppure scrivi «Versati 1234,50» (o «Versamento 1234,50») per un versamento."
     )
 
 
@@ -493,11 +495,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     if _versamento_session(context):
-        await update.message.reply_text(
-            "Stai registrando un versamento.\n\n"
-            "Rispondi con la data (gg/mm) oppure «sì» per la data odierna, "
-            "oppure usa /annulla."
-        )
+        session = _versamento_session(context)
+        if session.get('step') == STEP_VERSAMENTO_AMOUNT:
+            await update.message.reply_text(
+                "Stai registrando un versamento.\n\n"
+                "Scrivi l'importo versato in banca (es. 2343,20), oppure usa /annulla."
+            )
+        else:
+            await update.message.reply_text(
+                "Stai registrando un versamento.\n\n"
+                "Rispondi con la data (gg/mm) oppure «sì» per la data odierna, "
+                "oppure usa /annulla."
+            )
         return
 
     session = context.user_data.setdefault('draft_session', _initial_session())
@@ -526,6 +535,34 @@ async def _ask_versamento_date(update, importo):
     )
 
 
+async def _try_start_versamento(update, context, text):
+    try:
+        parsed = parse_versamento_message(text)
+    except ValueError as exc:
+        await update.message.reply_text(f"{exc}\n\n{VERSAMENTO_HINT}")
+        return True
+
+    if parsed is None:
+        return False
+
+    if parsed.get('needs_amount'):
+        _start_versamento_awaiting_amount(context)
+        await update.message.reply_text(VERSAMENTO_NEEDS_AMOUNT)
+        return True
+
+    if parsed.get('ambiguous'):
+        await update.message.reply_text(VERSAMENTO_HINT)
+        return True
+
+    importo = parsed.get('importo')
+    if importo is None:
+        return False
+
+    _start_versamento_session(context, importo)
+    await _ask_versamento_date(update, importo)
+    return True
+
+
 async def _complete_versamento(update, context, versamento_date):
     session = _versamento_session(context)
     if not session or session.get('step') != STEP_VERSAMENTO_DATE:
@@ -534,7 +571,7 @@ async def _complete_versamento(update, context, versamento_date):
     importo = session.get('importo_versato')
     if importo is None:
         context.user_data.pop('versamento_session', None)
-        await update.message.reply_text("Sessione versamento non valida. Riprova con «Versati 1234,50».")
+        await update.message.reply_text(f"Sessione versamento non valida.\n\n{VERSAMENTO_HINT}")
         return True
 
     user = update.message.from_user
@@ -578,7 +615,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reset_applied:
         await update.message.reply_text(
             "Sessione Telegram precedente azzerata da myTab.\n\n"
-            "Invia una nuova foto della chiusura cassa oppure scrivi «Versati 1234,50»."
+            "Invia una nuova foto della chiusura cassa oppure scrivi «Versati 1234,50» o «Versamento 1234,50»."
         )
         return
 
@@ -605,6 +642,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if _versamento_session(context):
+        session = _versamento_session(context)
+        if session.get('step') == STEP_VERSAMENTO_AMOUNT:
+            try:
+                importo = _parse_amount(text)
+            except ValueError:
+                await update.message.reply_text(
+                    f"Importo non valido.\n\n{VERSAMENTO_NEEDS_AMOUNT}"
+                )
+                return
+            if importo <= 0:
+                await update.message.reply_text(
+                    f"L'importo deve essere maggiore di zero.\n\n{VERSAMENTO_NEEDS_AMOUNT}"
+                )
+                return
+            session['importo_versato'] = importo
+            session['step'] = STEP_VERSAMENTO_DATE
+            await _ask_versamento_date(update, importo)
+            return
         try:
             versamento_date = _parse_versamento_date(text)
         except ValueError:
@@ -627,15 +682,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _try_register_fondo_command(update, context, text):
         return
 
-    try:
-        versamento_importo = _match_versamento_trigger(text)
-    except ValueError:
-        await update.message.reply_text("Importo non valido. Esempio: Versati 2343,20")
-        return
-
-    if versamento_importo is not None:
-        _start_versamento_session(context, versamento_importo)
-        await _ask_versamento_date(update, versamento_importo)
+    if await _try_start_versamento(update, context, text):
         return
 
     if await _try_register_movimento_entrata(update, context, text):
