@@ -123,6 +123,35 @@ class TelegramVersamentoParserTests(SimpleTestCase):
         self.assertTrue(result.get('ambiguous'))
 
 
+class TelegramSpicciParserTests(SimpleTestCase):
+    def test_parse_with_amount(self):
+        from reconciliation.telegram_spicci import TIPO_USCITA, parse_spicci_message
+        cases = [
+            ('Spicci 50', 50.0, 'Spicci'),
+            ('monete 25,50', 25.5, 'Monete'),
+            ('Monetine 10', 10.0, 'Monetine'),
+            ('spiccioli 100', 100.0, 'Spicci'),
+        ]
+        for text, amount, desc in cases:
+            with self.subTest(text=text):
+                result = parse_spicci_message(text)
+                self.assertEqual(result['importo'], amount)
+                self.assertEqual(result['descrizione'], desc)
+                self.assertEqual(result['tipo'], TIPO_USCITA)
+
+    def test_keyword_only(self):
+        from reconciliation.telegram_spicci import parse_spicci_message
+        self.assertEqual(
+            parse_spicci_message('monete'),
+            {'needs_amount': True, 'descrizione': 'Monete'},
+        )
+
+    def test_not_parsed_as_entrata(self):
+        from reconciliation.telegram_movimenti import parse_movimento_entrata_message
+        self.assertIsNone(parse_movimento_entrata_message('Spicci 50'))
+        self.assertIsNone(parse_movimento_entrata_message('monetine 20'))
+
+
 class TelegramMovimentoVersamentoTests(SimpleTestCase):
     def test_versati_not_parsed_as_entrata(self):
         from reconciliation.telegram_movimenti import parse_movimento_entrata_message

@@ -39,6 +39,11 @@ from reconciliation.telegram_fondo_cassa import (
     save_preleva_fondo_personale,
     save_preleva_fondo_to_cassa,
 )
+from reconciliation.telegram_spicci import (
+    SPICCI_HINT,
+    SPICCI_NEEDS_AMOUNT,
+    parse_spicci_message,
+)
 from reconciliation.telegram_versamento import (
     VERSAMENTO_HINT,
     VERSAMENTO_NEEDS_AMOUNT,
@@ -50,6 +55,7 @@ STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
 STEP_VERSAMENTO_AMOUNT = 'awaiting_versamento_amount'
 STEP_VERSAMENTO_DATE = 'awaiting_versamento_date'
+STEP_SPICCI_AMOUNT = 'awaiting_spicci_amount'
 
 SALDO_QUERY_RE = re.compile(r'(?i)^saldo(?:\s+cassa)?\s*$')
 
@@ -80,6 +86,7 @@ def _initial_session():
 def _reset(context):
     context.user_data['draft_session'] = _initial_session()
     context.user_data.pop('versamento_session', None)
+    context.user_data.pop('spicci_session', None)
     context.user_data.pop('preleva_fondo_session', None)
 
 
@@ -93,6 +100,17 @@ def _start_preleva_fondo_session(context, importo):
 
 def _versamento_session(context):
     return context.user_data.get('versamento_session')
+
+
+def _spicci_session(context):
+    return context.user_data.get('spicci_session')
+
+
+def _start_spicci_awaiting_amount(context, descrizione='Spicci'):
+    context.user_data['spicci_session'] = {
+        'step': STEP_SPICCI_AMOUNT,
+        'descrizione': descrizione,
+    }
 
 
 def _start_versamento_session(context, importo):
@@ -276,6 +294,54 @@ def _save_versamento_sync(company, operator, importo, versamento_date, note=''):
     )
 
 
+async def _try_register_spicci(update, context, text):
+    try:
+        parsed = parse_spicci_message(text)
+    except ValueError as exc:
+        await update.message.reply_text(f"{exc}\n\n{SPICCI_HINT}")
+        return True
+
+    if parsed is None:
+        return False
+
+    if parsed.get('needs_amount'):
+        _start_spicci_awaiting_amount(context, parsed.get('descrizione') or 'Spicci')
+        await update.message.reply_text(SPICCI_NEEDS_AMOUNT)
+        return True
+
+    if parsed.get('ambiguous'):
+        await update.message.reply_text(SPICCI_HINT)
+        return True
+
+    user = update.message.from_user
+    operator = user.username or user.first_name or 'Telegram'
+    company = context.application.bot_data.get('company')
+    movimento_date = await sync_to_async(message_local_date)(update)
+
+    try:
+        movimento, _, saldo_dopo = await sync_to_async(save_movimento_from_telegram)(
+            company,
+            operator,
+            parsed,
+            movimento_date,
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"Movimento non registrato: {exc}")
+        return True
+
+    await update.message.reply_text(
+        "Uscita registrata in myTab.\n\n"
+        f"Tipo: {movimento.get_tipo_display()}\n"
+        f"Descrizione: {movimento.note}\n"
+        f"Importo: -{_money_text(float(movimento.importo))}\n"
+        f"Data: {movimento.date.strftime('%d/%m/%Y')}\n"
+        f"Operatore: {movimento.operator}\n\n"
+        "Contanti aggiornati. Lo trovi in Movimenti cassa."
+    )
+    await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo_dopo)}")
+    return True
+
+
 async def _try_register_movimento_entrata(update, context, text):
     try:
         parsed = parse_movimento_entrata_message(text)
@@ -449,6 +515,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "In sintesi:\n"
         "• Chiusura cassa: foto → POS → scassettato\n"
         "• Versati / Versamento importo — versamento in banca\n"
+        "• Spicci / Monete importo — uscita spicci\n"
         "• Descrizione importo — entrata in cassa\n"
         "• aggiungi a fondo importo — cassa → fondo\n"
         "• preleva da fondo importo — poi personale o cassa\n"
@@ -494,6 +561,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Rispondi «personale» oppure «cassa», oppure usa /annulla."
         )
         return
+    if _spicci_session(context):
+        await update.message.reply_text(
+            "Stai registrando un'uscita spicci/monete.\n\n"
+            "Scrivi l'importo (es. 50 o 25,50), oppure usa /annulla."
+        )
+        return
+
     if _versamento_session(context):
         session = _versamento_session(context)
         if session.get('step') == STEP_VERSAMENTO_AMOUNT:
@@ -641,6 +715,55 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Saldo contanti in cassa: {_money_text(saldo)}")
         return
 
+    if _spicci_session(context):
+        session = _spicci_session(context)
+        if session.get('step') == STEP_SPICCI_AMOUNT:
+            try:
+                importo = _parse_amount(text)
+            except ValueError:
+                await update.message.reply_text(
+                    f"Importo non valido.\n\n{SPICCI_NEEDS_AMOUNT}"
+                )
+                return
+            if importo <= 0:
+                await update.message.reply_text(
+                    f"L'importo deve essere maggiore di zero.\n\n{SPICCI_NEEDS_AMOUNT}"
+                )
+                return
+            user = update.message.from_user
+            operator = user.username or user.first_name or 'Telegram'
+            company = context.application.bot_data.get('company')
+            movimento_date = await sync_to_async(message_local_date)(update)
+            from reconciliation.models import MovimentoCassa
+            parsed_mov = {
+                'importo': importo,
+                'descrizione': session.get('descrizione') or 'Spicci',
+                'tipo': MovimentoCassa.TIPO_USCITA,
+            }
+            try:
+                movimento, _, saldo_dopo = await sync_to_async(save_movimento_from_telegram)(
+                    company,
+                    operator,
+                    parsed_mov,
+                    movimento_date,
+                )
+            except Exception as exc:
+                await update.message.reply_text(f"Movimento non registrato: {exc}")
+                context.user_data.pop('spicci_session', None)
+                return
+            context.user_data.pop('spicci_session', None)
+            await update.message.reply_text(
+                "Uscita registrata in myTab.\n\n"
+                f"Tipo: {movimento.get_tipo_display()}\n"
+                f"Descrizione: {movimento.note}\n"
+                f"Importo: -{_money_text(float(movimento.importo))}\n"
+                f"Data: {movimento.date.strftime('%d/%m/%Y')}\n"
+                f"Operatore: {movimento.operator}\n\n"
+                "Contanti aggiornati. Lo trovi in Movimenti cassa."
+            )
+            await update.message.reply_text(f"Saldo cassa attuale: {_money_text(saldo_dopo)}")
+            return
+
     if _versamento_session(context):
         session = _versamento_session(context)
         if session.get('step') == STEP_VERSAMENTO_AMOUNT:
@@ -683,6 +806,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await _try_start_versamento(update, context, text):
+        return
+
+    if await _try_register_spicci(update, context, text):
         return
 
     if await _try_register_movimento_entrata(update, context, text):

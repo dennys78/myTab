@@ -80,8 +80,11 @@ def parse_movimento_entrata_message(text):
         return None
     if re.match(r'(?i)^saldo(?:\s+cassa)?\s*$', raw):
         return None
+    from .telegram_spicci import looks_like_spicci_keyword
     from .telegram_versamento import looks_like_versamento_keyword
     if looks_like_versamento_keyword(raw):
+        return None
+    if looks_like_spicci_keyword(raw):
         return None
     if re.match(r'(?i)^aggiungi\s+a\s+fondo\s', raw):
         return None
