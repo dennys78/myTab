@@ -161,22 +161,35 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
     boxSizing: 'border-box',
   });
 
-  const formatImporto = (m, value) => {
-    const n = Number(value ?? m.importo).toFixed(2);
-    return m.tipo === TIPO_ENTRATA ? `+ € ${n}` : `− € ${n}`;
-  };
-
   const formatSaldo = (value) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '—';
     return `€ ${n.toFixed(2)}`;
   };
 
-  const saldoDopoMovimento = (m) => {
+  const saldoDopoMovimento = (m, tipo = m.tipo, importo = m.importo) => {
     const prec = Number(m.saldo_precedente) || 0;
-    const imp = Number(m.importo) || 0;
-    return m.tipo === TIPO_ENTRATA ? prec + imp : prec - imp;
+    const imp = Number(importo) || 0;
+    return tipo === TIPO_ENTRATA ? prec + imp : prec - imp;
   };
+
+  const dareAvereImporto = (tipo, importo) => {
+    const n = Number(importo);
+    if (!Number.isFinite(n) || n <= 0) return { dare: '—', avere: '—' };
+    const formatted = `€ ${n.toFixed(2)}`;
+    return tipo === TIPO_USCITA
+      ? { dare: formatted, avere: '—' }
+      : { dare: '—', avere: formatted };
+  };
+
+  const editInpStyle = (isEntrata) => ({
+    padding: '0.35rem 0.45rem',
+    background: 'var(--bg-dark)',
+    border: `2px solid ${isEntrata ? 'rgba(34, 197, 94, 0.55)' : 'rgba(239, 68, 68, 0.55)'}`,
+    color: 'white',
+    borderRadius: '6px',
+    fontSize: '0.85rem',
+  });
 
   return (
     <div style={{ maxWidth: '1120px', margin: '0 auto' }}>
@@ -286,7 +299,7 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
           onChange={setStoricoFiltro}
         />
         <p className="mov-storico-hint">
-          Saldo prima e saldo dopo mostrano i contanti in cassa al momento della registrazione, come in un estratto conto.
+          Ogni movimento è mostrato come in estratto conto: descrizione sopra, sotto Dare / Avere e saldo progressivo.
         </p>
 
         {loading ? (
@@ -298,40 +311,59 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
         ) : movimentiFiltrati.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nessun movimento nel periodo selezionato.</div>
         ) : (
-          <div className="table-responsive-wrapper">
-            <table className="mov-table vers-table">
-              <thead>
-                <tr>
-                  {['Data', 'Operatore', 'Tipo', 'Importo', 'Saldo prima', 'Saldo dopo', 'Note', ...(isAdmin ? ['Azioni'] : [])].map(h => (
-                    <th key={h}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {movimentiFiltrati.map(m => {
-                  const isEditing = editingId === m.id;
-                  const isEntrata = (isEditing ? editRow.tipo : m.tipo) === TIPO_ENTRATA;
-                  const rowClass = isEntrata ? 'mov-row-entrata' : 'mov-row-uscita';
-                  const tdStyle = {};
-                  const inpStyle = {
-                    padding: '0.3rem 0.4rem',
-                    background: 'var(--bg-dark)',
-                    border: `2px solid ${isEntrata ? 'rgba(34, 197, 94, 0.55)' : 'rgba(239, 68, 68, 0.55)'}`,
-                    color: 'white',
-                    borderRadius: '5px',
-                    fontSize: '0.85rem',
-                  };
-                  return (
-                    <tr key={m.id} id={`mov-row-${m.id}`} className={`${rowClass} ${editingId === m.id ? 'vers-row-editing' : ''}`}>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                        {isEditing
-                          ? <input type="date" value={editRow.date} onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))} style={{ ...inpStyle, width: '130px' }} />
-                          : new Date(`${m.date}T12:00:00`).toLocaleDateString('it-IT')}
-                      </td>
-                      <td style={tdStyle}>{m.operator}</td>
-                      <td style={tdStyle}>
+          <div className="mov-estratto">
+            <div className="mov-estratto-grid-head" aria-hidden="true">
+              <span>Saldo precedente</span>
+              <span>Dare</span>
+              <span>Avere</span>
+              <span>Saldo</span>
+            </div>
+
+            <div className="mov-estratto-list">
+              {movimentiFiltrati.map(m => {
+                const isEditing = editingId === m.id;
+                const tipoRow = isEditing ? editRow.tipo : m.tipo;
+                const isEntrata = tipoRow === TIPO_ENTRATA;
+                const rowClass = isEntrata ? 'mov-estratto-entry--entrata' : 'mov-estratto-entry--uscita';
+                const { dare, avere } = dareAvereImporto(
+                  tipoRow,
+                  isEditing ? editRow.importo : m.importo,
+                );
+                const saldoDopo = saldoDopoMovimento(
+                  m,
+                  tipoRow,
+                  isEditing ? editRow.importo : m.importo,
+                );
+
+                return (
+                  <article
+                    key={m.id}
+                    id={`mov-row-${m.id}`}
+                    className={`mov-estratto-entry ${rowClass} ${isEditing ? 'mov-estratto-entry--editing' : ''}`}
+                  >
+                    <div className="mov-estratto-meta">
+                      <div className="mov-estratto-meta-main">
                         {isEditing ? (
-                          <select value={editRow.tipo} onChange={e => setEditRow(r => ({ ...r, tipo: e.target.value }))} style={{ ...inpStyle }}>
+                          <input
+                            type="date"
+                            value={editRow.date}
+                            onChange={e => setEditRow(r => ({ ...r, date: e.target.value }))}
+                            style={{ ...editInpStyle(isEntrata), width: '140px' }}
+                          />
+                        ) : (
+                          <time className="mov-estratto-date">
+                            {new Date(`${m.date}T12:00:00`).toLocaleDateString('it-IT')}
+                          </time>
+                        )}
+                        <span className="mov-estratto-sep">·</span>
+                        <span className="mov-estratto-operator">{m.operator}</span>
+                        <span className="mov-estratto-sep">·</span>
+                        {isEditing ? (
+                          <select
+                            value={editRow.tipo}
+                            onChange={e => setEditRow(r => ({ ...r, tipo: e.target.value }))}
+                            style={editInpStyle(isEntrata)}
+                          >
                             <option value={TIPO_ENTRATA}>Entrata</option>
                             <option value={TIPO_USCITA}>Uscita</option>
                           </select>
@@ -340,67 +372,91 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
                             {isEntrata ? 'Entrata' : 'Uscita'}
                           </span>
                         )}
-                      </td>
-                      <td className="mov-importo-cell" style={tdStyle}>
-                        {isEditing
-                          ? <input type="number" min="0.01" step="0.01" value={editRow.importo} onChange={e => setEditRow(r => ({ ...r, importo: e.target.value }))} style={{ ...inpStyle, width: '100px' }} />
-                          : <span className={isEntrata ? 'mov-importo-entrata' : 'mov-importo-uscita'}>{formatImporto(m)}</span>}
-                      </td>
-                      <td className="mov-saldo-cell" style={tdStyle}>
-                        {formatSaldo(m.saldo_precedente)}
-                      </td>
-                      <td className="mov-saldo-cell mov-saldo-cell--after" style={tdStyle}>
-                        {formatSaldo(saldoDopoMovimento(m))}
-                      </td>
-                      <td style={{ ...tdStyle, minWidth: '180px', color: 'var(--text-muted)' }}>
-                        {isEditing ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <textarea value={editRow.note} onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))} rows={2} style={{ ...inpStyle, width: '100%', minWidth: '180px', resize: 'vertical', fontFamily: 'inherit' }} />
-                            <label className="vers-promemoria-flag vers-promemoria-flag--compact">
-                              <input type="checkbox" checked={!!editRow.ricorda_promemoria} onChange={e => setEditRow(r => ({ ...r, ricorda_promemoria: e.target.checked }))} />
-                              <Bookmark size={14} />
-                              <span>Promemoria</span>
-                            </label>
-                          </div>
-                        ) : (
-                          <div>
-                            {m.ricorda_promemoria && (
-                              <div className="vers-promemoria-badge" title="Promemoria in dashboard">
-                                <Bookmark size={12} /> Promemoria
-                              </div>
-                            )}
-                            <span>{m.note || '—'}</span>
-                          </div>
-                        )}
-                      </td>
+                      </div>
+
                       {isAdmin && (
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <div className="mov-estratto-actions">
                           {isEditing ? (
-                            <div style={{ display: 'flex', gap: '0.4rem' }}>
-                              <button onClick={saveEdit} disabled={updating} title="Salva" style={{ background: 'transparent', border: 'none', color: '#22c55e', cursor: 'pointer', padding: '0.25rem' }}>
+                            <>
+                              <button onClick={saveEdit} disabled={updating} title="Salva" type="button" className="mov-estratto-action-btn mov-estratto-action-btn--save">
                                 {updating ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
                               </button>
-                              <button onClick={cancelEdit} title="Annulla" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }}>
+                              <button onClick={cancelEdit} title="Annulla" type="button" className="mov-estratto-action-btn">
                                 <X size={16} />
                               </button>
-                            </div>
+                            </>
                           ) : (
-                            <div style={{ display: 'flex', gap: '0.4rem' }}>
-                              <button onClick={() => startEdit(m)} title="Modifica" style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem' }}>
+                            <>
+                              <button onClick={() => startEdit(m)} title="Modifica" type="button" className="mov-estratto-action-btn mov-estratto-action-btn--edit">
                                 <Pencil size={15} />
                               </button>
-                              <button onClick={() => handleDelete(m.id)} title="Elimina" style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.25rem' }}>
+                              <button onClick={() => handleDelete(m.id)} title="Elimina" type="button" className="mov-estratto-action-btn mov-estratto-action-btn--delete">
                                 <Trash2 size={16} />
                               </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mov-estratto-desc">
+                      {isEditing ? (
+                        <>
+                          <textarea
+                            value={editRow.note}
+                            onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))}
+                            rows={2}
+                            style={{ ...editInpStyle(isEntrata), width: '100%', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.45 }}
+                            placeholder="Descrizione del movimento..."
+                          />
+                          <label className="vers-promemoria-flag vers-promemoria-flag--compact">
+                            <input
+                              type="checkbox"
+                              checked={!!editRow.ricorda_promemoria}
+                              onChange={e => setEditRow(r => ({ ...r, ricorda_promemoria: e.target.checked }))}
+                            />
+                            <Bookmark size={14} />
+                            <span>Promemoria</span>
+                          </label>
+                          <div className="mov-estratto-edit-importo">
+                            <label>Importo (€)</label>
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={editRow.importo}
+                              onChange={e => setEditRow(r => ({ ...r, importo: e.target.value }))}
+                              style={{ ...editInpStyle(isEntrata), width: '120px' }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {m.ricorda_promemoria && (
+                            <div className="vers-promemoria-badge" title="Promemoria in dashboard">
+                              <Bookmark size={12} /> Promemoria
                             </div>
                           )}
-                        </td>
+                          <p>{m.note || 'Movimento di cassa'}</p>
+                        </>
                       )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    </div>
+
+                    <div className="mov-estratto-grid-row">
+                      <span className="mov-estratto-grid-label">Saldo precedente</span>
+                      <span className="mov-estratto-grid-label">Dare</span>
+                      <span className="mov-estratto-grid-label">Avere</span>
+                      <span className="mov-estratto-grid-label">Saldo</span>
+
+                      <span className="mov-estratto-val mov-estratto-val--prec">{formatSaldo(m.saldo_precedente)}</span>
+                      <span className="mov-estratto-val mov-estratto-val--dare">{dare}</span>
+                      <span className="mov-estratto-val mov-estratto-val--avere">{avere}</span>
+                      <span className="mov-estratto-val mov-estratto-val--saldo">{formatSaldo(saldoDopo)}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
