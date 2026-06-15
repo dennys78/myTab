@@ -2496,6 +2496,126 @@ def _get_saldo_cassa(company):
     return _get_saldo_cassa_base(company) + _get_setting_money('saldo_cassa_adjustment', company)
 
 
+def _build_cassa_estratto_conto(company):
+    """Ledger cronologico: chiusure (scassettato), versamenti e movimenti cassa."""
+    from datetime import datetime as dt
+
+    entries = []
+
+    for c in CashClosure.objects.filter(company=company).only(
+        'id', 'date', 'operator', 'totale_cassetto', 'created_at',
+    ):
+        tc = _money(c.totale_cassetto)
+        if tc <= 0:
+            continue
+        entries.append({
+            'sort_date': c.date,
+            'sort_ts': c.created_at,
+            'kind': 'chiusura',
+            'ref_id': c.id,
+            'date': c.date.isoformat(),
+            'operator': c.operator,
+            'descrizione': f'Chiusura cassa — {c.operator}',
+            'entrata': float(tc),
+            'uscita': None,
+        })
+
+    for v in Versamento.objects.filter(company=company).only(
+        'id', 'date', 'operator', 'importo_versato', 'note', 'created_at',
+    ):
+        imp = _money(v.importo_versato)
+        if imp <= 0:
+            continue
+        desc = f'Versamento in banca — {v.operator}'
+        if v.note.strip():
+            desc = f'{desc} · {v.note.strip()}'
+        entries.append({
+            'sort_date': v.date,
+            'sort_ts': v.created_at,
+            'kind': 'versamento',
+            'ref_id': v.id,
+            'date': v.date.isoformat(),
+            'operator': v.operator,
+            'descrizione': desc,
+            'entrata': None,
+            'uscita': float(imp),
+        })
+
+    for m in MovimentoCassa.objects.filter(company=company).only(
+        'id', 'date', 'operator', 'tipo', 'importo', 'note', 'ricorda_promemoria', 'created_at',
+    ):
+        imp = _money(m.importo)
+        if imp <= 0:
+            continue
+        if m.note.strip():
+            desc = m.note.strip()
+        elif m.tipo == MovimentoCassa.TIPO_ENTRATA:
+            desc = 'Entrata cassa'
+        else:
+            desc = 'Uscita cassa'
+        entries.append({
+            'sort_date': m.date,
+            'sort_ts': m.created_at,
+            'kind': 'movimento',
+            'ref_id': m.id,
+            'date': m.date.isoformat(),
+            'operator': m.operator,
+            'descrizione': desc,
+            'entrata': float(imp) if m.tipo == MovimentoCassa.TIPO_ENTRATA else None,
+            'uscita': float(imp) if m.tipo == MovimentoCassa.TIPO_USCITA else None,
+            'tipo': m.tipo,
+            'note': m.note,
+            'ricorda_promemoria': m.ricorda_promemoria,
+        })
+
+    entries.sort(key=lambda e: (e['sort_date'], e['sort_ts']))
+
+    adj = _get_setting_money('saldo_cassa_adjustment', company)
+    if adj != 0:
+        first_date = entries[0]['sort_date'] if entries else timezone.localdate()
+        entries.insert(0, {
+            'sort_date': first_date,
+            'sort_ts': dt(1970, 1, 1, tzinfo=timezone.utc),
+            'kind': 'rettifica',
+            'ref_id': None,
+            'date': first_date.isoformat(),
+            'operator': '',
+            'descrizione': 'Rettifica saldo',
+            'entrata': float(adj) if adj > 0 else None,
+            'uscita': float(-adj) if adj < 0 else None,
+        })
+
+    saldo = Decimal('0')
+    righe = []
+    for e in entries:
+        saldo_prec = saldo
+        if e.get('entrata'):
+            saldo += _money(e['entrata'])
+        if e.get('uscita'):
+            saldo -= _money(e['uscita'])
+        row = {k: v for k, v in e.items() if k not in ('sort_date', 'sort_ts')}
+        row['saldo_precedente'] = float(saldo_prec)
+        row['saldo'] = float(saldo)
+        righe.append(row)
+    return righe
+
+
+@require_auth
+def api_cassa_estratto_conto(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    company, err = bind_company(request)
+    if err:
+        return err
+    adj = _get_setting_money('saldo_cassa_adjustment', company)
+    return JsonResponse({
+        'status': 'success',
+        'saldo_cassa': float(_get_saldo_cassa(company)),
+        'rettifica_saldo': float(adj),
+        'righe': _build_cassa_estratto_conto(company),
+    })
+
+
 @require_auth
 def api_versamenti_list(request):
     if request.method != 'GET':

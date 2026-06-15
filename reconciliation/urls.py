@@ -42,6 +42,9 @@ urlpatterns = [
     path('api/versamenti/<int:vers_id>/delete/',    views.api_versamenti_delete),
     path('api/versamenti/<int:vers_id>/update/',    views.api_versamenti_update),
 
+    # Estratto conto cassa (chiusure + versamenti + movimenti)
+    path('api/cassa-estratto-conto/',                    views.api_cassa_estratto_conto),
+
     # Movimenti cassa (entrate/uscite)
     path('api/movimenti-cassa/',                         views.api_movimenti_cassa_list),
     path('api/movimenti-cassa/create/',                  views.api_movimenti_cassa_create),

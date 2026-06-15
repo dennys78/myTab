@@ -1018,193 +1018,199 @@ h2 {
   line-height: 1.45;
 }
 
-.mov-estratto {
-  padding: 0 1rem 1rem;
+.cassa-estratto-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
 }
 
-.mov-estratto-grid-head {
-  display: none;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem 0.75rem;
-  padding: 0.65rem 1rem;
-  margin-bottom: 0.35rem;
-  border-bottom: 1px solid var(--border);
+.cassa-estratto-table thead th {
+  padding: 0.75rem 1rem;
+  text-align: left;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-}
-
-.mov-estratto-grid-head span {
-  text-align: right;
-}
-
-.mov-estratto-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.mov-estratto-entry {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-elevated);
-  overflow: hidden;
-}
-
-.mov-estratto-entry--entrata {
-  border-left: 4px solid #22c55e;
-}
-
-.mov-estratto-entry--uscita {
-  border-left: 4px solid var(--danger);
-}
-
-.mov-estratto-entry--editing {
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
-}
-
-.mov-estratto-meta {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem 0.55rem;
-}
-
-.mov-estratto-meta-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.45rem;
-  min-width: 0;
-}
-
-.mov-estratto-date {
-  font-weight: 700;
-  font-size: 0.92rem;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.mov-estratto-operator {
-  font-size: 0.86rem;
+.cassa-estratto-table thead th:nth-child(n+3) {
+  text-align: right;
+}
+
+.cassa-estratto-table tbody td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.cassa-estratto-data {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
 
-.mov-estratto-sep {
-  color: var(--text-muted);
-  opacity: 0.55;
+.cassa-estratto-desc {
+  line-height: 1.45;
+  color: var(--text);
 }
 
-.mov-estratto-actions {
+.cassa-estratto-kind {
+  display: inline-block;
+  margin-right: 0.45rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cassa-estratto-kind--chiusura {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.cassa-estratto-kind--versamento {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.cassa-estratto-kind--movimento {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.cassa-estratto-kind--rettifica {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+.cassa-estratto-promemoria {
+  display: inline-flex;
+  margin-left: 0.45rem;
+  vertical-align: middle;
+}
+
+.cassa-estratto-importo {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cassa-estratto-importo--entrata {
+  color: #22c55e;
+}
+
+.cassa-estratto-importo--uscita {
+  color: var(--danger);
+}
+
+.cassa-estratto-saldo {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cassa-estratto-row--summary td {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.cassa-estratto-row--summary .cassa-estratto-desc {
+  font-weight: 700;
+}
+
+.cassa-estratto-row--empty td {
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 1.25rem 1rem;
+}
+
+.cassa-estratto-col-azioni {
+  width: 72px;
+  text-align: center;
+}
+
+.cassa-estratto-actions {
   display: flex;
+  justify-content: center;
   gap: 0.25rem;
-  flex-shrink: 0;
 }
 
-.mov-estratto-action-btn {
+.cassa-estratto-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0.25rem;
-  display: inline-flex;
+  padding: 0.2rem;
+  font-size: 0.82rem;
 }
 
-.mov-estratto-action-btn--edit {
+.cassa-estratto-action-btn--edit {
   color: var(--accent);
 }
 
-.mov-estratto-action-btn--save {
+.cassa-estratto-action-btn--save {
   color: #22c55e;
 }
 
-.mov-estratto-action-btn--delete {
+.cassa-estratto-action-btn--delete {
   color: var(--danger);
 }
 
-.mov-estratto-desc {
-  padding: 0 1rem 0.75rem;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  line-height: 1.45;
+.cassa-estratto-row--edit-form td {
+  padding: 0;
+  background: rgba(99, 102, 241, 0.06);
 }
 
-.mov-estratto-desc p {
-  margin: 0;
-}
-
-.mov-estratto-edit-importo {
+.cassa-estratto-edit-panel {
+  padding: 0.85rem 1rem 1rem;
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.65rem;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
-.mov-estratto-edit-importo label {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.mov-estratto-grid-row {
+.cassa-estratto-edit-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.55rem 1rem;
-  padding: 0.75rem 1rem 0.9rem;
-  border-top: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.12);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.65rem;
 }
 
-.mov-estratto-grid-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+.cassa-estratto-edit-grid label,
+.cassa-estratto-edit-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
-.mov-estratto-val {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  font-size: 0.95rem;
-  font-weight: 600;
+.cassa-estratto-edit-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
-.mov-estratto-val--prec {
-  color: var(--text-muted);
-  font-weight: 500;
-}
+@media (max-width: 719px) {
+  .cassa-estratto-table {
+    min-width: 640px;
+  }
 
-.mov-estratto-val--dare {
-  color: var(--danger);
-}
-
-.mov-estratto-val--avere {
-  color: #22c55e;
-}
-
-.mov-estratto-val--saldo {
-  color: var(--text);
-  font-weight: 700;
+  .table-responsive-wrapper:has(.cassa-estratto-table)::after {
+    display: block;
+  }
 }
 
 @media (min-width: 720px) {
-  .mov-estratto {
-    padding: 0 1.25rem 1.25rem;
-  }
-
-  .mov-estratto-grid-head {
-    display: grid;
-  }
-
-  .mov-estratto-grid-row {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.5rem 0.75rem;
-    padding-top: 0.65rem;
-  }
-
-  .mov-estratto-grid-label {
+  .table-responsive-wrapper:has(.cassa-estratto-table)::after {
     display: none;
   }
 }
