@@ -1010,6 +1010,27 @@ h2 {
   color: var(--danger);
 }
 
+.mov-storico-hint {
+  margin: 0;
+  padding: 0 1.25rem 1rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.mov-saldo-cell {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.mov-saldo-cell--after {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .mov-badge-entrata {
   display: inline-block;
   padding: 0.2rem 0.5rem;

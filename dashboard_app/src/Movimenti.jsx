@@ -166,6 +166,18 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
     return m.tipo === TIPO_ENTRATA ? `+ € ${n}` : `− € ${n}`;
   };
 
+  const formatSaldo = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    return `€ ${n.toFixed(2)}`;
+  };
+
+  const saldoDopoMovimento = (m) => {
+    const prec = Number(m.saldo_precedente) || 0;
+    const imp = Number(m.importo) || 0;
+    return m.tipo === TIPO_ENTRATA ? prec + imp : prec - imp;
+  };
+
   return (
     <div style={{ maxWidth: '1120px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Movimenti</h1>
@@ -273,6 +285,9 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
           value={storicoFiltro}
           onChange={setStoricoFiltro}
         />
+        <p className="mov-storico-hint">
+          Saldo prima e saldo dopo mostrano i contanti in cassa al momento della registrazione, come in un estratto conto.
+        </p>
 
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Caricamento...</div>
@@ -287,7 +302,7 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
             <table className="mov-table vers-table">
               <thead>
                 <tr>
-                  {['Data', 'Operatore', 'Tipo', 'Importo', 'Note', ...(isAdmin ? ['Azioni'] : [])].map(h => (
+                  {['Data', 'Operatore', 'Tipo', 'Importo', 'Saldo prima', 'Saldo dopo', 'Note', ...(isAdmin ? ['Azioni'] : [])].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -330,6 +345,12 @@ export default function Movimenti({ initialEditId = null, onEditConsumed, onData
                         {isEditing
                           ? <input type="number" min="0.01" step="0.01" value={editRow.importo} onChange={e => setEditRow(r => ({ ...r, importo: e.target.value }))} style={{ ...inpStyle, width: '100px' }} />
                           : <span className={isEntrata ? 'mov-importo-entrata' : 'mov-importo-uscita'}>{formatImporto(m)}</span>}
+                      </td>
+                      <td className="mov-saldo-cell" style={tdStyle}>
+                        {formatSaldo(m.saldo_precedente)}
+                      </td>
+                      <td className="mov-saldo-cell mov-saldo-cell--after" style={tdStyle}>
+                        {formatSaldo(saldoDopoMovimento(m))}
                       </td>
                       <td style={{ ...tdStyle, minWidth: '180px', color: 'var(--text-muted)' }}>
                         {isEditing ? (
