@@ -272,6 +272,18 @@ export default function Impostazioni({ section = 'generali' }) {
   };
 
   const handleSaveUserModel = () => {
+    if (aiProvider === 'gemini' && !geminiConfigured) {
+      setError(isAdmin
+        ? 'Salva prima la chiave API Gemini nella sezione «Chiavi API IA».'
+        : 'Chiave Gemini non configurata: chiedi all’amministratore.');
+      return;
+    }
+    if (aiProvider === 'groq' && !keyConfigured) {
+      setError(isAdmin
+        ? 'Salva prima la chiave API Groq nella sezione «Chiavi API IA».'
+        : 'Chiave Groq non configurata: chiedi all’amministratore.');
+      return;
+    }
     setSavingUserModel(true);
     setError(null);
     setUserModelSaved(false);
@@ -308,6 +320,7 @@ export default function Impostazioni({ section = 'generali' }) {
     if (geminiKey.trim()) payload.gemini_api_key = geminiKey.trim();
     if (!Object.keys(payload).length) {
       setError('Inserisci almeno una chiave API da salvare.');
+      setSaving(false);
       return;
     }
 
@@ -320,14 +333,39 @@ export default function Impostazioni({ section = 'generali' }) {
       .then(d => {
         if (d.status === 'success') {
           setSaved(true);
-          if (groqKey.trim()) setKeyConfigured(true);
-          if (geminiKey.trim()) setGeminiConfigured(true);
+          const savedGemini = Boolean(geminiKey.trim());
+          const savedGroq = Boolean(groqKey.trim());
+          if (savedGroq) setKeyConfigured(true);
+          if (savedGemini) {
+            setGeminiConfigured(true);
+            setAiProvider('gemini');
+          }
           setGroqKey('');
           setGeminiKey('');
           setTimeout(() => setSaved(false), 3000);
-        } else {
-          setError(d.error || 'Errore durante il salvataggio.');
+          // Allinea stato provider dopo salvataggio chiavi
+          return apiFetch('/api/acquisition/ai-provider/').then(r => r.json()).then((prov) => {
+            if (prov.status === 'success') {
+              setKeyConfigured(prov.data.groq_configured);
+              setGeminiConfigured(prov.data.gemini_configured);
+              if (savedGemini) {
+                return apiFetch('/api/acquisition/ai-provider/', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ai_acquisition_provider: 'gemini' }),
+                }).then(r => r.json()).then((savedProv) => {
+                  if (savedProv.status === 'success') {
+                    setAiProvider(savedProv.data.provider || 'gemini');
+                  }
+                });
+              }
+              if (!savedGemini) {
+                setAiProvider(prov.data.provider || aiProvider);
+              }
+            }
+          });
         }
+        setError(d.error || 'Errore durante il salvataggio.');
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSaving(false));
@@ -655,7 +693,8 @@ export default function Impostazioni({ section = 'generali' }) {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Ogni utente ha la propria preferenza, salvata sul profilo. Le chiavi API sono condivise tra tutte le aziende.
+          Scegli il motore IA (Gemini o Groq). Il modello tecnico Gemini viene gestito dal server
+          (gemini-2.5-flash): non compare come voce separata nel menu.
         </p>
 
         {userModelSaved && (
@@ -666,23 +705,41 @@ export default function Impostazioni({ section = 'generali' }) {
 
         <div style={{ marginBottom: '1rem' }}>
           <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Modello per Acquisisci con IA
+            Motore per Acquisisci con IA
           </label>
           <select
             value={aiProvider}
             onChange={e => setAiProvider(e.target.value)}
-            style={{ ...inputStyle, width: '100%', maxWidth: '320px', fontFamily: 'inherit' }}
+            style={{ ...inputStyle, width: '100%', maxWidth: '360px', fontFamily: 'inherit' }}
           >
-            <option value="groq" disabled={!keyConfigured}>Groq - Llama 4 Scout Vision{!keyConfigured ? ' (non configurato)' : ''}</option>
-            <option value="gemini" disabled={!geminiConfigured}>Gemini - gemini-2.5-flash{!geminiConfigured ? ' (non configurato)' : ''}</option>
+            <option value="gemini">
+              Gemini (consigliato){!geminiConfigured ? ' — chiave assente' : ''}
+            </option>
+            <option value="groq">
+              Groq{!keyConfigured ? ' — chiave assente' : ''}
+            </option>
           </select>
+          {!geminiConfigured && aiProvider === 'gemini' && (
+            <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
+              {isAdmin
+                ? 'Inserisci e salva la chiave API Gemini nella sezione «Chiavi API IA» qui sotto, poi riprova.'
+                : 'Chiedi all’amministratore di configurare la chiave API Gemini.'}
+            </p>
+          )}
+          {!keyConfigured && aiProvider === 'groq' && (
+            <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
+              {isAdmin
+                ? 'Inserisci e salva la chiave API Groq nella sezione «Chiavi API IA» qui sotto.'
+                : 'Chiedi all’amministratore di configurare la chiave API Groq.'}
+            </p>
+          )}
         </div>
 
         <button
           type="button"
           onClick={handleSaveUserModel}
-          disabled={savingUserModel}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
+          disabled={savingUserModel || (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured)}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured) ? 0.55 : 1 }}
         >
           {savingUserModel ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
           Salva il mio modello
@@ -946,14 +1003,14 @@ export default function Impostazioni({ section = 'generali' }) {
       </>
       )}
 
-      {showGenerali && (
+      {showGenerali && isAdmin && (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Zap size={20} color="var(--accent)" />
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Chiavi API IA (tutte le aziende)</h2>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Le chiavi Groq e Gemini valgono per Parrot caffè e per ogni altra azienda registrata.
+          Dopo aver salvato la chiave Gemini, seleziona «Gemini (consigliato)» nel riquadro «Il tuo modello IA» sopra e premi Salva.
         </p>
 
         {saved && (
