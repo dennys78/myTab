@@ -1852,7 +1852,7 @@ def _is_json_validate_error(exc):
     )
 
 
-def _extract_ai_with_groq(images, company=None, prompt=None):
+def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
     api_key = _get_groq_key()
     if not api_key:
         raise ValueError('Chiave API Groq non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
@@ -1860,12 +1860,18 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
     from openai import OpenAI
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    # Free tier ~8000 TPM: immagini ridotte.
-    shrink_steps = (
-        (1100, 70) if len(images) <= 1 else (800, 55),
-        (900, 55),
-        (640, 40),
-    )
+    if fast:
+        # Classificazione / report dedicati: una sola compressione, output corto.
+        shrink_steps = ((720, 55),)
+        max_out_tokens = 800
+    else:
+        # Free tier ~8000 TPM: immagini ridotte.
+        shrink_steps = (
+            (1100, 70) if len(images) <= 1 else (800, 55),
+            (900, 55),
+            (640, 40),
+        )
+        max_out_tokens = 2500
     model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.6-27b').strip()
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
@@ -1898,7 +1904,7 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
                 response = client.chat.completions.create(
                     model=model,
                     temperature=0,
-                    max_tokens=2500,
+                    max_tokens=max_out_tokens,
                     messages=[{'role': 'user', 'content': content}],
                     **variant,
                 )
@@ -1985,11 +1991,11 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
     raise last_exc
 
 
-def _extract_ai_json(images, company, provider, prompt):
+def _extract_ai_json(images, company, provider, prompt, *, fast=False):
     chosen = provider or 'groq'
     if chosen == 'gemini':
         return _extract_ai_with_gemini(images, company, prompt=prompt)
-    return _extract_ai_with_groq(images, company, prompt=prompt)
+    return _extract_ai_with_groq(images, company, prompt=prompt, fast=fast)
 
 
 def _extract_report_overlays(report_slots, company, provider):
@@ -2001,7 +2007,7 @@ def _extract_report_overlays(report_slots, company, provider):
         if not prompt or not image:
             continue
         try:
-            parsed = _extract_ai_json([image], company, provider, prompt)
+            parsed = _extract_ai_json([image], company, provider, prompt, fast=True)
             normalized = normalize_report_overlay(key, parsed)
             if normalized:
                 overlays[key] = normalized
@@ -2014,7 +2020,7 @@ def _classify_acquisition_image(image, company, provider):
     from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
 
     try:
-        parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT)
+        parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
         return normalize_image_type(parsed.get('type'))
     except Exception:
         return 'other'
@@ -2111,13 +2117,22 @@ def _extract_footer_summary(images, company, provider):
 
     if not images:
         return None
+    # Groq free tier: una sola estrazione footer (evita N chiamate extra).
+    sources = images[:1] if provider == 'groq' else images
     candidates = []
-    for image in images:
+    for image in sources:
         try:
-            candidates.append(_extract_ai_json([image], company, provider, FIVE_FILES_SUMMARY_PROMPT))
+            candidates.append(
+                _extract_ai_json(
+                    [image],
+                    company,
+                    provider,
+                    FIVE_FILES_SUMMARY_PROMPT,
+                    fast=provider == 'groq',
+                )
+            )
         except Exception:
             continue
-    # Evita batch multi-immagine su Groq free tier (TPM basso).
     if provider != 'groq' and len(images) > 1:
         try:
             batch = _extract_ai_json(images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
@@ -2132,13 +2147,32 @@ def _extract_footer_summary(images, company, provider):
 def _extract_closure_five_files(images, company, provider):
     """Protocollo a 5/6 file: classificazione report + estrazione dedicata riga riepilogo."""
     from .ai_acquisition import (
+        REPORT_SLOT_ORDER,
         merge_five_files_summary,
         split_acquisition_images,
+        split_acquisition_images_by_position,
     )
 
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-    image_types = [_classify_acquisition_image(img, company, provider) for img in images]
-    main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
+    image_types = []
+
+    # Groq: evita 5/6 classificazione (timeout Nginx/Gunicorn). Usa ordine fisso upload.
+    # 6 foto: [main...] + Lottomatica, Mooney, Gratta, Sisal
+    # 5 foto: [main...] + Lottomatica, Gratta, Sisal
+    if provider == 'groq' and len(images) == 6:
+        main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
+        image_types = (
+            ['main_closure'] * len(main_images)
+            + ['lottomatica', 'mooney', 'gratta', 'sisal']
+        )
+    elif provider == 'groq' and len(images) == 5:
+        main_images = list(images[:-3]) or [images[0]]
+        report_slots = dict(zip(REPORT_SLOT_ORDER, images[-3:]))
+        footer_images = []
+        image_types = ['main_closure'] * len(main_images) + list(REPORT_SLOT_ORDER)
+    else:
+        image_types = [_classify_acquisition_image(img, company, provider) for img in images]
+        main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)

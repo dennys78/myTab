@@ -177,7 +177,19 @@ export function postExtractAiWithProgress(formData, { onUploadProgress, signal }
       try {
         data = JSON.parse(xhr.responseText || '{}');
       } catch {
-        reject(new Error('Risposta non valida dal server.'));
+        if (xhr.status === 504 || xhr.status === 502) {
+          reject(
+            new Error(
+              'Timeout del server durante l\'analisi IA (troppe foto o servizio lento). Riprova tra un minuto oppure usa Gemini in Impostazioni.',
+            ),
+          );
+          return;
+        }
+        reject(
+          new Error(
+            `Risposta non valida dal server (HTTP ${xhr.status || '?'}). Se l'analisi dura troppo, riprova o seleziona Gemini.`,
+          ),
+        );
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {

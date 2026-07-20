@@ -724,12 +724,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         {isFiveFileMode
-          ? 'Carica 5 o 6 immagini: riepilogo cassa e report giochi (6ª foto = Mooney opzionale).'
+          ? 'Carica 5 o 6 immagini in questo ordine: 1) riepilogo cassa (eventuale 2ª pagina), poi Lottomatica, Gratta e Vinci, Sisal; con 6 foto inserisci Mooney dopo Lottomatica.'
           : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
-          ? 'Report Lottomatica e Sisal: entrate e uscite sostituite dai documenti dedicati. Con 6 foto anche Mooney. L\'ordine viene riconosciuto automaticamente.'
+          ? 'Con Groq l\'ordine di upload conta: report Lottomatica/Gratta/Sisal (e Mooney se presente) sostituiscono entrate/uscite dei reparti gioco.'
           : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
