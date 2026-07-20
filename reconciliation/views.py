@@ -1966,10 +1966,11 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
 def _gemini_vision_model_candidates():
     """Ordine di prova: env override, poi modelli Flash attuali."""
     preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
-    # gemini-2.5-flash: spesso 404 per chiavi/progetti nuovi → preferisci 3.5
+    # Preferisci 3.5; in caso di 503/404 prova alternative più leggere
     defaults = (
         'gemini-3.5-flash',
         'gemini-flash-latest',
+        'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
         'gemini-2.5-flash',
     )
@@ -2009,6 +2010,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
     models = _gemini_vision_model_candidates()
     last_exc = None
     tried = []
+    saw_overload = False
 
     for model in models:
         tried.append(model)
@@ -2017,7 +2019,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
             f'{urllib.parse.quote(model, safe="")}:generateContent'
             f'?key={urllib.parse.quote(api_key)}'
         )
-        for attempt in range(3):
+        for attempt in range(4):
             req = urllib.request.Request(
                 url,
                 data=data,
@@ -2037,19 +2039,30 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
                 except Exception:
                     body = ''
                 if exc.code == 404:
-                    # Prova il modello successivo nella lista
                     break
-                if exc.code == 429 and attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
+                if exc.code in {429, 503}:
+                    saw_overload = saw_overload or exc.code == 503
+                    if attempt < 3:
+                        # 503 high demand: backoff più lungo prima di riprovare / cambiare modello
+                        time.sleep(2.0 * (attempt + 1))
+                        continue
+                    # Esauriti i retry su questo modello → prova il successivo
+                    break
                 detail = f' ({body})' if body else ''
                 raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
             except Exception as exc:
                 last_exc = exc
-                if _is_rate_limit_error(exc) and attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
+                if _is_rate_limit_error(exc) and attempt < 3:
+                    time.sleep(2.0 * (attempt + 1))
                     continue
                 raise
+
+    if saw_overload:
+        raise ValueError(
+            'Gemini è momentaneamente sovraccarico (alta domanda). '
+            'Attendi 30–60 secondi e riprova, oppure in Impostazioni passa temporaneamente a Groq. '
+            f'Modelli provati: {", ".join(tried)}.'
+        ) from last_exc
 
     raise ValueError(
         'Nessun modello Gemini disponibile per questa chiave API '
