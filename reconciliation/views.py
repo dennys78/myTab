@@ -1831,12 +1831,14 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
         })
     content.append({'type': 'text', 'text': text_prompt})
 
+    # Vision gratuita su Groq free tier (Llama 4 Scout non è più disponibile).
+    model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.6-27b').strip()
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
     for attempt in range(3):
         try:
             response = client.chat.completions.create(
-                model='meta-llama/llama-4-scout-17b-16e-instruct',
+                model=model,
                 max_tokens=4096,
                 response_format={'type': 'json_object'},
                 messages=[{'role': 'user', 'content': content}],
