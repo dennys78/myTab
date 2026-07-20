@@ -417,7 +417,7 @@ def _preprocess(img):
     return img
 
 
-def _prepare_ai_image(file_bytes):
+def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
     """
     Normalizza foto (HEIC/JPEG/PNG) in JPEG per le API vision.
     Evita errori post-decodifica quando le foto arrivano dalla fotocamera del telefono.
@@ -430,10 +430,9 @@ def _prepare_ai_image(file_bytes):
         if img.mode != 'RGB':
             img = img.convert('RGB')
         buf = io.BytesIO()
-        max_side = 2400
         if max(img.size) > max_side:
             img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-        img.save(buf, format='JPEG', quality=90, optimize=True)
+        img.save(buf, format='JPEG', quality=quality, optimize=True)
         normalized = buf.getvalue()
         if not normalized:
             raise ValueError('conversione JPEG fallita')
@@ -443,6 +442,41 @@ def _prepare_ai_image(file_bytes):
         raise ValueError(
             f'Immagine non leggibile ({exc}). Riprova scattando di nuovo o importa JPG/PNG dalla galleria.'
         ) from exc
+
+
+def _shrink_images_for_groq(images, *, max_side=1024, quality=65):
+    """Ricomprime le immagini per stare sotto il TPM free tier Groq (~8000)."""
+    shrunk = []
+    for image in images:
+        raw = base64.standard_b64decode(image['b64'])
+        mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
+        shrunk.append({'mime': mime, 'b64': b64})
+    return shrunk
+
+
+def _is_rate_limit_error(exc):
+    if isinstance(exc, urllib.error.HTTPError) and exc.code in {413, 429}:
+        return True
+    msg = str(exc).lower()
+    return (
+        '429' in msg
+        or '413' in msg
+        or 'too many requests' in msg
+        or 'rate_limit' in msg
+        or 'rate limit' in msg
+        or 'request too large' in msg
+        or 'tokens per minute' in msg
+    )
+
+
+def _is_request_too_large_error(exc):
+    msg = str(exc).lower()
+    return (
+        '413' in msg
+        or 'request too large' in msg
+        or 'tokens per minute' in msg
+        or ('tpm' in msg and 'limit' in msg)
+    )
 
 
 def _resolve_dept(name: str, known: list) -> str | None:
@@ -1066,18 +1100,12 @@ def _ai_provider_options(user, company=None):
     }
 
 
-def _is_rate_limit_error(exc):
-    if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
-        return True
-    msg = str(exc).lower()
-    return '429' in msg or 'too many requests' in msg or 'rate limit' in msg
-
-
 def _rate_limit_message(provider):
     alt = 'Gemini' if provider == 'groq' else 'Groq'
     return (
-        f'Limite richieste del servizio {provider.upper()} (errore 429). '
-        f'Attendi uno o due minuti oppure vai in Impostazioni e seleziona {alt} come tuo modello IA.'
+        f'Limite richieste del servizio {provider.upper()} (errore 429/TPM). '
+        f'Attendi uno o due minuti oppure vai in Impostazioni e seleziona {alt} come tuo modello IA. '
+        f'Con Groq free tier le foto vengono già compresse automaticamente.'
     )
 
 
@@ -1823,30 +1851,40 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
     from openai import OpenAI
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    content = []
-    for image in images:
-        content.append({
-            'type': 'image_url',
-            'image_url': {'url': f"data:{image['mime']};base64,{image['b64']}"},
-        })
-    content.append({'type': 'text', 'text': text_prompt})
-
+    # Free tier ~8000 TPM: immagini ridotte + pochi token di output.
+    # Con più foto si scende ulteriormente di risoluzione.
+    shrink_steps = (
+        (960, 60) if len(images) <= 1 else (720, 50),
+        (720, 45),
+        (560, 35),
+    )
     # Vision gratuita su Groq free tier (Llama 4 Scout non è più disponibile).
     model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.6-27b').strip()
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
-    for attempt in range(3):
+
+    for attempt, (max_side, quality) in enumerate(shrink_steps):
+        payload_images = _shrink_images_for_groq(images, max_side=max_side, quality=quality)
+        content = []
+        for image in payload_images:
+            content.append({
+                'type': 'image_url',
+                'image_url': {'url': f"data:{image['mime']};base64,{image['b64']}"},
+            })
+        content.append({'type': 'text', 'text': text_prompt})
         try:
             response = client.chat.completions.create(
                 model=model,
-                max_tokens=4096,
+                max_tokens=1536,
                 response_format={'type': 'json_object'},
                 messages=[{'role': 'user', 'content': content}],
             )
             return _json_from_ai_text(response.choices[0].message.content)
         except Exception as exc:
             last_exc = exc
-            if _is_rate_limit_error(exc) and attempt < 2:
+            if _is_request_too_large_error(exc) and attempt < len(shrink_steps) - 1:
+                continue
+            if _is_rate_limit_error(exc) and attempt < len(shrink_steps) - 1:
                 time.sleep(1.5 * (attempt + 1))
                 continue
             raise
@@ -1941,9 +1979,53 @@ def _classify_acquisition_image(image, company, provider):
         return 'other'
 
 
+def _merge_two_page_parsed(base, extra):
+    """Unisce due estrazioni (pagina 1 + pagina 2) per il free tier Groq (1 foto/request)."""
+    if not base:
+        return extra
+    if not extra:
+        return base
+    out = dict(base)
+    if not (out.get('date') or '').strip() and (extra.get('date') or '').strip():
+        out['date'] = extra.get('date')
+    base_sum = dict(out.get('summary') or {})
+    for key, value in dict(extra.get('summary') or {}).items():
+        current = base_sum.get(key)
+        empty_current = current in (None, '', 0, 0.0)
+        empty_value = value in (None, '', 0, 0.0)
+        if empty_current and not empty_value:
+            base_sum[key] = value
+    out['summary'] = base_sum
+    items = list(out.get('items') or [])
+    seen = {
+        (
+            str(item.get('department') or '').strip().upper(),
+            str(item.get('name') or item.get('description') or '').strip().upper(),
+        )
+        for item in items
+    }
+    for item in extra.get('items') or []:
+        key = (
+            str(item.get('department') or '').strip().upper(),
+            str(item.get('name') or item.get('description') or '').strip().upper(),
+        )
+        if key not in seen:
+            items.append(item)
+            seen.add(key)
+    out['items'] = items
+    return out
+
+
 def _extract_closure_two_files(images, company, provider):
     """Protocollo a 2 file: solo riepilogo cassa, senza classificazione report."""
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
+    # Groq free tier: una foto per volta per non superare 8000 TPM.
+    if provider == 'groq' and len(images) > 1:
+        merged = None
+        for image in images:
+            parsed = _extract_ai_json([image], company, provider, MAIN_CLOSURE_AI_PROMPT)
+            merged = _merge_two_page_parsed(merged, parsed)
+        return merged, operator_label, {}, False
     parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
     return parsed, operator_label, {}, False
 
@@ -1959,13 +2041,15 @@ def _extract_footer_summary(images, company, provider):
             candidates.append(_extract_ai_json([image], company, provider, FIVE_FILES_SUMMARY_PROMPT))
         except Exception:
             continue
+    # Evita batch multi-immagine su Groq free tier (TPM basso).
+    if provider != 'groq' and len(images) > 1:
+        try:
+            batch = _extract_ai_json(images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
+            candidates.append(batch)
+        except Exception:
+            pass
     if not candidates:
         return None
-    try:
-        batch = _extract_ai_json(images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
-        candidates.append(batch)
-    except Exception:
-        pass
     return pick_best_footer_parsed(candidates)
 
 
