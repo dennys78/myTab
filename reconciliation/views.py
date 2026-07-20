@@ -1987,7 +1987,13 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
         },
     }
     data = json.dumps(payload).encode('utf-8')
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={urllib.parse.quote(api_key)}'
+    # gemini-2.0-flash è stato dismesso (giu 2026) → 404; default attuale Flash stabile
+    model = (os.environ.get('GEMINI_VISION_MODEL') or 'gemini-2.5-flash').strip()
+    url = (
+        f'https://generativelanguage.googleapis.com/v1beta/models/'
+        f'{urllib.parse.quote(model, safe="")}:generateContent'
+        f'?key={urllib.parse.quote(api_key)}'
+    )
     last_exc = None
     for attempt in range(3):
         req = urllib.request.Request(
@@ -2003,6 +2009,12 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
             return _json_from_ai_text(raw_json)
         except urllib.error.HTTPError as exc:
             last_exc = exc
+            if exc.code == 404:
+                raise ValueError(
+                    f'Modello Gemini non trovato ({model}). '
+                    'Aggiorna myTab oppure imposta GEMINI_VISION_MODEL '
+                    '(es. gemini-2.5-flash o gemini-3.5-flash).'
+                ) from exc
             if exc.code == 429 and attempt < 2:
                 time.sleep(1.5 * (attempt + 1))
                 continue

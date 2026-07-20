@@ -674,7 +674,7 @@ export default function Impostazioni({ section = 'generali' }) {
             style={{ ...inputStyle, width: '100%', maxWidth: '320px', fontFamily: 'inherit' }}
           >
             <option value="groq" disabled={!keyConfigured}>Groq - Llama 4 Scout Vision{!keyConfigured ? ' (non configurato)' : ''}</option>
-            <option value="gemini" disabled={!geminiConfigured}>Gemini - gemini-2.0-flash{!geminiConfigured ? ' (non configurato)' : ''}</option>
+            <option value="gemini" disabled={!geminiConfigured}>Gemini - gemini-2.5-flash{!geminiConfigured ? ' (non configurato)' : ''}</option>
           </select>
         </div>
 
