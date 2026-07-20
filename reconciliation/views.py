@@ -1963,6 +1963,25 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
     raise last_exc
 
 
+def _gemini_vision_model_candidates():
+    """Ordine di prova: env override, poi modelli Flash attuali."""
+    preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
+    # gemini-2.5-flash: spesso 404 per chiavi/progetti nuovi → preferisci 3.5
+    defaults = (
+        'gemini-3.5-flash',
+        'gemini-flash-latest',
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
+    )
+    seen = set()
+    ordered = []
+    for name in ((preferred,) if preferred else ()) + defaults:
+        if name and name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
+
+
 def _extract_ai_with_gemini(images, company=None, prompt=None):
     api_key = _get_gemini_key()
     if not api_key:
@@ -1987,45 +2006,57 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
         },
     }
     data = json.dumps(payload).encode('utf-8')
-    # gemini-2.0-flash è stato dismesso (giu 2026) → 404; default attuale Flash stabile
-    model = (os.environ.get('GEMINI_VISION_MODEL') or 'gemini-2.5-flash').strip()
-    url = (
-        f'https://generativelanguage.googleapis.com/v1beta/models/'
-        f'{urllib.parse.quote(model, safe="")}:generateContent'
-        f'?key={urllib.parse.quote(api_key)}'
-    )
+    models = _gemini_vision_model_candidates()
     last_exc = None
-    for attempt in range(3):
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={'Content-Type': 'application/json'},
-            method='POST',
+    tried = []
+
+    for model in models:
+        tried.append(model)
+        url = (
+            f'https://generativelanguage.googleapis.com/v1beta/models/'
+            f'{urllib.parse.quote(model, safe="")}:generateContent'
+            f'?key={urllib.parse.quote(api_key)}'
         )
-        try:
-            with urllib.request.urlopen(req, timeout=120) as response:
-                result = json.loads(response.read().decode('utf-8'))
-            raw_json = result['candidates'][0]['content']['parts'][0]['text']
-            return _json_from_ai_text(raw_json)
-        except urllib.error.HTTPError as exc:
-            last_exc = exc
-            if exc.code == 404:
-                raise ValueError(
-                    f'Modello Gemini non trovato ({model}). '
-                    'Aggiorna myTab oppure imposta GEMINI_VISION_MODEL '
-                    '(es. gemini-2.5-flash o gemini-3.5-flash).'
-                ) from exc
-            if exc.code == 429 and attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise
-        except Exception as exc:
-            last_exc = exc
-            if _is_rate_limit_error(exc) and attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise
-    raise last_exc
+        for attempt in range(3):
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=120) as response:
+                    result = json.loads(response.read().decode('utf-8'))
+                raw_json = result['candidates'][0]['content']['parts'][0]['text']
+                return _json_from_ai_text(raw_json)
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                body = ''
+                try:
+                    body = exc.read().decode('utf-8', errors='replace')[:400]
+                except Exception:
+                    body = ''
+                if exc.code == 404:
+                    # Prova il modello successivo nella lista
+                    break
+                if exc.code == 429 and attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                detail = f' ({body})' if body else ''
+                raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
+            except Exception as exc:
+                last_exc = exc
+                if _is_rate_limit_error(exc) and attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+
+    raise ValueError(
+        'Nessun modello Gemini disponibile per questa chiave API '
+        f'(provati: {", ".join(tried)}). '
+        'Imposta GEMINI_VISION_MODEL=gemini-3.5-flash nel .env del server '
+        'oppure crea una nuova chiave in Google AI Studio.'
+    ) from last_exc
 
 
 def _extract_ai_json(images, company, provider, prompt, *, fast=False):

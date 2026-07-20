@@ -694,7 +694,7 @@ export default function Impostazioni({ section = 'generali' }) {
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
           Scegli il motore IA (Gemini o Groq). Il modello tecnico Gemini viene gestito dal server
-          (gemini-2.5-flash): non compare come voce separata nel menu.
+          (gemini-3.5-flash): non compare come voce separata nel menu.
         </p>
 
         {userModelSaved && (
