@@ -13,6 +13,7 @@ import { buildClosureSavedMessage, buildClosureSavedNotificationPayload } from '
 import AcquisitionProgressBar from './AcquisitionProgressBar';
 import {
   createAcquisitionProgressController,
+  pollDraftExtractStatus,
   postExtractAiWithProgress,
 } from './acquisitionProgress';
 import { useCompactCaptureUI } from './useCompactCaptureUI';
@@ -149,6 +150,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return;
     }
     const imageCount = filesRef.current.length;
+    const abortController = new AbortController();
+    loadDraftAbortRef.current?.abort();
+    loadDraftAbortRef.current = abortController;
+
     const controller = createAcquisitionProgressController(imageCount, setExtractProgress, {
       twoFileMode: acquisitionFileMode === ACQUISITION_MODE_TWO,
     });
@@ -162,20 +167,35 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
     postExtractAiWithProgress(fd, {
       onUploadProgress: (ratio) => controller.setUploadProgress(ratio),
+      signal: abortController.signal,
     })
-      .then((d) => {
-        if (d?.status === 'success' && d.data) {
-          try {
-            applyPreviewData(d.data);
-            stopProgress(true);
-          } catch (err) {
-            setError(err?.message || 'Errore elaborazione dati estratti.');
-            stopProgress(false);
-          }
-        } else {
-          setError(d?.error || d?.message || 'Errore durante l\'estrazione.');
-          stopProgress(false);
+      .then(async (d) => {
+        if (d?.status === 'success' && d.data && !d.extract_status) {
+          applyPreviewData(d.data);
+          stopProgress(true);
+          return;
         }
+        const draftId = d?.draft_id || d?.data?.draft_id;
+        if ((d?.status === 'queued' || d?.status === 'processing' || d?.extract_status) && draftId) {
+          controller.setMessage?.('Analisi IA in corso…');
+          const ready = await pollDraftExtractStatus(draftId, {
+            signal: abortController.signal,
+            onStatus: (status) => {
+              if (status === 'queued') controller.setMessage?.('In coda per l\'analisi IA…');
+              if (status === 'processing') controller.setMessage?.('Elaborazione foto in corso…');
+            },
+          });
+          applyPreviewData(ready.data);
+          stopProgress(true);
+          return;
+        }
+        if (d?.status === 'success' && d.data) {
+          applyPreviewData(d.data);
+          stopProgress(true);
+          return;
+        }
+        setError(d?.error || d?.message || 'Errore durante l\'estrazione.');
+        stopProgress(false);
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -228,20 +248,35 @@ export default function AcquisisciChiusureAI({ onBack }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ force }),
     })
-      .then(r => r.json())
-      .then(d => {
+      .then(async (r) => {
+        const d = await r.json();
         if (requestId !== loadDraftRequestIdRef.current) return;
         if (d.status === 'success' && d.data) {
           applyPreviewData(d.data, { cached: !!d.cached });
           stopProgress(true);
-        } else {
-          setError(d.error || 'Errore durante il caricamento della bozza.');
-          stopProgress(false);
+          return;
         }
+        const queuedId = d.draft_id || draftId;
+        if (d.status === 'queued' || d.status === 'processing' || d.extract_status === 'queued' || d.extract_status === 'processing') {
+          progress.setMessage?.('Analisi IA in corso…');
+          const ready = await pollDraftExtractStatus(queuedId, {
+            signal: controller.signal,
+            onStatus: (status) => {
+              if (status === 'queued') progress.setMessage?.('In coda per l\'analisi IA…');
+              if (status === 'processing') progress.setMessage?.('Elaborazione foto in corso…');
+            },
+          });
+          if (requestId !== loadDraftRequestIdRef.current) return;
+          applyPreviewData(ready.data, { cached: false });
+          stopProgress(true);
+          return;
+        }
+        setError(d.error || 'Errore durante il caricamento della bozza.');
+        stopProgress(false);
       })
       .catch((err) => {
         if (err.name === 'AbortError') return;
-        setError('Errore di rete.');
+        setError(err.message || 'Errore di rete.');
         stopProgress(false);
       })
       .finally(() => {
@@ -724,12 +759,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         {isFiveFileMode
-          ? 'Carica 5 o 6 immagini in questo ordine: 1) riepilogo cassa (eventuale 2ª pagina), poi Lottomatica, Gratta e Vinci, Sisal; con 6 foto inserisci Mooney dopo Lottomatica.'
+          ? 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.'
           : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
-          ? 'Con Groq l\'ordine di upload conta: report Lottomatica/Gratta/Sisal (e Mooney se presente) sostituiscono entrate/uscite dei reparti gioco.'
+          ? 'I report giochi sostituiscono entrate/uscite dei reparti corrispondenti. L\'analisi avviene in background: puoi attendere il progresso senza timeout.'
           : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>

@@ -5,29 +5,30 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
   const steps = [];
 
   if (!skipUpload) {
-    steps.push({ phase: 'upload', label: 'Caricamento immagini…', weight: 16 });
+    steps.push({ phase: 'upload', label: 'Caricamento immagini…', weight: 12 });
   }
-  steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 8 });
+  steps.push({ phase: 'queue', label: 'In coda per l\'analisi IA…', weight: 6 });
+  steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 6 });
 
   if (n >= 3) {
     for (let i = 1; i <= n; i += 1) {
       steps.push({
         phase: 'decode',
-        label: `Decodifica foto ${i} di ${n}…`,
-        weight: 26 / n,
+        label: `Classificazione foto ${i} di ${n}…`,
+        weight: 22 / n,
       });
     }
   } else {
     steps.push({
       phase: 'decode',
-      label: n === 1 ? 'Decodifica foto…' : `Decodifica ${n} foto…`,
-      weight: 22,
+      label: n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`,
+      weight: 18,
     });
   }
 
-  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : 28 });
+  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : 26 });
   if (!twoFileMode) {
-    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 14 });
+    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 16 });
   }
   steps.push({ phase: 'finalize', label: 'Finalizzazione…', weight: 6 });
   return steps;
@@ -47,11 +48,11 @@ function labelForProgress(steps, ratio) {
 /**
  * @param {number} imageCount
  * @param {(state: { percent: number, message: string, active: boolean } | null) => void} onUpdate
- * @param {{ skipUpload?: boolean }} options
+ * @param {{ skipUpload?: boolean, twoFileMode?: boolean }} options
  */
 export function createAcquisitionProgressController(imageCount, onUpdate, options = {}) {
   const steps = buildAcquisitionProgressSteps(imageCount, options);
-  const uploadCap = options.skipUpload ? 0 : 18;
+  const uploadCap = options.skipUpload ? 0 : 14;
   const simMax = 96;
   let cancelled = false;
   let timer = null;
@@ -72,7 +73,8 @@ export function createAcquisitionProgressController(imageCount, onUpdate, option
   };
 
   const simSteps = steps.filter((s) => s.phase !== 'upload');
-  const durationMs = Math.min(50_000, 3_500 + Math.max(1, imageCount) * 2_800);
+  // Job asincrono: 5/6 file possono richiedere alcuni minuti
+  const durationMs = Math.min(180_000, 8_000 + Math.max(1, imageCount) * 12_000);
 
   const startSimulation = (fromPercent) => {
     simFrom = fromPercent;
@@ -129,6 +131,14 @@ export function createAcquisitionProgressController(imageCount, onUpdate, option
         if (!timer) startSimulation(uploadCap);
       }
     },
+    setMessage(message) {
+      if (cancelled) return;
+      onUpdate({
+        percent: Math.min(simMax, Math.max(uploadCap, 20)),
+        message: message || 'Elaborazione in corso…',
+        active: true,
+      });
+    },
     complete() {
       if (cancelled) return;
       cancelled = true;
@@ -149,7 +159,74 @@ export function getCsrfToken() {
   return match ? decodeURIComponent(match.split('=')[1]) : '';
 }
 
-/** Upload con progresso reale + risposta JSON. */
+/**
+ * Poll stato job estrazione fino a ready/error.
+ * @returns {Promise<object>} risposta finale con data
+ */
+export async function pollDraftExtractStatus(draftId, { signal, onStatus, intervalMs = 1500, timeoutMs = 300_000 } = {}) {
+  const started = Date.now();
+  let lastStatus = '';
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(
+        'L\'analisi IA sta impiegando troppo tempo. Lascia aperta la pagina e riprova tra un minuto, oppure verifica le chiavi API in Impostazioni.',
+      );
+    }
+
+    const res = await fetch(`/api/acquisition-drafts/${draftId}/extract-status/`, {
+      method: 'GET',
+      credentials: 'include',
+      signal,
+      headers: {
+        Accept: 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+      },
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(
+        `Risposta non valida dal server (HTTP ${res.status || '?'}). Riprova tra poco.`,
+      );
+    }
+
+    const extractStatus = data.extract_status || data.status || '';
+    if (extractStatus !== lastStatus) {
+      lastStatus = extractStatus;
+      if (onStatus) onStatus(extractStatus, data);
+    }
+
+    if (extractStatus === 'ready' || data.status === 'success') {
+      if (data.data) return data;
+      throw new Error(data.error || 'Estrazione completata senza dati.');
+    }
+
+    if (extractStatus === 'error' || data.status === 'error') {
+      throw new Error(
+        data.error
+          || 'Errore durante l\'analisi IA. Controlla le foto (2, 5 o 6 file) e riprova.',
+      );
+    }
+
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, intervalMs);
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          resolve();
+        }, { once: true });
+      }
+    });
+  }
+}
+
+/** Upload con progresso reale + avvio job asincrono. */
 export function postExtractAiWithProgress(formData, { onUploadProgress, signal } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -180,20 +257,20 @@ export function postExtractAiWithProgress(formData, { onUploadProgress, signal }
         if (xhr.status === 504 || xhr.status === 502) {
           reject(
             new Error(
-              'Timeout del server durante l\'analisi IA (troppe foto o servizio lento). Riprova tra un minuto oppure usa Gemini in Impostazioni.',
+              'Timeout del server durante il caricamento. Riprova con meno foto oppure verifica la connessione.',
             ),
           );
           return;
         }
         reject(
           new Error(
-            `Risposta non valida dal server (HTTP ${xhr.status || '?'}). Se l'analisi dura troppo, riprova o seleziona Gemini.`,
+            `Risposta non valida dal server (HTTP ${xhr.status || '?'}). Riprova tra poco.`,
           ),
         );
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        if (data.status === 'success' || data.data) {
+        if (data.status === 'queued' || data.status === 'processing' || data.status === 'success' || data.data) {
           resolve(data);
           return;
         }

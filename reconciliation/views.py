@@ -6,6 +6,7 @@ import copy
 import io
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -14,6 +15,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 from django.http import FileResponse, JsonResponse
 from django.core.files.base import ContentFile
+from django.db import close_old_connections
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.dateparse import parse_date
 from django.utils import timezone
@@ -442,6 +444,13 @@ def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
         raise ValueError(
             f'Immagine non leggibile ({exc}). Riprova scattando di nuovo o importa JPG/PNG dalla galleria.'
         ) from exc
+
+
+def _prepare_ai_image_for_provider(file_bytes, provider='gemini'):
+    """Compressione mirata: Gemini più grande (OCR), Groq più aggressivo (TPM)."""
+    if provider == 'groq':
+        return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
+    return _prepare_ai_image(file_bytes, max_side=1800, quality=85)
 
 
 def _shrink_images_for_groq(images, *, max_side=1024, quality=65):
@@ -1051,15 +1060,22 @@ def _get_gemini_key(company=None):
     return _get_global_setting('gemini_api_key')
 
 
+def _default_ai_provider():
+    """Gemini di default se la chiave è configurata, altrimenti Groq."""
+    return 'gemini' if _get_gemini_key() else 'groq'
+
+
 def _get_ai_provider(company):
     try:
         provider = AppSetting.objects.get(company=company, key='ai_acquisition_provider').value.strip().lower()
     except AppSetting.DoesNotExist:
         provider = ''
-    return provider if provider in {'groq', 'gemini'} else 'groq'
+    return provider if provider in {'groq', 'gemini'} else _default_ai_provider()
 
 
 def _get_user_ai_provider(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return ''
     try:
         provider = user.profile.ai_acquisition_provider.strip().lower()
     except UserProfile.DoesNotExist:
@@ -1083,7 +1099,16 @@ def _resolve_ai_provider(user, company=None, override=None):
     user_pref = _get_user_ai_provider(user)
     if user_pref:
         return user_pref
-    return 'groq'
+    if company is not None:
+        try:
+            company_pref = AppSetting.objects.get(
+                company=company, key='ai_acquisition_provider'
+            ).value.strip().lower()
+        except AppSetting.DoesNotExist:
+            company_pref = ''
+        if company_pref in {'groq', 'gemini'}:
+            return company_pref
+    return _default_ai_provider()
 
 
 def _ai_provider_options(user, company=None):
@@ -2147,7 +2172,6 @@ def _extract_footer_summary(images, company, provider):
 def _extract_closure_five_files(images, company, provider):
     """Protocollo a 5/6 file: classificazione report + estrazione dedicata riga riepilogo."""
     from .ai_acquisition import (
-        REPORT_SLOT_ORDER,
         merge_five_files_summary,
         split_acquisition_images,
         split_acquisition_images_by_position,
@@ -2156,23 +2180,13 @@ def _extract_closure_five_files(images, company, provider):
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
     image_types = []
 
-    # Groq: evita 5/6 classificazione (timeout Nginx/Gunicorn). Usa ordine fisso upload.
-    # 6 foto: [main...] + Lottomatica, Mooney, Gratta, Sisal
-    # 5 foto: [main...] + Lottomatica, Gratta, Sisal
-    if provider == 'groq' and len(images) == 6:
-        main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
-        image_types = (
-            ['main_closure'] * len(main_images)
-            + ['lottomatica', 'mooney', 'gratta', 'sisal']
-        )
-    elif provider == 'groq' and len(images) == 5:
-        main_images = list(images[:-3]) or [images[0]]
-        report_slots = dict(zip(REPORT_SLOT_ORDER, images[-3:]))
-        footer_images = []
-        image_types = ['main_closure'] * len(main_images) + list(REPORT_SLOT_ORDER)
-    else:
+    try:
         image_types = [_classify_acquisition_image(img, company, provider) for img in images]
         main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
+    except Exception:
+        # Fallback: ordine upload fisso se la classificazione fallisce
+        main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
+        image_types = []
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
@@ -2221,6 +2235,153 @@ def _sort_upload_file_keys(file_keys):
     return sorted(file_keys, key=order_key)
 
 
+def _load_draft_images_for_ai(draft, provider):
+    images = []
+    for draft_image in draft.images.order_by('id'):
+        try:
+            with draft_image.image.open('rb') as img:
+                raw = img.read()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                'Le foto di questa bozza non sono più disponibili sul server. '
+                'Aggiorna myTab e fai reinviare le foto all’operatore.'
+            ) from exc
+        mime, b64, _ = _prepare_ai_image_for_provider(raw, provider)
+        images.append({'mime': mime, 'b64': b64})
+    if not images:
+        raise ValueError('Bozza senza immagini')
+    return images
+
+
+def _run_draft_extract_job(draft_id, user_id=None, force=False):
+    """Worker in background: classifica, estrae, salva payload sulla bozza."""
+    close_old_connections()
+    draft = None
+    try:
+        draft = AcquisitionDraft.objects.select_related('company').prefetch_related('images').get(id=draft_id)
+        company = draft.company
+        user = None
+        if user_id:
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                user = None
+
+        provider = _resolve_ai_provider(user, company)
+        if provider == 'gemini' and not _get_gemini_key():
+            raise ValueError('Chiave API Gemini non configurata.')
+        if provider == 'groq' and not _get_groq_key():
+            raise ValueError('Chiave API Groq non configurata.')
+
+        draft.extract_job_status = 'processing'
+        draft.extract_error = ''
+        draft.save(update_fields=['extract_job_status', 'extract_error'])
+
+        images = _load_draft_images_for_ai(draft, provider)
+        parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
+
+        pag_pos_override = None
+        if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
+            pag_pos_override = float(draft.pag_pos_reale)
+
+        payload = _parse_ai_closure_payload(
+            parsed,
+            company,
+            totale_scassettato=draft.totale_scassettato,
+            draft_id=draft.id,
+            operator=operator,
+            report_overlays=report_overlays,
+            with_reports=has_reports,
+            pag_pos_override=pag_pos_override,
+        )
+        if report_overlays:
+            payload['report_overlays_applied'] = list(report_overlays.keys())
+
+        draft.extracted_payload = payload
+        draft.extracted_provider = provider
+        draft.extracted_at = timezone.now()
+        draft.extract_job_status = 'ready'
+        draft.extract_error = ''
+        draft.save(update_fields=[
+            'extracted_payload',
+            'extracted_provider',
+            'extracted_at',
+            'extract_job_status',
+            'extract_error',
+        ])
+    except Exception as exc:
+        if draft is not None:
+            draft.extract_job_status = 'error'
+            draft.extract_error = str(exc)
+            if _is_rate_limit_error(exc):
+                provider = getattr(draft, 'extracted_provider', '') or 'gemini'
+                draft.extract_error = _rate_limit_message(provider if provider in {'groq', 'gemini'} else 'gemini')
+            draft.save(update_fields=['extract_job_status', 'extract_error'])
+    finally:
+        close_old_connections()
+
+
+def _start_draft_extract_job(draft_id, user_id=None, force=False):
+    thread = threading.Thread(
+        target=_run_draft_extract_job,
+        kwargs={'draft_id': draft_id, 'user_id': user_id, 'force': force},
+        daemon=True,
+        name=f'draft-extract-{draft_id}',
+    )
+    thread.start()
+    return thread
+
+
+def _queue_draft_extract(draft, user, *, force=False):
+    """Marca la bozza in coda e avvia il worker. Idempotente se già in corso."""
+    if not force and draft.extract_job_status in {'queued', 'processing'}:
+        return draft.extract_job_status
+    if not force and draft.extract_job_status == 'ready' and draft.extracted_payload:
+        return 'ready'
+
+    draft.extract_job_status = 'queued'
+    draft.extract_error = ''
+    if force:
+        draft.extracted_payload = None
+        draft.extracted_provider = ''
+        draft.extracted_at = None
+        draft.save(update_fields=[
+            'extract_job_status',
+            'extract_error',
+            'extracted_payload',
+            'extracted_provider',
+            'extracted_at',
+        ])
+    else:
+        draft.save(update_fields=['extract_job_status', 'extract_error'])
+
+    _start_draft_extract_job(draft.id, user_id=getattr(user, 'id', None), force=force)
+    return 'queued'
+
+
+def _draft_extract_status_payload(draft):
+    status = draft.extract_job_status or ''
+    body = {
+        'draft_id': draft.id,
+        'extract_status': status or 'idle',
+        'provider': draft.extracted_provider or None,
+        'error': draft.extract_error or None,
+    }
+    if status == 'ready' and draft.extracted_payload:
+        payload = _refresh_draft_extract_payload(draft, draft.extracted_payload)
+        body['status'] = 'success'
+        body['data'] = {
+            **payload,
+            'images': _draft_extract_images(draft),
+            'draft_id': draft.id,
+        }
+    elif status == 'error':
+        body['status'] = 'error'
+    else:
+        body['status'] = status or 'idle'
+    return body
+
+
 @require_auth
 def api_acquisition_ai_provider(request):
     """Preferenza modello IA per l'operatore (persiste tra le acquisizioni)."""
@@ -2261,52 +2422,43 @@ def api_extract_closure_ai(request):
         return JsonResponse({'error': 'Nessuna immagine fornita.'}, status=400)
 
     try:
-        images = []
-        draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
-        for file_key in _sort_upload_file_keys(request.FILES.keys()):
-            f = request.FILES[file_key]
-            file_bytes = f.read()
-            try:
-                mime, b64, normalized_bytes = _prepare_ai_image(file_bytes)
-            except ValueError as exc:
-                return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
-            AcquisitionDraftImage.objects.create(
-                draft=draft,
-                image=ContentFile(normalized_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}.jpg'),
-            )
-            images.append({'mime': mime, 'b64': b64})
-
         provider = _resolve_ai_provider(request.user, company)
         if provider == 'gemini' and not _get_gemini_key():
             return JsonResponse({'error': 'Chiave API Gemini non configurata. Chiedi all\'amministratore.'}, status=400)
         if provider == 'groq' and not _get_groq_key():
             return JsonResponse({'error': 'Chiave API Groq non configurata. Chiedi all\'amministratore.'}, status=400)
 
-        try:
-            parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
-        except ValueError as exc:
-            return JsonResponse({'error': str(exc)}, status=400)
-        data = _parse_ai_closure_payload(
-            parsed, company, operator=operator, report_overlays=report_overlays,
-            with_reports=has_reports,
-        )
-        if report_overlays:
-            data['report_overlays_applied'] = list(report_overlays.keys())
-        data['draft_id'] = draft.id
-        data['images'] = [{
-            'id': image.id,
-            'url': f'/api/acquisition-draft-images/{image.id}/view/',
-        } for image in draft.images.all()]
+        from .ai_acquisition import validate_acquisition_file_count
+        file_keys = _sort_upload_file_keys(request.FILES.keys())
+        validate_acquisition_file_count(company, len(file_keys))
+
+        draft = AcquisitionDraft.objects.create(company=company, source='web', operator=request.user.username)
+        for file_key in file_keys:
+            f = request.FILES[file_key]
+            file_bytes = f.read()
+            try:
+                _mime, _b64, normalized_bytes = _prepare_ai_image_for_provider(file_bytes, provider)
+            except ValueError as exc:
+                draft.delete()
+                return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
+            AcquisitionDraftImage.objects.create(
+                draft=draft,
+                image=ContentFile(normalized_bytes, name=f'web_{request.user.id}_{draft.id}_{file_key}.jpg'),
+            )
+
+        _queue_draft_extract(draft, request.user, force=True)
         return JsonResponse({
-            'status': 'success',
+            'status': 'queued',
+            'extract_status': 'queued',
             'provider': provider,
-            'data': data,
+            'draft_id': draft.id,
+            'data': {'draft_id': draft.id},
         })
 
-    except json.JSONDecodeError as e:
-        return JsonResponse({'error': f'Risposta IA non in formato JSON valido: {e}'}, status=500)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
     except Exception as e:
-        provider = _resolve_ai_provider(request.user, company) if request.user.is_authenticated else 'groq'
+        provider = _resolve_ai_provider(request.user, company) if request.user.is_authenticated else _default_ai_provider()
         if _is_rate_limit_error(e):
             return JsonResponse({'error': _rate_limit_message(provider)}, status=429)
         return JsonResponse({'error': f'Errore acquisizione IA: {e}'}, status=500)
@@ -2556,11 +2708,39 @@ def _draft_extract_json_response(draft, payload, provider, *, cached=False):
         'status': 'success',
         'provider': provider,
         'cached': cached,
+        'extract_status': 'ready',
+        'draft_id': draft.id,
         'data': {
             **payload,
             'images': _draft_extract_images(draft),
+            'draft_id': draft.id,
         },
     })
+
+
+@require_auth
+def api_acquisition_draft_extract_status(request, draft_id):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error'}, status=405)
+    try:
+        company, err = bind_company(request)
+        if err:
+            return err
+        draft = AcquisitionDraft.objects.prefetch_related('images').get(id=draft_id, company=company)
+    except AcquisitionDraft.DoesNotExist:
+        return JsonResponse({'status': 'error', 'error': 'Bozza non trovata'}, status=404)
+
+    draft.refresh_from_db()
+    body = _draft_extract_status_payload(draft)
+    if body.get('extract_status') == 'error':
+        return JsonResponse({
+            'status': 'error',
+            'extract_status': 'error',
+            'draft_id': draft.id,
+            'error': draft.extract_error or 'Errore durante l\'estrazione IA.',
+            'provider': draft.extracted_provider or None,
+        }, status=400)
+    return JsonResponse(body)
 
 
 @require_auth
@@ -2587,7 +2767,7 @@ def api_acquisition_draft_extract(request, draft_id):
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
-    if draft.extracted_payload and not force:
+    if draft.extracted_payload and draft.extract_job_status == 'ready' and not force:
         provider = draft.extracted_provider or _resolve_ai_provider(request.user, company)
         old_totale = (draft.extracted_payload.get('summary') or {}).get('totale')
         payload = _refresh_draft_extract_payload(draft, draft.extracted_payload)
@@ -2596,64 +2776,28 @@ def api_acquisition_draft_extract(request, draft_id):
             draft.save(update_fields=['extracted_payload'])
         return _draft_extract_json_response(draft, payload, provider, cached=True)
 
-    try:
-        images = []
-        for draft_image in draft.images.order_by('id'):
-            try:
-                with draft_image.image.open('rb') as img:
-                    raw = img.read()
-            except FileNotFoundError:
-                return JsonResponse({
-                    'status': 'error',
-                    'error': 'Le foto di questa bozza non sono più disponibili sul server. Aggiorna myTab e fai reinviare le foto all’operatore.',
-                }, status=400)
-            try:
-                mime, b64, _ = _prepare_ai_image(raw)
-            except ValueError as exc:
-                return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
-            images.append({'mime': mime, 'b64': b64})
-        if not images:
-            return JsonResponse({'status': 'error', 'error': 'Bozza senza immagini'}, status=400)
+    provider = _resolve_ai_provider(request.user, company)
+    if provider == 'gemini' and not _get_gemini_key():
+        return JsonResponse({'status': 'error', 'error': 'Chiave API Gemini non configurata.'}, status=400)
+    if provider == 'groq' and not _get_groq_key():
+        return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
 
-        provider = _resolve_ai_provider(request.user, company)
-        if provider == 'gemini' and not _get_gemini_key():
-            return JsonResponse({'status': 'error', 'error': 'Chiave API Gemini non configurata.'}, status=400)
-        if provider == 'groq' and not _get_groq_key():
-            return JsonResponse({'status': 'error', 'error': 'Chiave API Groq non configurata.'}, status=400)
-
-        try:
-            parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
-        except ValueError as exc:
-            return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
-
-        pag_pos_override = None
-        if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
-            pag_pos_override = float(draft.pag_pos_reale)
-
-        payload = _parse_ai_closure_payload(
-            parsed,
-            company,
-            totale_scassettato=draft.totale_scassettato,
-            draft_id=draft.id,
-            operator=operator,
-            report_overlays=report_overlays,
-            with_reports=has_reports,
-            pag_pos_override=pag_pos_override,
+    job_status = _queue_draft_extract(draft, request.user, force=force)
+    if job_status == 'ready' and draft.extracted_payload:
+        return _draft_extract_json_response(
+            draft,
+            _refresh_draft_extract_payload(draft, draft.extracted_payload),
+            draft.extracted_provider or provider,
+            cached=True,
         )
-        if report_overlays:
-            payload['report_overlays_applied'] = list(report_overlays.keys())
 
-        draft.extracted_payload = payload
-        draft.extracted_provider = provider
-        draft.extracted_at = timezone.now()
-        draft.save(update_fields=['extracted_payload', 'extracted_provider', 'extracted_at'])
-
-        return _draft_extract_json_response(draft, payload, provider, cached=False)
-    except Exception as e:
-        provider = _resolve_ai_provider(request.user, company)
-        if _is_rate_limit_error(e):
-            return JsonResponse({'status': 'error', 'error': _rate_limit_message(provider)}, status=429)
-        return JsonResponse({'status': 'error', 'error': f'Errore estrazione bozza: {e}'}, status=500)
+    return JsonResponse({
+        'status': 'queued',
+        'extract_status': job_status,
+        'provider': provider,
+        'draft_id': draft.id,
+        'data': {'draft_id': draft.id},
+    })
 
 
 @require_auth

@@ -278,9 +278,10 @@ def split_acquisition_images(
             slots[img_type] = image
 
     if not main:
-        slot_images = set(slots.values())
-        footer_set = set(footer)
-        main = [img for img in images if img not in slot_images and img not in footer_set]
+        # images sono dict (mime/b64): non hashabili → confronto per identità
+        slot_ids = {id(img) for img in slots.values()}
+        footer_ids = {id(img) for img in footer}
+        main = [img for img in images if id(img) not in slot_ids and id(img) not in footer_ids]
 
     if not main and images:
         main = [images[0]]

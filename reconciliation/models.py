@@ -245,6 +245,21 @@ class AcquisitionDraft(models.Model):
         verbose_name="Totale POS reale (Telegram)",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Stato")
+    EXTRACT_JOB_CHOICES = [
+        ('', 'Non avviata'),
+        ('queued', 'In coda'),
+        ('processing', 'In elaborazione'),
+        ('ready', 'Pronta'),
+        ('error', 'Errore'),
+    ]
+    extract_job_status = models.CharField(
+        max_length=20,
+        choices=EXTRACT_JOB_CHOICES,
+        blank=True,
+        default='',
+        verbose_name="Stato job estrazione IA",
+    )
+    extract_error = models.TextField(blank=True, default='', verbose_name="Errore estrazione IA")
     extracted_payload = models.JSONField(null=True, blank=True, verbose_name="Risultato estrazione IA")
     extracted_provider = models.CharField(max_length=20, blank=True, default='', verbose_name="Provider IA estrazione")
     extracted_at = models.DateTimeField(null=True, blank=True, verbose_name="Estrazione IA il")
