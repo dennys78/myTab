@@ -2020,6 +2020,26 @@ def _classify_acquisition_image(image, company, provider):
         return 'other'
 
 
+def _item_descrizione(item):
+    """Chiave reparto dall'estrazione IA (campo ufficiale: descrizione)."""
+    if not isinstance(item, dict):
+        return ''
+    return str(
+        item.get('descrizione')
+        or item.get('department')
+        or item.get('name')
+        or item.get('description')
+        or ''
+    ).strip()
+
+
+def _item_has_amounts(item):
+    try:
+        return abs(float(item.get('entrate') or 0)) > 0 or abs(float(item.get('uscite') or 0)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _merge_two_page_parsed(base, extra):
     """Unisce due estrazioni (pagina 1 + pagina 2) per il free tier Groq (1 foto/request)."""
     if not base:
@@ -2029,6 +2049,7 @@ def _merge_two_page_parsed(base, extra):
     out = dict(base)
     if not (out.get('date') or '').strip() and (extra.get('date') or '').strip():
         out['date'] = extra.get('date')
+
     base_sum = dict(out.get('summary') or {})
     for key, value in dict(extra.get('summary') or {}).items():
         current = base_sum.get(key)
@@ -2037,37 +2058,51 @@ def _merge_two_page_parsed(base, extra):
         if empty_current and not empty_value:
             base_sum[key] = value
     out['summary'] = base_sum
-    items = list(out.get('items') or [])
-    seen = {
-        (
-            str(item.get('department') or '').strip().upper(),
-            str(item.get('name') or item.get('description') or '').strip().upper(),
-        )
-        for item in items
-    }
-    for item in extra.get('items') or []:
-        key = (
-            str(item.get('department') or '').strip().upper(),
-            str(item.get('name') or item.get('description') or '').strip().upper(),
-        )
-        if key not in seen:
-            items.append(item)
-            seen.add(key)
-    out['items'] = items
+
+    by_name = {}
+    for item in list(out.get('items') or []) + list(extra.get('items') or []):
+        name = _item_descrizione(item)
+        if not name:
+            continue
+        key = name.upper()
+        existing = by_name.get(key)
+        if existing is None:
+            by_name[key] = dict(item)
+            by_name[key]['descrizione'] = name.upper()
+            continue
+        # Stesso reparto su entrambe le pagine: tieni i valori non vuoti / più completi.
+        for field in ('entrate', 'uscite', 'saldo'):
+            cur = existing.get(field)
+            nxt = item.get(field)
+            empty_cur = cur in (None, '', 0, 0.0)
+            empty_nxt = nxt in (None, '', 0, 0.0)
+            if empty_cur and not empty_nxt:
+                existing[field] = nxt
+        if not _item_has_amounts(existing) and _item_has_amounts(item):
+            by_name[key] = dict(item)
+            by_name[key]['descrizione'] = name.upper()
+
+    out['items'] = list(by_name.values())
     return out
 
 
-def _extract_closure_two_files(images, company, provider):
-    """Protocollo a 2 file: solo riepilogo cassa, senza classificazione report."""
-    operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-    # Groq free tier: una foto per volta per non superare 8000 TPM.
+def _extract_main_closure_images(images, company, provider):
+    """Estrae il riepilogo cassa; su Groq processa una foto per volta e unisce i reparti."""
+    if not images:
+        return {'date': '', 'summary': {}, 'items': []}
     if provider == 'groq' and len(images) > 1:
         merged = None
         for image in images:
             parsed = _extract_ai_json([image], company, provider, MAIN_CLOSURE_AI_PROMPT)
             merged = _merge_two_page_parsed(merged, parsed)
-        return merged, operator_label, {}, False
-    parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+        return merged or {'date': '', 'summary': {}, 'items': []}
+    return _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+
+
+def _extract_closure_two_files(images, company, provider):
+    """Protocollo a 2 file: solo riepilogo cassa, senza classificazione report."""
+    operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
+    parsed = _extract_main_closure_images(images, company, provider)
     return parsed, operator_label, {}, False
 
 
@@ -2106,11 +2141,11 @@ def _extract_closure_five_files(images, company, provider):
     main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
 
     if main_images:
-        parsed = _extract_ai_json(main_images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+        parsed = _extract_main_closure_images(main_images, company, provider)
     elif report_slots:
         parsed = {'date': '', 'summary': {}, 'items': []}
     else:
-        parsed = _extract_ai_json(images, company, provider, MAIN_CLOSURE_AI_PROMPT)
+        parsed = _extract_main_closure_images(images, company, provider)
 
     footer_sources = list(footer_images)
     if not footer_sources:
