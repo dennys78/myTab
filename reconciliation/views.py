@@ -1843,6 +1843,15 @@ def _parse_ai_closure_payload(
     return data
 
 
+def _is_json_validate_error(exc):
+    msg = str(exc).lower()
+    return (
+        'json_validate_failed' in msg
+        or 'failed to validate json' in msg
+        or 'failed_generation' in msg
+    )
+
+
 def _extract_ai_with_groq(images, company=None, prompt=None):
     api_key = _get_groq_key()
     if not api_key:
@@ -1851,43 +1860,75 @@ def _extract_ai_with_groq(images, company=None, prompt=None):
     from openai import OpenAI
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    # Free tier ~8000 TPM: immagini ridotte + pochi token di output.
-    # Con più foto si scende ulteriormente di risoluzione.
+    # Free tier ~8000 TPM: immagini ridotte.
     shrink_steps = (
-        (960, 60) if len(images) <= 1 else (720, 50),
-        (720, 45),
-        (560, 35),
+        (1100, 70) if len(images) <= 1 else (800, 55),
+        (900, 55),
+        (640, 40),
     )
-    # Vision gratuita su Groq free tier (Llama 4 Scout non è più disponibile).
     model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.6-27b').strip()
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
 
+    # Qwen 3.6: con JSON mode il reasoning deve essere spento, altrimenti failed_generation vuoto.
+    request_variants = (
+        {
+            'response_format': {'type': 'json_object'},
+            'extra_body': {'reasoning_effort': 'none', 'reasoning_format': 'hidden'},
+        },
+        {
+            'extra_body': {'reasoning_effort': 'none', 'reasoning_format': 'hidden'},
+        },
+    )
+
     for attempt, (max_side, quality) in enumerate(shrink_steps):
         payload_images = _shrink_images_for_groq(images, max_side=max_side, quality=quality)
-        content = []
-        for image in payload_images:
-            content.append({
+        content = [
+            {
                 'type': 'image_url',
                 'image_url': {'url': f"data:{image['mime']};base64,{image['b64']}"},
-            })
+            }
+            for image in payload_images
+        ]
         content.append({'type': 'text', 'text': text_prompt})
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                max_tokens=1536,
-                response_format={'type': 'json_object'},
-                messages=[{'role': 'user', 'content': content}],
-            )
-            return _json_from_ai_text(response.choices[0].message.content)
-        except Exception as exc:
-            last_exc = exc
-            if _is_request_too_large_error(exc) and attempt < len(shrink_steps) - 1:
+
+        retry_smaller = False
+        for variant in request_variants:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    temperature=0,
+                    max_tokens=2500,
+                    messages=[{'role': 'user', 'content': content}],
+                    **variant,
+                )
+                raw = (response.choices[0].message.content or '').strip()
+                if not raw:
+                    raise ValueError('Risposta IA vuota.')
+                return _json_from_ai_text(raw)
+            except Exception as exc:
+                last_exc = exc
+                if _is_json_validate_error(exc) or isinstance(exc, (ValueError, json.JSONDecodeError)):
+                    # Prova variante successiva, poi eventuale shrink.
+                    continue
+                if _is_request_too_large_error(exc) and attempt < len(shrink_steps) - 1:
+                    retry_smaller = True
+                    break
+                if _is_rate_limit_error(exc) and attempt < len(shrink_steps) - 1:
+                    time.sleep(1.5 * (attempt + 1))
+                    retry_smaller = True
+                    break
+                raise
+
+        if retry_smaller:
+            continue
+        if attempt < len(shrink_steps) - 1 and last_exc is not None:
+            # JSON vuoto/invalido: ritenta con foto più piccola.
+            if _is_json_validate_error(last_exc) or isinstance(last_exc, (ValueError, json.JSONDecodeError)):
                 continue
-            if _is_rate_limit_error(exc) and attempt < len(shrink_steps) - 1:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise
+        if last_exc is not None:
+            raise last_exc
+
     raise last_exc
 
 
