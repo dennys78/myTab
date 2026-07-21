@@ -242,8 +242,10 @@ def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, 
         report_keys = ('lottomatica', 'mooney', 'gratta', 'sisal')
         return list(images[:-4]), dict(zip(report_keys, images[-4:])), []
     if n == 5:
-        # Ordine upload non affidabile: non assegnare le ultime 3 ai report a caso.
-        return list(images), {}, []
+        # 5 foto: main (prime 2) + Lottomatica, Gratta, Sisal
+        main = list(images[:2])
+        slots = dict(zip(REPORT_SLOT_ORDER, images[2:5]))
+        return main, slots, []
     if n >= 4:
         main = images[:-3]
         slots = dict(zip(REPORT_SLOT_ORDER, images[-3:]))
@@ -295,7 +297,7 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
     gratta_dept = REPORT_DEPARTMENTS['gratta']
 
     for key, amounts in overlays.items():
-        if not amounts:
+        if key.startswith('_') or not amounts:
             continue
         dept = REPORT_DEPARTMENTS.get(key)
         if not dept:

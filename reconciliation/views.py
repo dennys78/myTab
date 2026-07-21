@@ -2087,24 +2087,40 @@ def _extract_report_overlays(report_slots, company, provider):
         prompt = REPORT_PROMPTS.get(key)
         if not prompt or not image:
             continue
-        try:
-            parsed = _extract_ai_json([image], company, provider, prompt, fast=True)
-            normalized = normalize_report_overlay(key, parsed)
-            if normalized:
-                overlays[key] = normalized
-        except Exception:
-            continue
+        last_exc = None
+        for attempt in range(3):
+            try:
+                parsed = _extract_ai_json([image], company, provider, prompt, fast=True)
+                normalized = normalize_report_overlay(key, parsed)
+                if normalized:
+                    overlays[key] = normalized
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+                if _is_rate_limit_error(exc) or '503' in str(exc):
+                    time.sleep(2.0 * (attempt + 1))
+                    continue
+                break
+        if last_exc and key in ('lottomatica', 'sisal', 'mooney'):
+            # Report obbligatori: segnala nel payload per debug
+            overlays.setdefault('_errors', {})[key] = str(last_exc)[:200]
     return overlays
 
 
 def _classify_acquisition_image(image, company, provider):
     from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
 
-    try:
-        parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
-        return normalize_image_type(parsed.get('type'))
-    except Exception:
-        return 'other'
+    for attempt in range(3):
+        try:
+            parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
+            return normalize_image_type(parsed.get('type'))
+        except Exception as exc:
+            if _is_rate_limit_error(exc) or '503' in str(exc):
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            return 'other'
+    return 'other'
 
 
 def _item_descrizione(item):
@@ -2351,7 +2367,11 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
             pag_pos_override=pag_pos_override,
         )
         if report_overlays:
-            payload['report_overlays_applied'] = list(report_overlays.keys())
+            applied = [k for k in report_overlays if k != '_errors']
+            payload['report_overlays_applied'] = applied
+            errors = report_overlays.get('_errors')
+            if errors:
+                payload['report_overlays_errors'] = errors
 
         draft.extracted_payload = payload
         draft.extracted_provider = provider
