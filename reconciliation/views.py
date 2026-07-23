@@ -1096,8 +1096,12 @@ def _get_gemini_key(company=None):
 
 
 def _default_ai_provider():
-    """Gemini di default se la chiave è configurata, altrimenti Groq."""
-    return 'gemini' if _get_gemini_key() else 'groq'
+    """Groq di default se configurato (percorso stabile); altrimenti Gemini."""
+    if _get_groq_key():
+        return 'groq'
+    if _get_gemini_key():
+        return 'gemini'
+    return 'groq'
 
 
 def _get_ai_provider(company):
@@ -1150,23 +1154,115 @@ def _ai_provider_options(user, company=None):
     from .ai_acquisition import get_ai_acquisition_file_mode, max_acquisition_files_for_mode
 
     mode = get_ai_acquisition_file_mode(company)
+    preferred = _resolve_ai_provider(user, company)
+    effective = _effective_ai_provider(preferred)
     return {
-        'provider': _resolve_ai_provider(user, company),
+        'provider': preferred,
+        'effective_provider': effective,
         'user_provider': _get_user_ai_provider(user) or None,
         'groq_configured': bool(_get_groq_key()),
         'gemini_configured': bool(_get_gemini_key()),
+        'gemini_cooldown': _gemini_in_cooldown(),
         'ai_acquisition_file_mode': mode,
         'max_acquisition_files': max_acquisition_files_for_mode(mode),
+        'strategy': (
+            'Groq è il motore primario (stabile). Con Gemini, in caso di saturazione '
+            'il sistema passa automaticamente a Groq per circa 2 minuti.'
+        ),
     }
 
 
 def _rate_limit_message(provider):
     alt = 'Gemini' if provider == 'groq' else 'Groq'
     return (
-        f'Limite richieste del servizio {provider.upper()} (errore 429/TPM). '
-        f'Attendi uno o due minuti oppure vai in Impostazioni e seleziona {alt} come tuo modello IA. '
-        f'Con Groq free tier le foto vengono già compresse automaticamente.'
+        f'Limite richieste del servizio {provider.upper()}. '
+        f'Il sistema proverà il failover automatico su {alt} se la chiave è configurata. '
+        f'Altrimenti attendi un minuto oppure cambia motore in Impostazioni.'
     )
+
+
+# Cooldown in-process: dopo 503/429 Gemini evita di ripremere l'API per N secondi
+_gemini_cooldown_until = 0.0
+_GEMINI_COOLDOWN_SEC = 120
+_ai_session = threading.local()
+
+
+def _mark_gemini_cooldown(seconds=None):
+    global _gemini_cooldown_until
+    _gemini_cooldown_until = time.time() + float(seconds or _GEMINI_COOLDOWN_SEC)
+
+
+def _gemini_in_cooldown():
+    return time.time() < _gemini_cooldown_until
+
+
+def _reset_ai_session():
+    _ai_session.forced_provider = None
+    _ai_session.failover_note = None
+
+
+def _force_session_provider(provider, note=None):
+    _ai_session.forced_provider = provider
+    if note:
+        _ai_session.failover_note = note
+
+
+def _session_provider(requested):
+    forced = getattr(_ai_session, 'forced_provider', None)
+    return forced or requested
+
+
+def _is_capacity_error(exc, provider='gemini'):
+    """Saturazione / 429 / 503 / messaggio di overload."""
+    if _is_rate_limit_error(exc):
+        return True
+    if isinstance(exc, urllib.error.HTTPError) and exc.code in {429, 503}:
+        return True
+    msg = str(exc or '').lower()
+    needles = (
+        'sovraccarico',
+        'alta domanda',
+        'high demand',
+        'unavailable',
+        'resource_exhausted',
+        '503',
+        '429',
+        'tpm',
+        'rate limit',
+        'timeout verso gemini',
+    )
+    if provider == 'gemini':
+        return any(n in msg for n in needles)
+    return any(n in msg for n in ('429', 'tpm', 'rate limit', 'rate_limit'))
+
+
+def _effective_ai_provider(preferred):
+    """Provider operativo: rispetta preferenza, cooldown Gemini e chiavi disponibili."""
+    preferred = preferred if preferred in {'groq', 'gemini'} else _default_ai_provider()
+    groq_ok = bool(_get_groq_key())
+    gemini_ok = bool(_get_gemini_key())
+
+    if preferred == 'gemini':
+        if gemini_ok and not _gemini_in_cooldown():
+            return 'gemini'
+        if groq_ok:
+            return 'groq'
+        return 'gemini' if gemini_ok else 'groq'
+
+    if preferred == 'groq':
+        if groq_ok:
+            return 'groq'
+        return 'gemini' if gemini_ok else 'groq'
+
+    return preferred
+
+
+def _failover_provider(current):
+    if current == 'gemini' and _get_groq_key():
+        return 'groq'
+    if current == 'groq' and _get_gemini_key() and not _gemini_in_cooldown():
+        return 'gemini'
+    return None
 
 
 def _set_ai_provider(company, provider):
@@ -2099,27 +2195,34 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                         break  # prova modello successivo
                     if exc.code in {429, 503}:
                         saw_overload = True
+                        # Un solo breve retry, poi fail-fast → failover a Groq
                         if attempt < 1:
-                            time.sleep(0.8 * (attempt + 1))
+                            time.sleep(1.2)
                             continue
-                        retry_smaller = step_idx < len(shrink_steps) - 1
                         break
                     detail = f' ({body})' if body else ''
                     raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
                 except Exception as exc:
                     last_exc = exc
                     if _is_timeout_error(exc) or _is_rate_limit_error(exc):
-                        if attempt < 1 and _is_rate_limit_error(exc):
-                            time.sleep(0.8 * (attempt + 1))
-                            continue
+                        if _is_rate_limit_error(exc):
+                            saw_overload = True
+                            if attempt < 1:
+                                time.sleep(1.2)
+                                continue
+                            break
                         retry_smaller = step_idx < len(shrink_steps) - 1
                         break
                     if isinstance(exc, (ValueError, json.JSONDecodeError)):
                         retry_smaller = step_idx < len(shrink_steps) - 1
                         break
                     raise
+            if saw_overload:
+                break
             if retry_smaller:
                 break
+        if saw_overload:
+            break
         if retry_smaller:
             continue
         if last_exc is not None and step_idx < len(shrink_steps) - 1:
@@ -2133,9 +2236,9 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
         break
 
     if saw_overload:
+        _mark_gemini_cooldown()
         raise ValueError(
             'Gemini è momentaneamente sovraccarico (alta domanda). '
-            'Attendi 30–60 secondi e riprova, oppure in Impostazioni passa temporaneamente a Groq. '
             f'Modelli provati: {", ".join(tried)}.'
         ) from last_exc
 
@@ -2152,11 +2255,33 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
     ) from last_exc
 
 
-def _extract_ai_json(images, company, provider, prompt, *, fast=False):
-    chosen = provider or 'groq'
-    if chosen == 'gemini':
-        return _extract_ai_with_gemini(images, company, prompt=prompt, fast=fast)
-    return _extract_ai_with_groq(images, company, prompt=prompt, fast=fast)
+def _extract_ai_json(images, company, provider, prompt, *, fast=False, allow_failover=True):
+    """Chiama il provider richiesto; in saturazione passa all'altro se la chiave c'è."""
+    preferred = provider or 'groq'
+    chosen = _session_provider(_effective_ai_provider(preferred))
+
+    try:
+        if chosen == 'gemini':
+            return _extract_ai_with_gemini(images, company, prompt=prompt, fast=fast)
+        return _extract_ai_with_groq(images, company, prompt=prompt, fast=fast)
+    except Exception as exc:
+        if not allow_failover:
+            raise
+        alt = _failover_provider(chosen)
+        if not alt:
+            raise
+        if chosen == 'gemini' and _is_capacity_error(exc, 'gemini'):
+            _mark_gemini_cooldown()
+            _force_session_provider(alt, note=f'{chosen}_overload→{alt}')
+            return _extract_ai_json(
+                images, company, alt, prompt, fast=fast, allow_failover=False,
+            )
+        if chosen == 'groq' and _is_capacity_error(exc, 'groq'):
+            _force_session_provider(alt, note=f'{chosen}_tpm→{alt}')
+            return _extract_ai_json(
+                images, company, alt, prompt, fast=fast, allow_failover=False,
+            )
+        raise
 
 
 def _extract_report_overlays(report_slots, company, provider):
@@ -2555,6 +2680,7 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
     """Worker in background: classifica, estrae, salva payload sulla bozza."""
     close_old_connections()
     draft = None
+    _reset_ai_session()
     try:
         draft = AcquisitionDraft.objects.select_related('company').prefetch_related('images').get(id=draft_id)
         company = draft.company
@@ -2565,7 +2691,11 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
             except User.DoesNotExist:
                 user = None
 
-        provider = _resolve_ai_provider(user, company)
+        preferred = _resolve_ai_provider(user, company)
+        provider = _effective_ai_provider(preferred)
+        if preferred == 'gemini' and provider == 'groq':
+            _force_session_provider('groq', note='gemini_cooldown→groq')
+
         if provider == 'gemini' and not _get_gemini_key():
             raise ValueError('Chiave API Gemini non configurata.')
         if provider == 'groq' and not _get_groq_key():
@@ -2577,6 +2707,13 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
 
         images = _load_draft_images_for_ai(draft, provider)
         parsed, operator, report_overlays, has_reports = _extract_closure_for_company(images, company, provider)
+
+        actual = _session_provider(provider)
+        failover_note = getattr(_ai_session, 'failover_note', None)
+        if failover_note:
+            operator = f'IA {actual.capitalize()} (failover)'
+        elif actual != preferred:
+            operator = f'IA {actual.capitalize()}'
 
         pag_pos_override = None
         if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
@@ -2598,9 +2735,13 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
             errors = report_overlays.get('_errors')
             if errors:
                 payload['report_overlays_errors'] = errors
+        if failover_note:
+            payload['provider_failover'] = failover_note
+        payload['provider_preferred'] = preferred
+        payload['provider_used'] = actual
 
         draft.extracted_payload = payload
-        draft.extracted_provider = provider
+        draft.extracted_provider = actual
         draft.extracted_at = timezone.now()
         draft.extract_job_status = 'ready'
         draft.extract_error = ''
@@ -2615,11 +2756,67 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
         if draft is not None:
             draft.extract_job_status = 'error'
             draft.extract_error = str(exc)
-            if _is_rate_limit_error(exc):
-                provider = getattr(draft, 'extracted_provider', '') or 'gemini'
-                draft.extract_error = _rate_limit_message(provider if provider in {'groq', 'gemini'} else 'gemini')
+            # Ultimo tentativo: se Gemini fallisce tutto il job, rilancia su Groq
+            preferred = _resolve_ai_provider(
+                User.objects.filter(id=user_id).first() if user_id else None,
+                draft.company,
+            )
+            if (
+                preferred == 'gemini'
+                and _is_capacity_error(exc, 'gemini')
+                and _get_groq_key()
+            ):
+                try:
+                    _mark_gemini_cooldown()
+                    _force_session_provider('groq', note='gemini_job_fail→groq')
+                    images = _load_draft_images_for_ai(draft, 'groq')
+                    parsed, operator, report_overlays, has_reports = _extract_closure_for_company(
+                        images, draft.company, 'groq',
+                    )
+                    pag_pos_override = None
+                    if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
+                        pag_pos_override = float(draft.pag_pos_reale)
+                    payload = _parse_ai_closure_payload(
+                        parsed,
+                        draft.company,
+                        totale_scassettato=draft.totale_scassettato,
+                        draft_id=draft.id,
+                        operator='IA Groq (failover)',
+                        report_overlays=report_overlays,
+                        with_reports=has_reports,
+                        pag_pos_override=pag_pos_override,
+                    )
+                    payload['provider_failover'] = 'gemini_job_fail→groq'
+                    payload['provider_preferred'] = 'gemini'
+                    payload['provider_used'] = 'groq'
+                    if report_overlays:
+                        applied = [k for k in report_overlays if k != '_errors']
+                        payload['report_overlays_applied'] = applied
+                    draft.extracted_payload = payload
+                    draft.extracted_provider = 'groq'
+                    draft.extracted_at = timezone.now()
+                    draft.extract_job_status = 'ready'
+                    draft.extract_error = ''
+                    draft.save(update_fields=[
+                        'extracted_payload',
+                        'extracted_provider',
+                        'extracted_at',
+                        'extract_job_status',
+                        'extract_error',
+                    ])
+                    return
+                except Exception as failover_exc:
+                    draft.extract_error = (
+                        f'Gemini non disponibile; anche Groq ha fallito: {failover_exc}'
+                    )
+
+            if _is_rate_limit_error(exc) or _is_capacity_error(exc):
+                draft.extract_error = _rate_limit_message(
+                    'gemini' if 'gemini' in str(exc).lower() else 'groq'
+                )
             draft.save(update_fields=['extract_job_status', 'extract_error'])
     finally:
+        _reset_ai_session()
         close_old_connections()
 
 

@@ -336,32 +336,16 @@ export default function Impostazioni({ section = 'generali' }) {
           const savedGemini = Boolean(geminiKey.trim());
           const savedGroq = Boolean(groqKey.trim());
           if (savedGroq) setKeyConfigured(true);
-          if (savedGemini) {
-            setGeminiConfigured(true);
-            setAiProvider('gemini');
-          }
+          if (savedGemini) setGeminiConfigured(true);
           setGroqKey('');
           setGeminiKey('');
           setTimeout(() => setSaved(false), 3000);
-          // Allinea stato provider dopo salvataggio chiavi
+          // Allinea stato provider dopo salvataggio chiavi (non forza Gemini)
           return apiFetch('/api/acquisition/ai-provider/').then(r => r.json()).then((prov) => {
             if (prov.status === 'success') {
               setKeyConfigured(prov.data.groq_configured);
               setGeminiConfigured(prov.data.gemini_configured);
-              if (savedGemini) {
-                return apiFetch('/api/acquisition/ai-provider/', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ ai_acquisition_provider: 'gemini' }),
-                }).then(r => r.json()).then((savedProv) => {
-                  if (savedProv.status === 'success') {
-                    setAiProvider(savedProv.data.provider || 'gemini');
-                  }
-                });
-              }
-              if (!savedGemini) {
-                setAiProvider(prov.data.provider || aiProvider);
-              }
+              setAiProvider(prov.data.provider || aiProvider);
             }
           });
         }
@@ -693,8 +677,8 @@ export default function Impostazioni({ section = 'generali' }) {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Scegli il motore IA (Gemini o Groq). Il modello tecnico Gemini viene gestito dal server
-          (gemini-3.5-flash): non compare come voce separata nel menu.
+          Strategia sostenibilee: <strong>Groq</strong> è il motore primario (veloce e stabile).
+          Se scegli Gemini e va in saturazione, il sistema passa automaticamente a Groq per circa 2 minuti.
         </p>
 
         {userModelSaved && (
@@ -712,11 +696,11 @@ export default function Impostazioni({ section = 'generali' }) {
             onChange={e => setAiProvider(e.target.value)}
             style={{ ...inputStyle, width: '100%', maxWidth: '360px', fontFamily: 'inherit' }}
           >
-            <option value="gemini">
-              Gemini (consigliato){!geminiConfigured ? ' — chiave assente' : ''}
-            </option>
             <option value="groq">
-              Groq{!keyConfigured ? ' — chiave assente' : ''}
+              Groq (consigliato — stabile){!keyConfigured ? ' — chiave assente' : ''}
+            </option>
+            <option value="gemini">
+              Gemini (con fallback automatico a Groq){!geminiConfigured ? ' — chiave assente' : ''}
             </option>
           </select>
           {!geminiConfigured && aiProvider === 'gemini' && (
@@ -1010,7 +994,7 @@ export default function Impostazioni({ section = 'generali' }) {
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Chiavi API IA (tutte le aziende)</h2>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Dopo aver salvato la chiave Gemini, seleziona «Gemini (consigliato)» nel riquadro «Il tuo modello IA» sopra e premi Salva.
+          Configura entrambe le chiavi: Groq è il motore primario; Gemini resta disponibile con failover automatico.
         </p>
 
         {saved && (
