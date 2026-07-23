@@ -337,8 +337,8 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
         # Gratta e Vinci: entrate dal riepilogo cassa, uscite dal report premi
         if key == 'gratta':
             existing = by_name.get(gratta_dept, {})
-            entrate = float(parse_amount(existing.get('entrate', 0)))
-            uscite = float(parse_amount(amounts.get('uscite', 0)))
+            entrate = abs(float(parse_amount(existing.get('entrate', 0))))
+            uscite = abs(float(parse_amount(amounts.get('uscite', 0))))
             if entrate == 0 and uscite == 0:
                 continue
             by_name[gratta_dept] = {
@@ -351,8 +351,8 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
 
         # Lottomatica, Sisal, Mooney: sostituisci sempre entrate e uscite dal report dedicato
         if key in DEPARTMENTS_FULL_REPORT_OVERLAY:
-            entrate = float(parse_amount(amounts.get('entrate', 0)))
-            uscite = float(parse_amount(amounts.get('uscite', 0)))
+            entrate = abs(float(parse_amount(amounts.get('entrate', 0))))
+            uscite = abs(float(parse_amount(amounts.get('uscite', 0))))
             by_name[dept] = {
                 'descrizione': dept,
                 'entrate': entrate,
@@ -361,8 +361,8 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
             }
             continue
 
-        entrate = float(parse_amount(amounts.get('entrate', 0)))
-        uscite = float(parse_amount(amounts.get('uscite', 0)))
+        entrate = abs(float(parse_amount(amounts.get('entrate', 0))))
+        uscite = abs(float(parse_amount(amounts.get('uscite', 0))))
         if entrate == 0 and uscite == 0:
             continue
         by_name[dept] = {
@@ -379,13 +379,13 @@ def normalize_report_overlay(key: str, parsed: dict) -> dict | None:
     if not isinstance(parsed, dict):
         return None
     if key == 'gratta':
-        uscite = parse_amount(parsed.get('uscite', 0))
+        uscite = abs(parse_amount(parsed.get('uscite', 0)))
         if uscite == 0:
             return None
         # Solo uscite dal report; le entrate restano dal riepilogo cassa
         return {'uscite': float(uscite)}
-    entrate = parse_amount(parsed.get('entrate', 0))
-    uscite = parse_amount(parsed.get('uscite', 0))
+    entrate = abs(parse_amount(parsed.get('entrate', 0)))
+    uscite = abs(parse_amount(parsed.get('uscite', 0)))
     if key in DEPARTMENTS_FULL_REPORT_OVERLAY:
         if entrate == 0 and uscite == 0:
             return None

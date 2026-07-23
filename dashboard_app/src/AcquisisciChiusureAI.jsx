@@ -219,6 +219,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
     if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
     setPreviewEditable(!isMobile);
     setPreviewData(enriched);
+
+    const overlayErrors = data?.report_overlays_errors;
+    if (overlayErrors && typeof overlayErrors === 'object') {
+      const failed = Object.keys(overlayErrors);
+      if (failed.length) {
+        setError(
+          `Attenzione: report non letti correttamente (${failed.join(', ')}). Controlla Entrate/Uscite prima di salvare.`,
+        );
+        return;
+      }
+    }
     setError(null);
   };
 

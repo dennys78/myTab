@@ -448,11 +448,11 @@ def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
 
 
 def _prepare_ai_image_for_provider(file_bytes, provider='gemini'):
-    """Compressione mirata: Gemini bilanciata (velocità), Groq più aggressiva (TPM)."""
+    """Compressione mirata: Gemini qualità OCR, Groq più aggressiva (TPM)."""
     if provider == 'groq':
         return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
-    # 1280px: OCR ancora buono, payload più leggero → meno timeout Gemini
-    return _prepare_ai_image(file_bytes, max_side=1280, quality=72)
+    # Qualità più alta per Contabile/Borderò (testo piccolo su schermo)
+    return _prepare_ai_image(file_bytes, max_side=1500, quality=78)
 
 
 def _shrink_images_for_gemini(images, *, max_side=1024, quality=65):
@@ -2039,7 +2039,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    # Classificazione / report: parti già piccole. Main: una sola riduzione se timeout.
+    # Solo classificazione multi-immagine: riduci subito. Report/main restano leggibili.
     work_images = list(images)
     if fast and len(work_images) > 1:
         work_images = _shrink_images_for_gemini(work_images, max_side=960, quality=60)
@@ -2050,8 +2050,11 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
     saw_overload = False
     saw_timeout = False
     max_attempts = 2
-    http_timeout = 35 if fast else 60
+    # Report/main: più tempo. Classify fast: timeout più basso.
+    http_timeout = 30 if fast else 70
     sleep_base = 0.8
+    timeout_shrink_side = 900 if fast else 1200
+    timeout_shrink_quality = 60 if fast else 70
 
     for shrink_round in range(2):
         parts = []
@@ -2121,7 +2124,11 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
             if saw_timeout:
                 break
         if saw_timeout and shrink_round == 0:
-            work_images = _shrink_images_for_gemini(work_images, max_side=800, quality=55)
+            work_images = _shrink_images_for_gemini(
+                work_images,
+                max_side=timeout_shrink_side,
+                quality=timeout_shrink_quality,
+            )
             saw_timeout = False
             continue
         break
@@ -2164,13 +2171,14 @@ def _extract_report_overlays(report_slots, company, provider):
         if not prompt or not image:
             return key, None, None
         last_exc = None
+        # fast=False: Contabile/Borderò richiedono OCR più accurato
         for attempt in range(2):
             try:
-                parsed = _extract_ai_json([image], company, provider, prompt, fast=True)
+                parsed = _extract_ai_json([image], company, provider, prompt, fast=False)
                 return key, normalize_report_overlay(key, parsed), None
             except Exception as exc:
                 last_exc = exc
-                if _is_rate_limit_error(exc) or '503' in str(exc):
+                if _is_timeout_error(exc) or _is_rate_limit_error(exc) or '503' in str(exc):
                     time.sleep(1.0 * (attempt + 1))
                     continue
                 break
@@ -2275,12 +2283,20 @@ def _fill_missing_report_slots_safe(images, image_types, report_slots, footer_im
 def _classify_acquisition_image(image, company, provider):
     from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
 
+    # Classificazione: copia ridotta (veloce). L'estrazione usa ancora l'originale.
+    classify_image = image
+    if provider == 'gemini':
+        try:
+            classify_image = _shrink_images_for_gemini([image], max_side=900, quality=60)[0]
+        except Exception:
+            classify_image = image
+
     for attempt in range(2):
         try:
-            parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
+            parsed = _extract_ai_json([classify_image], company, provider, CLASSIFY_PROMPT, fast=True)
             return normalize_image_type(parsed.get('type'))
         except Exception as exc:
-            if _is_rate_limit_error(exc) or '503' in str(exc):
+            if _is_timeout_error(exc) or _is_rate_limit_error(exc) or '503' in str(exc):
                 time.sleep(1.0 * (attempt + 1))
                 continue
             return 'other'
@@ -2298,8 +2314,9 @@ def _classify_acquisition_images(images, company, provider):
     if provider == 'gemini' and len(images) <= 3:
         from .ai_acquisition import CLASSIFY_BATCH_PROMPT, normalize_image_type
         try:
+            batch_images = _shrink_images_for_gemini(images, max_side=900, quality=60)
             parsed = _extract_ai_json(
-                images,
+                batch_images,
                 company,
                 provider,
                 CLASSIFY_BATCH_PROMPT,
@@ -2428,7 +2445,7 @@ def _extract_footer_summary(images, company, provider):
                     company,
                     provider,
                     FIVE_FILES_SUMMARY_PROMPT,
-                    fast=True,
+                    fast=False,  # TOTALE/Contanti: OCR accurato
                 )
             )
         except Exception:
