@@ -396,3 +396,153 @@ def normalize_report_overlay(key: str, parsed: dict) -> dict | None:
     if entrate == 0 and uscite == 0:
         return None
     return {'entrate': float(entrate), 'uscite': float(uscite)}
+
+
+# ── Acquisizione unificata Gemini: 1 risposta XML → elaborazione locale ───────
+
+UNIFIED_ACQUISITION_XML_PROMPT = """Ricevi N foto di una tabaccheria italiana (riepilogo cassa + report giochi).
+Ogni foto è etichettata nel messaggio (IMG_1, IMG_2, …) con il ruolo atteso.
+
+Restituisci SOLO un documento XML valido, senza markdown e senza testo fuori dal XML.
+Schema obbligatorio:
+
+<chiusura>
+  <date>YYYY-MM-DD</date>
+  <summary>
+    <contanti>0.00</contanti>
+    <pag_pos>0.00</pag_pos>
+    <cassa_auto>0.00</cassa_auto>
+    <reso_cont>0.00</reso_cont>
+    <reso_auto>0.00</reso_auto>
+    <distrib>0.00</distrib>
+    <totale>0.00</totale>
+  </summary>
+  <items>
+    <item descrizione="NOME" entrate="0.00" uscite="0.00"/>
+  </items>
+  <reports>
+    <lottomatica entrate="0.00" uscite="0.00"/>
+    <mooney entrate="0.00" uscite="0.00"/>
+    <gratta uscite="0.00"/>
+    <sisal entrate="0.00" uscite="0.00"/>
+  </reports>
+</chiusura>
+
+Regole di lettura (OBBLIGATORIE):
+1) Riepilogo cassa (main_closure): tutte le righe reparto con Entrate/Uscite (anche NUOVA SEZIONE GESTORI).
+   summary = riga Contanti, Pag.Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE (ultima colonna = totale).
+2) Lottomatica (Contabile Giornaliero): SOLO Entrate Gioco e Uscite Gioco. VIETATO Aggio e Saldo.
+3) Sisal (BORDERÒ MOVIMENTO CONTANTI): SOLO Vendite e |Pagamenti| del riquadro TOTALE. VIETATO il netto.
+4) Mooney (MOVIMENTO CONTANTE): Totale ricevuta in entrate; uscite 0 se non ci sono pagamenti espliciti.
+5) Gratta (Premi pagati): solo Totale premi in uscite (attributo uscite). Le entrate Gratta restano dal riepilogo.
+6) Numeri con punto decimale (397.00). Valori assoluti positivi per entrate/uscite.
+7) Se un report non è presente tra le foto, lascia 0.00. Non inventare.
+8) descrizioni reparto in MAIUSCOLO.
+"""
+
+
+def build_unified_image_roles(image_count: int) -> list[str]:
+    """Etichette ruolo per ordine upload (allineato a split_acquisition_images_by_position)."""
+    n = int(image_count or 0)
+    if n <= 0:
+        return []
+    if n >= 6:
+        return ['main_closure'] * (n - 4) + ['lottomatica', 'mooney', 'gratta', 'sisal']
+    if n == 5:
+        return ['main_closure'] * (n - 3) + ['lottomatica', 'gratta', 'sisal']
+    if n >= 3:
+        return ['main_closure'] * (n - 3) + list(REPORT_SLOT_ORDER)
+    return ['main_closure'] * n
+
+
+def _xml_text(el, default=''):
+    if el is None or el.text is None:
+        return default
+    return str(el.text).strip()
+
+
+def parse_unified_acquisition_xml(raw: str) -> dict:
+    """Parsa XML Gemini → dict locale {date, summary, items, overlays}."""
+    import re
+    import xml.etree.ElementTree as ET
+
+    text = (raw or '').strip()
+    if not text:
+        raise ValueError('Risposta XML Gemini vuota.')
+
+    # Togli eventuali fence markdown
+    fence = re.search(r'```(?:xml)?\s*([\s\S]*?)```', text, re.IGNORECASE)
+    if fence:
+        text = fence.group(1).strip()
+    start = text.find('<chiusura')
+    end = text.rfind('</chiusura>')
+    if start >= 0 and end > start:
+        text = text[start:end + len('</chiusura>')]
+
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise ValueError(f'XML Gemini non valido: {exc}') from exc
+
+    if root.tag.lower() != 'chiusura':
+        # prova figlio
+        found = root.find('.//chiusura')
+        if found is None:
+            raise ValueError('XML senza elemento <chiusura>.')
+        root = found
+
+    date = _xml_text(root.find('date'))
+    summary = {}
+    summary_el = root.find('summary')
+    if summary_el is not None:
+        for key in FOOTER_SUMMARY_KEYS:
+            child = summary_el.find(key)
+            if child is not None:
+                summary[key] = float(parse_amount(_xml_text(child, '0') or child.get(key) or 0))
+
+    items = []
+    items_el = root.find('items')
+    if items_el is not None:
+        for item_el in items_el.findall('item'):
+            desc = (
+                item_el.get('descrizione')
+                or _xml_text(item_el.find('descrizione'))
+                or ''
+            ).strip()
+            if not desc:
+                continue
+            entrate = abs(float(parse_amount(
+                item_el.get('entrate') or _xml_text(item_el.find('entrate'), '0')
+            )))
+            uscite = abs(float(parse_amount(
+                item_el.get('uscite') or _xml_text(item_el.find('uscite'), '0')
+            )))
+            items.append({
+                'descrizione': desc.upper(),
+                'entrate': entrate,
+                'uscite': uscite,
+                'saldo': round(entrate - uscite, 2),
+            })
+
+    overlays = {}
+    reports_el = root.find('reports')
+    if reports_el is not None:
+        for key in ALL_REPORT_SLOTS:
+            el = reports_el.find(key)
+            if el is None:
+                continue
+            raw_overlay = {
+                'entrate': el.get('entrate') or _xml_text(el.find('entrate'), '0'),
+                'uscite': el.get('uscite') or _xml_text(el.find('uscite'), '0'),
+            }
+            normalized = normalize_report_overlay(key, raw_overlay)
+            if normalized:
+                overlays[key] = normalized
+
+    return {
+        'date': date,
+        'summary': summary,
+        'items': items,
+        'overlays': overlays,
+        'slot_strategy': 'unified_xml',
+    }

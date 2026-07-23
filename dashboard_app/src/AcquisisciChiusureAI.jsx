@@ -773,7 +773,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         {isFiveFileMode
           ? (aiProvider === 'gemini'
-            ? 'Carica 5 o 6 immagini nell\'ordine: 1) riepilogo cassa (eventuale 2ª pagina), 2) Contabile Lottomatica, 3) Mooney (solo con 6 foto), 4) Premi Gratta e Vinci, 5) Borderò Sisal.'
+            ? 'Gemini legge tutte le foto in una sola richiesta (XML). Ordine: 1) riepilogo cassa (+ eventuale 2ª pagina), 2) Contabile Lottomatica, 3) Mooney (solo con 6 foto), 4) Premi Gratta, 5) Borderò Sisal.'
             : 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.')
           : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>

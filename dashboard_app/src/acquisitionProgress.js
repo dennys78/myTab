@@ -10,11 +10,17 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
   steps.push({ phase: 'queue', label: 'In coda per l\'analisi IA…', weight: 6 });
   steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 6 });
 
-  if (twoFileMode || positionalSlots) {
+  if (twoFileMode) {
     steps.push({
       phase: 'decode',
-      label: positionalSlots ? 'Assegnazione report per ordine foto…' : (n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`),
+      label: n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`,
       weight: 10,
+    });
+  } else if (positionalSlots) {
+    steps.push({
+      phase: 'decode',
+      label: 'Lettura unificata Gemini (XML)…',
+      weight: 36,
     });
   } else if (n >= 3) {
     for (let i = 1; i <= n; i += 1) {
@@ -32,9 +38,12 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
     });
   }
 
-  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : 26 });
-  if (!twoFileMode) {
-    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: positionalSlots ? 28 : 16 });
+  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : (positionalSlots ? 12 : 26) });
+  if (!twoFileMode && !positionalSlots) {
+    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 16 });
+  }
+  if (!twoFileMode && positionalSlots) {
+    steps.push({ phase: 'reports', label: 'Applicazione regole Lotto/Sisal/Mooney/Gratta…', weight: 14 });
   }
   steps.push({ phase: 'finalize', label: 'Finalizzazione…', weight: 6 });
   return steps;

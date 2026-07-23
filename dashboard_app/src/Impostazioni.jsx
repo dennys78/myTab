@@ -677,8 +677,8 @@ export default function Impostazioni({ section = 'generali' }) {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Strategia sostenibilee: <strong>Groq</strong> è il motore primario (veloce e stabile).
-          Se scegli Gemini e va in saturazione, il sistema passa automaticamente a Groq per circa 2 minuti.
+          <strong>Gemini</strong> (consigliato per 5/6 foto): una sola analisi multi-immagine → XML → regole in locale.
+          Groq resta opzionale per prove o 2 file.
         </p>
 
         {userModelSaved && (
@@ -696,11 +696,11 @@ export default function Impostazioni({ section = 'generali' }) {
             onChange={e => setAiProvider(e.target.value)}
             style={{ ...inputStyle, width: '100%', maxWidth: '360px', fontFamily: 'inherit' }}
           >
-            <option value="groq">
-              Groq (consigliato — stabile){!keyConfigured ? ' — chiave assente' : ''}
-            </option>
             <option value="gemini">
-              Gemini (con fallback automatico a Groq){!geminiConfigured ? ' — chiave assente' : ''}
+              Gemini (consigliato — XML unificato){!geminiConfigured ? ' — chiave assente' : ''}
+            </option>
+            <option value="groq">
+              Groq (alternativa){!keyConfigured ? ' — chiave assente' : ''}
             </option>
           </select>
           {!geminiConfigured && aiProvider === 'gemini' && (

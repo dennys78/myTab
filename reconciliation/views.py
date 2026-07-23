@@ -448,8 +448,10 @@ def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
 
 
 def _prepare_ai_image_for_provider(file_bytes, provider='gemini'):
-    """Stessa compressione iniziale per Groq e Gemini (profilo che funzionava su Groq)."""
-    return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
+    """Gemini: qualità OCR. Groq: più compresso (TPM)."""
+    if provider == 'groq':
+        return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
+    return _prepare_ai_image(file_bytes, max_side=1600, quality=80)
 
 
 def _shrink_images_for_ai(images, *, max_side=1024, quality=65):
@@ -1096,12 +1098,12 @@ def _get_gemini_key(company=None):
 
 
 def _default_ai_provider():
-    """Groq di default se configurato (percorso stabile); altrimenti Gemini."""
-    if _get_groq_key():
-        return 'groq'
+    """Gemini di default se configurato (percorso 5/6 file); altrimenti Groq."""
     if _get_gemini_key():
         return 'gemini'
-    return 'groq'
+    if _get_groq_key():
+        return 'groq'
+    return 'gemini'
 
 
 def _get_ai_provider(company):
@@ -1166,8 +1168,8 @@ def _ai_provider_options(user, company=None):
         'ai_acquisition_file_mode': mode,
         'max_acquisition_files': max_acquisition_files_for_mode(mode),
         'strategy': (
-            'Groq è il motore primario (stabile). Con Gemini, in caso di saturazione '
-            'il sistema passa automaticamente a Groq per circa 2 minuti.'
+            'Gemini: una sola lettura multi-foto → XML → regole in locale '
+            '(Lotto/Sisal/Mooney/Gratta). Groq resta disponibile come alternativa.'
         ),
     }
 
@@ -1237,17 +1239,15 @@ def _is_capacity_error(exc, provider='gemini'):
 
 
 def _effective_ai_provider(preferred):
-    """Provider operativo: rispetta preferenza, cooldown Gemini e chiavi disponibili."""
+    """Provider operativo in base a preferenza e chiavi disponibili."""
     preferred = preferred if preferred in {'groq', 'gemini'} else _default_ai_provider()
     groq_ok = bool(_get_groq_key())
     gemini_ok = bool(_get_gemini_key())
 
     if preferred == 'gemini':
-        if gemini_ok and not _gemini_in_cooldown():
+        if gemini_ok:
             return 'gemini'
-        if groq_ok:
-            return 'groq'
-        return 'gemini' if gemini_ok else 'groq'
+        return 'groq' if groq_ok else 'gemini'
 
     if preferred == 'groq':
         if groq_ok:
@@ -2099,48 +2099,73 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
     raise last_exc
 
 
-def _gemini_vision_model_candidates(*, fast=False):
-    """Un modello principale (come Groq); fallback solo se 404."""
-    preferred = (os.environ.get('GEMINI_VISION_MODEL') or 'gemini-3.5-flash').strip()
-    if fast:
-        defaults = (preferred, 'gemini-flash-latest')
+def _gemini_vision_model_candidates(*, fast=False, unified=False):
+    """Modello stabile prima (meno 503), poi quelli più nuovi."""
+    preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
+    # 2.5-flash: più stabile su free tier; 3.5 spesso in high-demand
+    defaults = (
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+        'gemini-3.5-flash',
+        'gemini-3.1-flash-lite',
+    )
+    if preferred:
+        ordered_src = (preferred,) + defaults
     else:
-        # Estrazione report/main: evita lite (peggiora OCR Contabile/Borderò)
-        defaults = (preferred, 'gemini-flash-latest')
+        ordered_src = defaults
     seen = set()
     ordered = []
-    for name in defaults:
+    for name in ordered_src:
         if name and name not in seen:
             seen.add(name)
             ordered.append(name)
-    return ordered[:2]
+    # Unified: fino a 3 modelli; classify fast: 2
+    return ordered[:3] if unified else ordered[:2]
 
 
-def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
-    """Stessa strategia di Groq: riduci SEMPRE prima della chiamata, poi ritenta più piccolo."""
+def _extract_ai_with_gemini(
+    images,
+    company=None,
+    prompt=None,
+    *,
+    fast=False,
+    expect_xml=False,
+    unified=False,
+):
+    """Chiamata Gemini con backoff su 503 e modello stabile."""
     api_key = _get_gemini_key()
     if not api_key:
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    # Allineato a _extract_ai_with_groq (profilo che funzionava)
-    if fast:
-        shrink_steps = ((720, 55), (640, 40))
+    if unified:
+        # Una sola chiamata multi-foto: qualità alta, timeout lungo
+        shrink_steps = (
+            (1600, 80),
+            (1280, 72),
+            (1024, 65),
+        )
+        max_out_tokens = 8192
+        http_timeout = 120
+    elif fast:
+        shrink_steps = ((900, 60), (720, 55))
         max_out_tokens = 800
-        http_timeout = 35
+        http_timeout = 45
     else:
         shrink_steps = (
-            (1100, 70) if len(images) <= 1 else (800, 55),
-            (900, 55),
-            (640, 40),
+            (1400, 78) if len(images) <= 1 else (1200, 72),
+            (1024, 65),
+            (800, 55),
         )
-        max_out_tokens = 2500
-        http_timeout = 45
+        max_out_tokens = 4096
+        http_timeout = 70
 
-    models = _gemini_vision_model_candidates(fast=fast)
+    models = _gemini_vision_model_candidates(fast=fast, unified=unified)
     last_exc = None
     tried = []
     saw_overload = False
+    # Backoff esponenziale consigliato da Google per 503
+    overload_delays = (2.0, 4.0, 8.0, 16.0)
 
     for step_idx, (max_side, quality) in enumerate(shrink_steps):
         payload_images = _shrink_images_for_ai(images, max_side=max_side, quality=quality)
@@ -2153,17 +2178,18 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                 },
             })
         parts.append({'text': text_prompt})
+        generation_config = {
+            'temperature': 0,
+            'maxOutputTokens': max_out_tokens,
+        }
+        if not expect_xml:
+            generation_config['response_mime_type'] = 'application/json'
         payload = {
             'contents': [{'role': 'user', 'parts': parts}],
-            'generationConfig': {
-                'temperature': 0,
-                'response_mime_type': 'application/json',
-                'maxOutputTokens': max_out_tokens,
-            },
+            'generationConfig': generation_config,
         }
         data = json.dumps(payload).encode('utf-8')
 
-        retry_smaller = False
         for model in models:
             if model not in tried:
                 tried.append(model)
@@ -2172,7 +2198,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                 f'{urllib.parse.quote(model, safe="")}:generateContent'
                 f'?key={urllib.parse.quote(api_key)}'
             )
-            for attempt in range(2):
+            for attempt, delay in enumerate(overload_delays):
                 req = urllib.request.Request(
                     url,
                     data=data,
@@ -2182,8 +2208,20 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                 try:
                     with urllib.request.urlopen(req, timeout=http_timeout) as response:
                         result = json.loads(response.read().decode('utf-8'))
-                    raw_json = result['candidates'][0]['content']['parts'][0]['text']
-                    return _json_from_ai_text(raw_json)
+                    candidates = result.get('candidates') or []
+                    if not candidates:
+                        raise ValueError(f'Risposta Gemini senza candidates: {str(result)[:300]}')
+                    parts_out = (candidates[0].get('content') or {}).get('parts') or []
+                    raw_text = ''
+                    for part in parts_out:
+                        if isinstance(part, dict) and part.get('text'):
+                            raw_text += part['text']
+                    raw_text = raw_text.strip()
+                    if not raw_text:
+                        raise ValueError('Risposta Gemini vuota.')
+                    if expect_xml:
+                        return raw_text
+                    return _json_from_ai_text(raw_text)
                 except urllib.error.HTTPError as exc:
                     last_exc = exc
                     body = ''
@@ -2192,72 +2230,63 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                     except Exception:
                         body = ''
                     if exc.code == 404:
-                        break  # prova modello successivo
+                        break  # modello successivo
                     if exc.code in {429, 503}:
                         saw_overload = True
-                        # Un solo breve retry, poi fail-fast → failover a Groq
-                        if attempt < 1:
-                            time.sleep(1.2)
+                        if attempt < len(overload_delays) - 1:
+                            time.sleep(delay)
                             continue
-                        break
+                        break  # prossimo modello
                     detail = f' ({body})' if body else ''
                     raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
                 except Exception as exc:
                     last_exc = exc
-                    if _is_timeout_error(exc) or _is_rate_limit_error(exc):
-                        if _is_rate_limit_error(exc):
-                            saw_overload = True
-                            if attempt < 1:
-                                time.sleep(1.2)
-                                continue
-                            break
-                        retry_smaller = step_idx < len(shrink_steps) - 1
+                    if _is_timeout_error(exc):
+                        break  # riduci immagini
+                    if _is_rate_limit_error(exc):
+                        saw_overload = True
+                        if attempt < len(overload_delays) - 1:
+                            time.sleep(delay)
+                            continue
                         break
                     if isinstance(exc, (ValueError, json.JSONDecodeError)):
-                        retry_smaller = step_idx < len(shrink_steps) - 1
                         break
                     raise
-            if saw_overload:
-                break
-            if retry_smaller:
-                break
-        if saw_overload:
-            break
-        if retry_smaller:
-            continue
-        if last_exc is not None and step_idx < len(shrink_steps) - 1:
-            if isinstance(last_exc, (ValueError, json.JSONDecodeError)) or _is_timeout_error(last_exc):
+            else:
                 continue
-        if last_exc is not None and not saw_overload and not _is_timeout_error(last_exc):
-            # 404 su tutti i modelli o errore non recuperabile
-            if isinstance(last_exc, urllib.error.HTTPError) and last_exc.code == 404:
+            # esci dal loop modelli se timeout → shrink
+            if last_exc and _is_timeout_error(last_exc):
                 break
-            raise last_exc
+        if last_exc and _is_timeout_error(last_exc) and step_idx < len(shrink_steps) - 1:
+            continue
+        if saw_overload and step_idx < len(shrink_steps) - 1:
+            # Dopo aver esaurito backoff+modelli, ritenta payload più piccolo
+            saw_overload = False
+            continue
         break
 
     if saw_overload:
-        _mark_gemini_cooldown()
+        _mark_gemini_cooldown(60)
         raise ValueError(
-            'Gemini è momentaneamente sovraccarico (alta domanda). '
-            f'Modelli provati: {", ".join(tried)}.'
+            'Gemini è momentaneamente sovraccarico dopo diversi tentativi (backoff). '
+            f'Modelli provati: {", ".join(tried)}. Riprova tra uno o due minuti.'
         ) from last_exc
 
     if last_exc and _is_timeout_error(last_exc):
         raise ValueError(
-            'Timeout verso Gemini. Riprova oppure usa Groq in Impostazioni.'
+            'Timeout verso Gemini. Riprova con foto meno pesanti o più tardi.'
         ) from last_exc
 
     raise ValueError(
         'Nessun modello Gemini disponibile per questa chiave API '
         f'(provati: {", ".join(tried)}). '
-        'Imposta GEMINI_VISION_MODEL=gemini-3.5-flash nel .env del server '
-        'oppure crea una nuova chiave in Google AI Studio.'
+        'Imposta GEMINI_VISION_MODEL=gemini-2.5-flash nel .env del server.'
     ) from last_exc
 
 
 def _extract_ai_json(images, company, provider, prompt, *, fast=False, allow_failover=True):
-    """Chiama il provider richiesto; in saturazione passa all'altro se la chiave c'è."""
-    preferred = provider or 'groq'
+    """Chiama il provider. Failover Groq↔Gemini solo se l'altro ha chiave (non per unified)."""
+    preferred = provider or 'gemini'
     chosen = _session_provider(_effective_ai_provider(preferred))
 
     try:
@@ -2267,11 +2296,15 @@ def _extract_ai_json(images, company, provider, prompt, *, fast=False, allow_fai
     except Exception as exc:
         if not allow_failover:
             raise
+        # Unified Gemini path disabilita failover; qui solo per chiamate legacy
         alt = _failover_provider(chosen)
         if not alt:
             raise
         if chosen == 'gemini' and _is_capacity_error(exc, 'gemini'):
-            _mark_gemini_cooldown()
+            # Non forzare Groq se l'utente vuole Gemini: riprova solo se Groq è l'unica via
+            if preferred == 'gemini':
+                raise
+            _mark_gemini_cooldown(60)
             _force_session_provider(alt, note=f'{chosen}_overload→{alt}')
             return _extract_ai_json(
                 images, company, alt, prompt, fast=fast, allow_failover=False,
@@ -2282,6 +2315,43 @@ def _extract_ai_json(images, company, provider, prompt, *, fast=False, allow_fai
                 images, company, alt, prompt, fast=fast, allow_failover=False,
             )
         raise
+
+
+def _extract_gemini_unified_bundle(images, company):
+    """Una sola chiamata Gemini multi-foto → XML → parsing locale."""
+    from .ai_acquisition import (
+        UNIFIED_ACQUISITION_XML_PROMPT,
+        build_unified_image_roles,
+        parse_unified_acquisition_xml,
+    )
+
+    roles = build_unified_image_roles(len(images))
+    role_lines = []
+    for i, role in enumerate(roles, start=1):
+        role_lines.append(f'- IMG_{i}: ruolo atteso = {role}')
+    prompt = (
+        UNIFIED_ACQUISITION_XML_PROMPT
+        + '\n\nOrdine foto in questa richiesta:\n'
+        + '\n'.join(role_lines)
+        + '\nLe immagini seguono esattamente questo ordine (IMG_1 prima, poi IMG_2, …).'
+    )
+    raw_xml = _extract_ai_with_gemini(
+        images,
+        company,
+        prompt=prompt,
+        expect_xml=True,
+        unified=True,
+    )
+    bundle = parse_unified_acquisition_xml(raw_xml)
+    overlays = bundle.pop('overlays', {}) or {}
+    parsed = {
+        'date': bundle.get('date') or '',
+        'summary': bundle.get('summary') or {},
+        'items': bundle.get('items') or [],
+        'image_types': roles,
+        'slot_strategy': 'unified_xml',
+    }
+    return parsed, overlays
 
 
 def _extract_report_overlays(report_slots, company, provider):
@@ -2566,11 +2636,10 @@ def _extract_footer_summary(images, company, provider):
 
 
 def _extract_closure_five_files(images, company, provider):
-    """Protocollo a 5/6 file: report dedicati + estrazione riga riepilogo.
+    """Protocollo a 5/6 file.
 
-    Gemini: stesso algoritmo affidabile usato con Groq (slot per ordine upload),
-    senza classificazione IA (lenta e spesso sbagliata su Contabile/Borderò).
-    Groq: classificazione automatica + fallback posizionale.
+    Gemini: 1 chiamata multi-foto → XML → regole in locale.
+    Groq: classificazione + estrazioni dedicate (legacy).
     """
     from .ai_acquisition import (
         merge_five_files_summary,
@@ -2579,36 +2648,36 @@ def _extract_closure_five_files(images, company, provider):
     )
 
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-    image_types = []
 
     if provider == 'gemini':
-        # Algoritmo Groq "che funzionava": ordine upload fisso, stessi REPORT_PROMPTS
-        main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
-        image_types = ['by_position'] * len(images)
-    else:
-        try:
-            image_types = _classify_acquisition_images(images, company, provider)
-            main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
-        except Exception:
-            main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
-            image_types = []
+        parsed, overlays = _extract_gemini_unified_bundle(images, company)
+        has_reports = bool(overlays)
+        return parsed, operator_label, overlays, has_reports
 
-        expected = _expected_report_keys(len(images))
-        if len(report_slots) < len(expected):
-            report_slots, image_types = _fill_missing_report_slots_safe(
-                images, image_types, report_slots, footer_images, company, provider,
-            )
-            main_images, report_slots, footer_images = split_acquisition_images(
-                images, image_types if image_types else None,
-            )
-            report_ids = {id(img) for img in report_slots.values()}
-            footer_ids = {id(img) for img in footer_images}
-            rebuilt_main = [
-                img for img in images
-                if id(img) not in report_ids and id(img) not in footer_ids
-            ]
-            if rebuilt_main:
-                main_images = rebuilt_main
+    image_types = []
+    try:
+        image_types = _classify_acquisition_images(images, company, provider)
+        main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
+    except Exception:
+        main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
+        image_types = []
+
+    expected = _expected_report_keys(len(images))
+    if len(report_slots) < len(expected):
+        report_slots, image_types = _fill_missing_report_slots_safe(
+            images, image_types, report_slots, footer_images, company, provider,
+        )
+        main_images, report_slots, footer_images = split_acquisition_images(
+            images, image_types if image_types else None,
+        )
+        report_ids = {id(img) for img in report_slots.values()}
+        footer_ids = {id(img) for img in footer_images}
+        rebuilt_main = [
+            img for img in images
+            if id(img) not in report_ids and id(img) not in footer_ids
+        ]
+        if rebuilt_main:
+            main_images = rebuilt_main
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
@@ -2626,7 +2695,7 @@ def _extract_closure_five_files(images, company, provider):
 
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
     parsed['image_types'] = image_types
-    parsed['slot_strategy'] = 'position' if provider == 'gemini' else 'classify'
+    parsed['slot_strategy'] = 'classify'
     has_reports = bool(report_slots)
     return parsed, operator_label, overlays, has_reports
 
@@ -2693,8 +2762,6 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
 
         preferred = _resolve_ai_provider(user, company)
         provider = _effective_ai_provider(preferred)
-        if preferred == 'gemini' and provider == 'groq':
-            _force_session_provider('groq', note='gemini_cooldown→groq')
 
         if provider == 'gemini' and not _get_gemini_key():
             raise ValueError('Chiave API Gemini non configurata.')
@@ -2756,63 +2823,10 @@ def _run_draft_extract_job(draft_id, user_id=None, force=False):
         if draft is not None:
             draft.extract_job_status = 'error'
             draft.extract_error = str(exc)
-            # Ultimo tentativo: se Gemini fallisce tutto il job, rilancia su Groq
-            preferred = _resolve_ai_provider(
-                User.objects.filter(id=user_id).first() if user_id else None,
-                draft.company,
-            )
-            if (
-                preferred == 'gemini'
-                and _is_capacity_error(exc, 'gemini')
-                and _get_groq_key()
-            ):
-                try:
-                    _mark_gemini_cooldown()
-                    _force_session_provider('groq', note='gemini_job_fail→groq')
-                    images = _load_draft_images_for_ai(draft, 'groq')
-                    parsed, operator, report_overlays, has_reports = _extract_closure_for_company(
-                        images, draft.company, 'groq',
-                    )
-                    pag_pos_override = None
-                    if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
-                        pag_pos_override = float(draft.pag_pos_reale)
-                    payload = _parse_ai_closure_payload(
-                        parsed,
-                        draft.company,
-                        totale_scassettato=draft.totale_scassettato,
-                        draft_id=draft.id,
-                        operator='IA Groq (failover)',
-                        report_overlays=report_overlays,
-                        with_reports=has_reports,
-                        pag_pos_override=pag_pos_override,
-                    )
-                    payload['provider_failover'] = 'gemini_job_fail→groq'
-                    payload['provider_preferred'] = 'gemini'
-                    payload['provider_used'] = 'groq'
-                    if report_overlays:
-                        applied = [k for k in report_overlays if k != '_errors']
-                        payload['report_overlays_applied'] = applied
-                    draft.extracted_payload = payload
-                    draft.extracted_provider = 'groq'
-                    draft.extracted_at = timezone.now()
-                    draft.extract_job_status = 'ready'
-                    draft.extract_error = ''
-                    draft.save(update_fields=[
-                        'extracted_payload',
-                        'extracted_provider',
-                        'extracted_at',
-                        'extract_job_status',
-                        'extract_error',
-                    ])
-                    return
-                except Exception as failover_exc:
-                    draft.extract_error = (
-                        f'Gemini non disponibile; anche Groq ha fallito: {failover_exc}'
-                    )
-
             if _is_rate_limit_error(exc) or _is_capacity_error(exc):
-                draft.extract_error = _rate_limit_message(
-                    'gemini' if 'gemini' in str(exc).lower() else 'groq'
+                draft.extract_error = (
+                    'Gemini temporaneamente non disponibile dopo i tentativi automatici. '
+                    'Attendi 1–2 minuti e riprova l\'estrazione.'
                 )
             draft.save(update_fields=['extract_job_status', 'extract_error'])
     finally:
