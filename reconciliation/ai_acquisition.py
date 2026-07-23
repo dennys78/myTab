@@ -59,17 +59,22 @@ Regole:
 - NON usare singole righe gioco; solo il totale premi pagati del giorno.
 - Numero float positivo; se non leggibile usa 0.00"""
 
-SISAL_PROMPT = """Questa immagine è un report Sisal (BORDERÒ / MOVIMENTO CONTANTI, oppure tab RICONSEGNA/ESPOSIZIONE).
-Può mostrare sezioni Win for Life, Ricariche, Super Win For Life e un riquadro TOTALE.
+SISAL_PROMPT = """Questa immagine è il report Sisal "BORDERÒ" → tab "MOVIMENTO CONTANTI"
+(calendario a sinistra, riquadro movimento a destra, pulsante STAMPA).
+
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
-Regole:
-- entrate = "Vendite" nel riquadro TOTALE (es. 127,50 → 127.50)
-- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -12,27 → 12.27)
-- Estrai SEMPRE entrate e uscite dal riquadro TOTALE, non dalle sezioni intermedie
-- NON usare il saldo/netto finale in grande (es. 115,23); solo Vendite e Pagamenti del TOTALE
-- Numeri float positivi; se non leggibile usa 0.00"""
+Regole OBBLIGATORIE — leggi SOLO il riquadro "TOTALE" in basso nel borderò:
+- entrate = importo "Vendite" nel TOTALE (es. 281,00 → 281.00)
+- uscite = valore ASSOLUTO di "Pagamenti" nel TOTALE (es. -331,05 → 331.05)
+
+VIETATO:
+- NON usare il totale netto in grande in fondo (es. -50,05)
+- NON usare le sezioni intermedie (Ricariche, Win for Life, Super Win For Life, ecc.)
+- NON confondere con la ricevuta Mooney "MOVIMENTO CONTANTE"
+
+Numeri float positivi; se una riga non è leggibile usa 0.00."""
 
 MOONEY_PROMPT = """Questa immagine è la ricevuta Mooney "MOVIMENTO CONTANTE" (logo mooney in alto).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
@@ -95,7 +100,7 @@ Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"g
 - summary_footer: SOLO (o quasi solo) la riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza righe reparto con Entrate/Uscite.
 - lottomatica: titolo "Contabile Giornaliero" (Prospetti / Giochi Lotto) con Num. giocate, Importo giocate, Vincite pagate e in basso "Entrate Gioco", "Aggio Gioco", "Uscite Gioco", "Saldo". Questa foto è la fonte ufficiale di LOTTOMATICA. NON è il riepilogo cassa POS.
 - gratta: "Premi pagati nel giorno" Gratta e Vinci (Prospetti) con tabella Gioco/Quantità/Importo e riga Totale.
-- sisal: schermata Sisal "BORDERÒ" / "MOVIMENTO CONTANTI" (UI gialla, calendario, Vendite/Pagamenti/TOTALE), oppure tab RICONSEGNA/ESPOSIZIONE. NON è la ricevuta cartacea Mooney.
+- sisal: schermata Sisal titolo "BORDERÒ", tab "MOVIMENTO CONTANTI" (o RICONSEGNA/ESPOSIZIONE), calendario, sezioni Vendite/Pagamenti e riquadro TOTALE. Fonte ufficiale SISAL. NON è la ricevuta cartacea Mooney.
 - mooney: ricevuta con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
@@ -108,7 +113,7 @@ Regole di classificazione (obbligatorie):
 - summary_footer: SOLO riga Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE senza reparti.
 - lottomatica: "Contabile Giornaliero" con Entrate Gioco / Aggio Gioco / Uscite Gioco / Saldo. Fonte ufficiale LOTTOMATICA. Non confondere con il foglio cassa.
 - gratta: Premi pagati nel giorno Gratta e Vinci.
-- sisal: BORDERÒ / MOVIMENTO CONTANTI Sisal (Vendite/Pagamenti). Non confondere con Mooney.
+- sisal: "BORDERÒ" + "MOVIMENTO CONTANTI" Sisal (Vendite/Pagamenti nel TOTALE). Fonte ufficiale SISAL. Non confondere con Mooney.
 - mooney: ricevuta logo mooney MOVIMENTO CONTANTE.
 - other: nessuno dei precedenti"""
 

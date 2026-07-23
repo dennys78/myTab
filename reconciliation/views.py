@@ -1606,8 +1606,10 @@ Regole:
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
 - Per LOTTOMATICA: i valori del riepilogo cassa (NUOVA SEZIONE) sono solo fallback.
   La fonte ufficiale è la foto "Contabile Giornaliero" (Entrate Gioco / Uscite Gioco), che sovrascrive sempre.
-- Per SISAL e MOONEY: includi SEMPRE le Entrate/Uscite lette dal riepilogo (non azzerarle).
-  I report dedicati le sovrascrivono dopo, se disponibili.
+- Per SISAL: i valori del riepilogo cassa sono solo fallback.
+  La fonte ufficiale è la foto Borderò "MOVIMENTO CONTANTI" (Vendite / Pagamenti del TOTALE), che sovrascrive sempre.
+- Per MOONEY: includi SEMPRE le Entrate/Uscite lette dal riepilogo (non azzerarle).
+  Il report dedicato le sovrascrive dopo, se disponibile.
 - Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
   verranno dal report premi separato quando disponibile.
 - Unisci le righe reparto visibili senza duplicarle.

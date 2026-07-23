@@ -764,7 +764,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
-          ? 'Criterio: Lottomatica SOLO dal Contabile Giornaliero (Entrate Gioco / Uscite Gioco, es. 397/193 — non Aggio/Saldo); Mooney = Totale ricevuta; Sisal = Vendite/Pagamenti Borderò; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati.'
+          ? 'Criterio: Lottomatica SOLO dal Contabile (Entrate/Uscite Gioco); Sisal SOLO dal Borderò MOVIMENTO CONTANTI (Vendite/Pagamenti TOTALE, es. 281/331,05 — non il netto); Mooney = Totale ricevuta; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati.'
           : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
