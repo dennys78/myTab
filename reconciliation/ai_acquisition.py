@@ -31,15 +31,15 @@ FOOTER_SUMMARY_KEYS = (
     'totale',
 )
 
-LOTTO_PROMPT = """Questa immagine è un report Contabile Giornaliero Lottomatica (tabaccheria).
+LOTTO_PROMPT = """Questa immagine è il report "Contabile Giornaliero" Lottomatica (Lotto, 10eLotto, MillionDAY, Fai3/Fai4).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = importo della riga "Entrate Gioco" (o Entrate gioco / Entrate Giochi) — OBBLIGATORIO se visibile
-- uscite = importo della riga "Uscite Gioco" (o Uscite gioco / Uscite Giochi) — OBBLIGATORIO se visibile
-- Estrai SEMPRE entrambi i valori quando presenti nel documento (es. Entrate 665,00 e Uscite 283,00)
-- NON usare Aggio Gioco, Saldo o totali parziali al posto di entrate/uscite
+- entrate = importo della riga "Entrate Gioco" in basso (es. +397,00 → 397.00)
+- uscite = importo della riga "Uscite Gioco" in basso (es. 193,00 → 193.00)
+- Estrai SEMPRE entrambi i totali finali Entrate Gioco / Uscite Gioco
+- NON usare Aggio Gioco, Saldo, né le righe singole Importo giocate / Vincite pagate
 - Numeri float positivi; se una riga non è leggibile usa 0.00"""
 
 GRATTA_PROMPT = """Questa immagine è il report Gratta e Vinci "Premi pagati nel giorno" (tabella Gioco / Quantità / Importo).
@@ -47,29 +47,30 @@ Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"uscite": 0.00}
 
 Regole:
-- uscite = importo nella riga "Totale" in fondo alla tabella (es. € 505,00 → 505.00)
+- uscite = importo nella riga "Totale" in fondo alla tabella (es. € 120,00 → 120.00)
 - NON usare singole righe gioco; solo il totale premi pagati del giorno.
 - Numero float positivo; se non leggibile usa 0.00"""
 
-SISAL_PROMPT = """Questa immagine è un report Sisal (tab RICONSEGNA o ESPOSIZIONE / Movimento contanti).
+SISAL_PROMPT = """Questa immagine è un report Sisal (BORDERÒ / MOVIMENTO CONTANTI, oppure tab RICONSEGNA/ESPOSIZIONE).
+Può mostrare sezioni Win for Life, Ricariche, Super Win For Life e un riquadro TOTALE.
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = "Vendite" nel riquadro TOTALE in basso (es. 68,00 → 68.00)
-- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -26,31 → 26.31)
-- Estrai SEMPRE entrate e uscite dal riquadro TOTALE, non dalle singole sezioni Win for Life/Eurojackpot
-- NON usare il saldo/netto finale (es. 41,69); solo vendite e pagamenti del TOTALE
+- entrate = "Vendite" nel riquadro TOTALE (es. 127,50 → 127.50)
+- uscite = valore assoluto di "Pagamenti" nel TOTALE (es. -12,27 → 12.27)
+- Estrai SEMPRE entrate e uscite dal riquadro TOTALE, non dalle sezioni intermedie
+- NON usare il saldo/netto finale in grande (es. 115,23); solo Vendite e Pagamenti del TOTALE
 - Numeri float positivi; se non leggibile usa 0.00"""
 
-MOONEY_PROMPT = """Questa immagine è il report Mooney "MOVIMENTO CONTANTE" (ricevuta giornaliera).
+MOONEY_PROMPT = """Questa immagine è la ricevuta Mooney "MOVIMENTO CONTANTE" (logo mooney in alto).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = importo nella riga "Totale" in fondo (totale incassato del giorno), es. 1467,59 → 1467.59
-- uscite = 0.00 se il documento non mostra uscite/pagamenti espliciti (solo righe Incassato)
-- NON sommare manualmente Ricariche/Carte/Pagamenti se è già presente il Totale
+- entrate = importo nella riga "Totale" in fondo (es. 444,92 → 444.92)
+- uscite = 0.00 se il documento mostra solo "Incassato" (Ricariche e codici / Pagamenti e servizi)
+- NON sommare a mano le sezioni Incassato se è già presente Totale
 - Numeri float positivi; se non leggibile usa 0.00"""
 
 REPORT_PROMPTS = {
@@ -82,12 +83,12 @@ REPORT_PROMPTS = {
 CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
 Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other"}
 
-- main_closure: tabella "Riepilogo Chiusure di Cassa" con molte righe reparto (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, Pag fornitori, ecc.) e colonne Entrate/Uscite/Saldo
-- summary_footer: SOLO la riga/box riepilogo finale con etichette Contanti, Pag.Pos (o Pagamento POS), Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza elenco reparti sopra
-- lottomatica: "Contabile Giornaliero" Lottomatica con righe "Entrate Gioco" e "Uscite Gioco" (e Aggio/Saldo)
-- gratta: schermata "Premi pagati nel giorno" Gratta e Vinci con tabella Gioco/Quantità/Importo e riga Totale
-- sisal: schermata Sisal tab RICONSEGNA o ESPOSIZIONE con Vendite, Pagamenti e riquadro TOTALE
-- mooney: documento Mooney "MOVIMENTO CONTANTE" con righe Incassato (Ricariche, Carte prepagate, Pagamenti e servizi) e Totale
+- main_closure: "Riepilogo Chiusure di Cassa" con molte righe reparto (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, Pag fornitori, ecc.) e colonne Entrate/Uscite/Saldo. Può includere la sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI".
+- summary_footer: pagina/parte del riepilogo cassa centrata sulla riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE (anche se sopra restano poche righe LOTTOMATICA/MOONEY/SISAL).
+- lottomatica: "Contabile Giornaliero" con Lotto/10eLotto/MillionDAY e totali "Entrate Gioco" / "Uscite Gioco" (e Aggio/Saldo).
+- gratta: "Premi pagati nel giorno" Gratta e Vinci (Prospetti) con tabella Gioco/Quantità/Importo e riga Totale.
+- sisal: schermata Sisal "BORDERÒ" o "MOVIMENTO CONTANTI" (UI gialla, calendario, Vendite/Pagamenti/TOTALE), oppure tab RICONSEGNA/ESPOSIZIONE. NON è la ricevuta cartacea Mooney.
+- mooney: ricevuta cartacea/PDF con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
 VALID_IMAGE_TYPES = frozenset({

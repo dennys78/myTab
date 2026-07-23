@@ -1603,9 +1603,10 @@ Regole:
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
-- Per LOTTOMATICA, SISAL e MOONEY: se compaiono nel riepilogo, metti 0.00 in entrate/uscite (verranno sostituiti dai report dedicati).
+- Per LOTTOMATICA, SISAL e MOONEY: includi SEMPRE le Entrate/Uscite lette dal riepilogo (non azzerarle).
+  I report dedicati le sovrascrivono dopo, se disponibili.
 - Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
-  verranno dal report premi separato.
+  verranno dal report premi separato quando disponibile.
 - Unisci le righe reparto visibili senza duplicarle.
 - Includi in "items" TUTTE le righe della tabella reparti con descrizione e importi (anche solo entrate o solo uscite).
   Non omettere nessun reparto: Tabacchi, Caffè, Pasticceria, Bibite, Rosticceria, Pastigliaggi, Cartine,
@@ -2102,10 +2103,70 @@ def _extract_report_overlays(report_slots, company, provider):
                     time.sleep(2.0 * (attempt + 1))
                     continue
                 break
-        if last_exc and key in ('lottomatica', 'sisal', 'mooney'):
-            # Report obbligatori: segnala nel payload per debug
+        if last_exc and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
             overlays.setdefault('_errors', {})[key] = str(last_exc)[:200]
     return overlays
+
+
+def _expected_report_keys(image_count):
+    from .ai_acquisition import ALL_REPORT_SLOTS, REPORT_SLOT_ORDER
+    if int(image_count or 0) >= 6:
+        return list(ALL_REPORT_SLOTS)
+    return list(REPORT_SLOT_ORDER)
+
+
+def _fill_missing_report_slots(images, image_types, report_slots, footer_images, company, provider):
+    """Se la classificazione omette Lottomatica/Mooney/Sisal/Gratta, recupera dalle foto residue."""
+    from .ai_acquisition import REPORT_PROMPTS, normalize_report_overlay
+
+    expected = _expected_report_keys(len(images))
+    missing = [key for key in expected if key not in report_slots]
+    if not missing:
+        return report_slots, image_types or []
+
+    types = list(image_types) if image_types and len(image_types) == len(images) else ['other'] * len(images)
+    assigned_ids = {id(img) for img in report_slots.values()}
+    assigned_ids.update(id(img) for img in (footer_images or []))
+
+    candidates = []
+    for idx, img in enumerate(images):
+        if id(img) in assigned_ids:
+            continue
+        t = types[idx]
+        if t == 'summary_footer':
+            continue
+        # Preferisci foto non già usate come main_closure
+        candidates.append((0 if t in {'other', *missing} else 1, idx, img))
+    candidates.sort(key=lambda row: row[0])
+
+    for _prio, idx, img in candidates:
+        if not missing:
+            break
+        guessed = _classify_acquisition_image(img, company, provider)
+        if guessed in missing:
+            report_slots[guessed] = img
+            types[idx] = guessed
+            missing.remove(guessed)
+            assigned_ids.add(id(img))
+            continue
+        for key in list(missing):
+            prompt = REPORT_PROMPTS.get(key)
+            if not prompt:
+                continue
+            try:
+                parsed = _extract_ai_json([img], company, provider, prompt, fast=True)
+                normalized = normalize_report_overlay(key, parsed)
+            except Exception:
+                continue
+            if not normalized:
+                continue
+            report_slots[key] = img
+            types[idx] = key
+            missing.remove(key)
+            assigned_ids.add(id(img))
+            break
+
+    return report_slots, types
 
 
 def _classify_acquisition_image(image, company, provider):
@@ -2259,6 +2320,31 @@ def _extract_closure_five_files(images, company, provider):
         # Fallback: ordine upload fisso se la classificazione fallisce
         main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
         image_types = []
+
+    # Se mancano Lottomatica/Mooney/Sisal/Gratta, recupera dalle foto non assegnate
+    expected = _expected_report_keys(len(images))
+    if len(report_slots) < len(expected):
+        report_slots, image_types = _fill_missing_report_slots(
+            images, image_types, report_slots, footer_images, company, provider,
+        )
+        main_images, report_slots, footer_images = split_acquisition_images(
+            images, image_types if image_types else None,
+        )
+        # Se ancora incompleti, completa solo gli slot mancanti dall'ordine posizionale
+        if len(report_slots) < len(expected):
+            _main_pos, slots_pos, _footer_pos = split_acquisition_images_by_position(images)
+            used = {id(img) for img in report_slots.values()}
+            for key, img in slots_pos.items():
+                if key in report_slots or id(img) in used:
+                    continue
+                report_slots[key] = img
+                used.add(id(img))
+            report_ids = {id(img) for img in report_slots.values()}
+            footer_ids = {id(img) for img in footer_images}
+            main_images = [
+                img for img in images
+                if id(img) not in report_ids and id(img) not in footer_ids
+            ] or main_images
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
