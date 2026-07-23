@@ -448,10 +448,21 @@ def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
 
 
 def _prepare_ai_image_for_provider(file_bytes, provider='gemini'):
-    """Compressione mirata: Gemini più grande (OCR), Groq più aggressivo (TPM)."""
+    """Compressione mirata: Gemini bilanciata (velocità), Groq più aggressiva (TPM)."""
     if provider == 'groq':
         return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
-    return _prepare_ai_image(file_bytes, max_side=1800, quality=85)
+    # 1280px: OCR ancora buono, payload più leggero → meno timeout Gemini
+    return _prepare_ai_image(file_bytes, max_side=1280, quality=72)
+
+
+def _shrink_images_for_gemini(images, *, max_side=1024, quality=65):
+    """Ricomprime per retry dopo timeout o classificazione multi-foto."""
+    shrunk = []
+    for image in images:
+        raw = base64.standard_b64decode(image['b64'])
+        mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
+        shrunk.append({'mime': mime, 'b64': b64})
+    return shrunk
 
 
 def _shrink_images_for_groq(images, *, max_side=1024, quality=65):
@@ -462,6 +473,34 @@ def _shrink_images_for_groq(images, *, max_side=1024, quality=65):
         mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
         shrunk.append({'mime': mime, 'b64': b64})
     return shrunk
+
+
+def _is_timeout_error(exc):
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        import socket
+        if isinstance(exc, socket.timeout):
+            return True
+    except Exception:
+        pass
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, 'reason', None)
+        if isinstance(reason, TimeoutError):
+            return True
+        try:
+            import socket
+            if isinstance(reason, socket.timeout):
+                return True
+        except Exception:
+            pass
+    msg = str(exc).lower()
+    return (
+        'timed out' in msg
+        or 'timeout' in msg
+        or 'read operation timed out' in msg
+        or 'the read operation timed out' in msg
+    )
 
 
 def _is_rate_limit_error(exc):
@@ -1972,22 +2011,26 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
 def _gemini_vision_model_candidates(*, fast=False):
     """Ordine di prova: env override, poi modelli Flash attuali."""
     preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
-    # Preferisci 3.5; in caso di 503/404 prova alternative più leggere
-    defaults = (
-        'gemini-3.5-flash',
-        'gemini-flash-latest',
-        'gemini-3.1-flash-lite',
-    )
-    if not fast:
-        defaults = defaults + ('gemini-3-flash-preview', 'gemini-2.5-flash')
+    if fast:
+        # Classificazione/report: modello più leggero per prima, meno timeout
+        defaults = (
+            'gemini-flash-latest',
+            'gemini-3.1-flash-lite',
+            'gemini-3.5-flash',
+        )
+    else:
+        defaults = (
+            'gemini-3.5-flash',
+            'gemini-flash-latest',
+            'gemini-3.1-flash-lite',
+        )
     seen = set()
     ordered = []
     for name in ((preferred,) if preferred else ()) + defaults:
         if name and name not in seen:
             seen.add(name)
             ordered.append(name)
-    # In modalità fast: al massimo 2 modelli, altrimenti la pipeline 6-file esplode
-    return ordered[:2] if fast else ordered[:3]
+    return ordered[:2] if fast else ordered[:2]
 
 
 def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
@@ -1996,80 +2039,105 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    parts = []
-    for image in images:
-        parts.append({
-            'inline_data': {
-                'mime_type': image['mime'],
-                'data': image['b64'],
-            },
-        })
-    parts.append({'text': text_prompt})
+    # Classificazione / report: parti già piccole. Main: una sola riduzione se timeout.
+    work_images = list(images)
+    if fast and len(work_images) > 1:
+        work_images = _shrink_images_for_gemini(work_images, max_side=960, quality=60)
 
-    payload = {
-        'contents': [{'role': 'user', 'parts': parts}],
-        'generationConfig': {
-            'temperature': 0,
-            'response_mime_type': 'application/json',
-        },
-    }
-    data = json.dumps(payload).encode('utf-8')
     models = _gemini_vision_model_candidates(fast=fast)
     last_exc = None
     tried = []
     saw_overload = False
-    max_attempts = 2 if fast else 3
-    http_timeout = 45 if fast else 90
-    sleep_base = 1.0 if fast else 1.5
+    saw_timeout = False
+    max_attempts = 2
+    http_timeout = 35 if fast else 60
+    sleep_base = 0.8
 
-    for model in models:
-        tried.append(model)
-        url = (
-            f'https://generativelanguage.googleapis.com/v1beta/models/'
-            f'{urllib.parse.quote(model, safe="")}:generateContent'
-            f'?key={urllib.parse.quote(api_key)}'
-        )
-        for attempt in range(max_attempts):
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={'Content-Type': 'application/json'},
-                method='POST',
+    for shrink_round in range(2):
+        parts = []
+        for image in work_images:
+            parts.append({
+                'inline_data': {
+                    'mime_type': image['mime'],
+                    'data': image['b64'],
+                },
+            })
+        parts.append({'text': text_prompt})
+        payload = {
+            'contents': [{'role': 'user', 'parts': parts}],
+            'generationConfig': {
+                'temperature': 0,
+                'response_mime_type': 'application/json',
+            },
+        }
+        data = json.dumps(payload).encode('utf-8')
+
+        for model in models:
+            if model not in tried:
+                tried.append(model)
+            url = (
+                f'https://generativelanguage.googleapis.com/v1beta/models/'
+                f'{urllib.parse.quote(model, safe="")}:generateContent'
+                f'?key={urllib.parse.quote(api_key)}'
             )
-            try:
-                with urllib.request.urlopen(req, timeout=http_timeout) as response:
-                    result = json.loads(response.read().decode('utf-8'))
-                raw_json = result['candidates'][0]['content']['parts'][0]['text']
-                return _json_from_ai_text(raw_json)
-            except urllib.error.HTTPError as exc:
-                last_exc = exc
-                body = ''
+            for attempt in range(max_attempts):
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
                 try:
-                    body = exc.read().decode('utf-8', errors='replace')[:400]
-                except Exception:
+                    with urllib.request.urlopen(req, timeout=http_timeout) as response:
+                        result = json.loads(response.read().decode('utf-8'))
+                    raw_json = result['candidates'][0]['content']['parts'][0]['text']
+                    return _json_from_ai_text(raw_json)
+                except urllib.error.HTTPError as exc:
+                    last_exc = exc
                     body = ''
-                if exc.code == 404:
-                    break
-                if exc.code in {429, 503}:
-                    saw_overload = saw_overload or exc.code == 503
-                    if attempt < max_attempts - 1:
+                    try:
+                        body = exc.read().decode('utf-8', errors='replace')[:400]
+                    except Exception:
+                        body = ''
+                    if exc.code == 404:
+                        break
+                    if exc.code in {429, 503}:
+                        saw_overload = True
+                        if attempt < max_attempts - 1:
+                            time.sleep(sleep_base * (attempt + 1))
+                            continue
+                        break
+                    detail = f' ({body})' if body else ''
+                    raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
+                except Exception as exc:
+                    last_exc = exc
+                    if _is_timeout_error(exc):
+                        saw_timeout = True
+                        break  # esci dai retry modello → riduci immagini
+                    if _is_rate_limit_error(exc) and attempt < max_attempts - 1:
                         time.sleep(sleep_base * (attempt + 1))
                         continue
-                    break
-                detail = f' ({body})' if body else ''
-                raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
-            except Exception as exc:
-                last_exc = exc
-                if _is_rate_limit_error(exc) and attempt < max_attempts - 1:
-                    time.sleep(sleep_base * (attempt + 1))
-                    continue
-                raise
+                    raise
+            if saw_timeout:
+                break
+        if saw_timeout and shrink_round == 0:
+            work_images = _shrink_images_for_gemini(work_images, max_side=800, quality=55)
+            saw_timeout = False
+            continue
+        break
 
     if saw_overload:
         raise ValueError(
             'Gemini è momentaneamente sovraccarico (alta domanda). '
             'Attendi 30–60 secondi e riprova, oppure in Impostazioni passa temporaneamente a Groq. '
             f'Modelli provati: {", ".join(tried)}.'
+        ) from last_exc
+
+    if last_exc and _is_timeout_error(last_exc):
+        raise ValueError(
+            'Timeout verso Gemini (foto troppo pesanti o rete lenta). '
+            'Riprova: le immagini verranno compresse automaticamente. '
+            'In alternativa usa Groq in Impostazioni.'
         ) from last_exc
 
     raise ValueError(
@@ -2220,15 +2288,15 @@ def _classify_acquisition_image(image, company, provider):
 
 
 def _classify_acquisition_images(images, company, provider):
-    """Classifica tutte le foto: 1 chiamata batch Gemini, altrimenti parallelo."""
-    from .ai_acquisition import CLASSIFY_BATCH_PROMPT, normalize_image_type
-
+    """Classifica le foto in parallelo (evita 1 mega-richiesta a 6 immagini che va in timeout)."""
     if not images:
         return []
     if len(images) == 1:
         return [_classify_acquisition_image(images[0], company, provider)]
 
-    if provider == 'gemini':
+    # Batch solo per 2–3 foto: con 5/6 il payload è troppo grande → timeout
+    if provider == 'gemini' and len(images) <= 3:
+        from .ai_acquisition import CLASSIFY_BATCH_PROMPT, normalize_image_type
         try:
             parsed = _extract_ai_json(
                 images,
@@ -2325,10 +2393,10 @@ def _merge_two_page_parsed(base, extra):
 
 
 def _extract_main_closure_images(images, company, provider):
-    """Estrae il riepilogo cassa; su Groq processa una foto per volta e unisce i reparti."""
+    """Estrae il riepilogo cassa; con più foto processa una pagina alla volta (meno timeout)."""
     if not images:
         return {'date': '', 'summary': {}, 'items': []}
-    if provider == 'groq' and len(images) > 1:
+    if len(images) > 1:
         merged = None
         for image in images:
             parsed = _extract_ai_json([image], company, provider, MAIN_CLOSURE_AI_PROMPT)
