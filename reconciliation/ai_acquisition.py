@@ -48,7 +48,8 @@ VIETATO:
 - NON sommare a mano le righe Importo giocate / Vincite pagate se Entrate Gioco e Uscite Gioco sono visibili
 - NON usare i conteggi Num. giocate
 
-Numeri float positivi; se una delle due righe non è leggibile usa 0.00."""
+Numeri float positivi; se una delle due righe non è leggibile usa 0.00.
+Nota: se Uscite Gioco > Entrate Gioco il saldo (entrate-uscite) sarà negativo — è corretto, non invertire i valori."""
 
 GRATTA_PROMPT = """Questa immagine è il report Gratta e Vinci "Premi pagati nel giorno" (tabella Gioco / Quantità / Importo).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
@@ -57,7 +58,8 @@ Restituisci SOLO un oggetto JSON valido, senza markdown:
 Regole:
 - uscite = importo nella riga "Totale" in fondo alla tabella (es. € 120,00 → 120.00)
 - NON usare singole righe gioco; solo il totale premi pagati del giorno.
-- Numero float positivo; se non leggibile usa 0.00"""
+- Numero float positivo; se non leggibile usa 0.00
+- Nota: le Entrate restano dal riepilogo cassa; se i premi superano le entrate il saldo Gratta sarà negativo — è corretto."""
 
 SISAL_PROMPT = """Questa immagine è il report Sisal "BORDERÒ" → tab "MOVIMENTO CONTANTI"
 (calendario a sinistra, riquadro movimento a destra, pulsante STAMPA).
@@ -74,7 +76,8 @@ VIETATO:
 - NON usare le sezioni intermedie (Ricariche, Win for Life, Super Win For Life, ecc.)
 - NON confondere con la ricevuta Mooney "MOVIMENTO CONTANTE"
 
-Numeri float positivi; se una riga non è leggibile usa 0.00."""
+Numeri float positivi; se una riga non è leggibile usa 0.00.
+Nota: se Pagamenti > Vendite il saldo (entrate-uscite) sarà negativo (es. 281−331,05 = −50,05) — è corretto, non invertire né usare il netto al posto di Vendite/Pagamenti."""
 
 MOONEY_PROMPT = """Questa immagine è la ricevuta Mooney "MOVIMENTO CONTANTE" (logo mooney in alto).
 Restituisci SOLO un oggetto JSON valido, senza markdown:

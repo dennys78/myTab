@@ -847,7 +847,12 @@ function AppShell() {
                                                   {rowSaldo.toFixed(2)}
                                                 </span>
                                               ) : (
-                                                <span>€ {item.saldo.toFixed(2)}</span>
+                                                <span style={{
+                                                  color: item.saldo > 0 ? 'var(--success)' : item.saldo < 0 ? 'var(--danger)' : 'inherit',
+                                                  fontWeight: item.saldo < 0 ? 600 : undefined,
+                                                }}>
+                                                  € {item.saldo.toFixed(2)}
+                                                </span>
                                               )}
                                             </td>
                                             {editingId === closure.id && (

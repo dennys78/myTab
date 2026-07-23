@@ -1640,7 +1640,7 @@ Regole:
 - Data in formato YYYY-MM-DD.
 - Tutti gli importi sono numeri float (non stringhe).
 - "entrate" e "uscite" devono essere sempre importi positivi o 0. Non mettere mai il segno meno nella colonna "uscite".
-- saldo = entrate - uscite (può essere negativo).
+- saldo = entrate - uscite (PUÒ ESSERE NEGATIVO: normale per Sisal, Lottomatica, Gratta e Vinci se uscite > entrate).
 - Nomi reparto in MAIUSCOLO.
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
 - Per LOTTOMATICA: i valori del riepilogo cassa (NUOVA SEZIONE) sono solo fallback.
