@@ -31,16 +31,24 @@ FOOTER_SUMMARY_KEYS = (
     'totale',
 )
 
-LOTTO_PROMPT = """Questa immagine è il report "Contabile Giornaliero" Lottomatica (Lotto, 10eLotto, MillionDAY, Fai3/Fai4).
+LOTTO_PROMPT = """Questa immagine è il report "Contabile Giornaliero" Lottomatica
+(menu Prospetti → Contabile giornaliero, tab Giochi Lotto).
+Mostra conteggi giocate, importi (Importo giocate / Vincite pagate) e in basso i totali.
+
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
-Regole:
-- entrate = importo della riga "Entrate Gioco" in basso (es. +397,00 → 397.00)
-- uscite = importo della riga "Uscite Gioco" in basso (es. 193,00 → 193.00)
-- Estrai SEMPRE entrambi i totali finali Entrate Gioco / Uscite Gioco
-- NON usare Aggio Gioco, Saldo, né le righe singole Importo giocate / Vincite pagate
-- Numeri float positivi; se una riga non è leggibile usa 0.00"""
+Regole OBBLIGATORIE — leggi SOLO queste due righe in fondo al documento:
+- entrate = valore assoluto di "Entrate Gioco" (es. +397,00 → 397.00)
+- uscite = valore assoluto di "Uscite Gioco" (es. 193,00 → 193.00)
+
+VIETATO:
+- NON usare "Aggio Gioco" (es. +31,76)
+- NON usare "Saldo (Entrate - Aggio - Uscite)" (es. +172,24)
+- NON sommare a mano le righe Importo giocate / Vincite pagate se Entrate Gioco e Uscite Gioco sono visibili
+- NON usare i conteggi Num. giocate
+
+Numeri float positivi; se una delle due righe non è leggibile usa 0.00."""
 
 GRATTA_PROMPT = """Questa immagine è il report Gratta e Vinci "Premi pagati nel giorno" (tabella Gioco / Quantità / Importo).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
@@ -85,7 +93,7 @@ Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"g
 
 - main_closure: "Riepilogo Chiusure di Cassa" con tabella reparti (Tabacchi, Caffè, Gratta e Vinci, Pag fornitori, ecc.) e/o sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI" (LOTTOMATICA, MOONEY, SISAL con Entrate/Uscite/Saldo). Anche se in basso compare la riga Contanti/Pag.Pos/TOTALE, resta main_closure.
 - summary_footer: SOLO (o quasi solo) la riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza righe reparto con Entrate/Uscite.
-- lottomatica: "Contabile Giornaliero" con Lotto/10eLotto/MillionDAY e totali "Entrate Gioco" / "Uscite Gioco" (e Aggio/Saldo). NON è il riepilogo cassa POS.
+- lottomatica: titolo "Contabile Giornaliero" (Prospetti / Giochi Lotto) con Num. giocate, Importo giocate, Vincite pagate e in basso "Entrate Gioco", "Aggio Gioco", "Uscite Gioco", "Saldo". Questa foto è la fonte ufficiale di LOTTOMATICA. NON è il riepilogo cassa POS.
 - gratta: "Premi pagati nel giorno" Gratta e Vinci (Prospetti) con tabella Gioco/Quantità/Importo e riga Totale.
 - sisal: schermata Sisal "BORDERÒ" / "MOVIMENTO CONTANTI" (UI gialla, calendario, Vendite/Pagamenti/TOTALE), oppure tab RICONSEGNA/ESPOSIZIONE. NON è la ricevuta cartacea Mooney.
 - mooney: ricevuta con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
@@ -98,7 +106,7 @@ Restituisci SOLO JSON con un array "types" della stessa lunghezza:
 Regole di classificazione (obbligatorie):
 - main_closure: Riepilogo Chiusure di Cassa / tabella reparti / NUOVA SEZIONE GESTORI (LOTTOMATICA, MOONEY, SISAL). Se ci sono Entrate/Uscite di reparto, NON usare summary_footer.
 - summary_footer: SOLO riga Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE senza reparti.
-- lottomatica: Contabile Giornaliero (Entrate Gioco / Uscite Gioco), non il foglio cassa.
+- lottomatica: "Contabile Giornaliero" con Entrate Gioco / Aggio Gioco / Uscite Gioco / Saldo. Fonte ufficiale LOTTOMATICA. Non confondere con il foglio cassa.
 - gratta: Premi pagati nel giorno Gratta e Vinci.
 - sisal: BORDERÒ / MOVIMENTO CONTANTI Sisal (Vendite/Pagamenti). Non confondere con Mooney.
 - mooney: ricevuta logo mooney MOVIMENTO CONTANTE.

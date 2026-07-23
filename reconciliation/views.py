@@ -1604,7 +1604,9 @@ Regole:
 - saldo = entrate - uscite (può essere negativo).
 - Nomi reparto in MAIUSCOLO.
 - Queste immagini sono SOLO il foglio riepilogo cassa (non i report Lottomatica/Sisal/Gratta separati).
-- Per LOTTOMATICA, SISAL e MOONEY: includi SEMPRE le Entrate/Uscite lette dal riepilogo (non azzerarle).
+- Per LOTTOMATICA: i valori del riepilogo cassa (NUOVA SEZIONE) sono solo fallback.
+  La fonte ufficiale è la foto "Contabile Giornaliero" (Entrate Gioco / Uscite Gioco), che sovrascrive sempre.
+- Per SISAL e MOONEY: includi SEMPRE le Entrate/Uscite lette dal riepilogo (non azzerarle).
   I report dedicati le sovrascrivono dopo, se disponibili.
 - Per GRATTA E VINCI: includi sempre la riga con le Entrate del riepilogo (colonna Entrate); le Uscite
   verranno dal report premi separato quando disponibile.
