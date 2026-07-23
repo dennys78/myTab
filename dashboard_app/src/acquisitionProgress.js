@@ -1,6 +1,6 @@
 /** Fasi stimate durante upload + estrazione IA (allineate al backend). */
 
-export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, twoFileMode = false } = {}) {
+export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, twoFileMode = false, positionalSlots = false } = {}) {
   const n = Math.max(1, Number(imageCount) || 1);
   const steps = [];
 
@@ -10,7 +10,13 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
   steps.push({ phase: 'queue', label: 'In coda per l\'analisi IA…', weight: 6 });
   steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 6 });
 
-  if (n >= 3) {
+  if (twoFileMode || positionalSlots) {
+    steps.push({
+      phase: 'decode',
+      label: positionalSlots ? 'Assegnazione report per ordine foto…' : (n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`),
+      weight: 10,
+    });
+  } else if (n >= 3) {
     for (let i = 1; i <= n; i += 1) {
       steps.push({
         phase: 'decode',
@@ -28,7 +34,7 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
 
   steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : 26 });
   if (!twoFileMode) {
-    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 16 });
+    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: positionalSlots ? 28 : 16 });
   }
   steps.push({ phase: 'finalize', label: 'Finalizzazione…', weight: 6 });
   return steps;

@@ -448,31 +448,26 @@ def _prepare_ai_image(file_bytes, *, max_side=1600, quality=82):
 
 
 def _prepare_ai_image_for_provider(file_bytes, provider='gemini'):
-    """Compressione mirata: Gemini qualità OCR, Groq più aggressiva (TPM)."""
-    if provider == 'groq':
-        return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
-    # Qualità più alta per Contabile/Borderò (testo piccolo su schermo)
-    return _prepare_ai_image(file_bytes, max_side=1500, quality=78)
+    """Stessa compressione iniziale per Groq e Gemini (profilo che funzionava su Groq)."""
+    return _prepare_ai_image(file_bytes, max_side=1400, quality=75)
+
+
+def _shrink_images_for_ai(images, *, max_side=1024, quality=65):
+    """Ricomprime le immagini prima della chiamata vision (stesso path per Groq/Gemini)."""
+    shrunk = []
+    for image in images:
+        raw = base64.standard_b64decode(image['b64'])
+        mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
+        shrunk.append({'mime': mime, 'b64': b64})
+    return shrunk
 
 
 def _shrink_images_for_gemini(images, *, max_side=1024, quality=65):
-    """Ricomprime per retry dopo timeout o classificazione multi-foto."""
-    shrunk = []
-    for image in images:
-        raw = base64.standard_b64decode(image['b64'])
-        mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
-        shrunk.append({'mime': mime, 'b64': b64})
-    return shrunk
+    return _shrink_images_for_ai(images, max_side=max_side, quality=quality)
 
 
 def _shrink_images_for_groq(images, *, max_side=1024, quality=65):
-    """Ricomprime le immagini per stare sotto il TPM free tier Groq (~8000)."""
-    shrunk = []
-    for image in images:
-        raw = base64.standard_b64decode(image['b64'])
-        mime, b64, _ = _prepare_ai_image(raw, max_side=max_side, quality=quality)
-        shrunk.append({'mime': mime, 'b64': b64})
-    return shrunk
+    return _shrink_images_for_ai(images, max_side=max_side, quality=quality)
 
 
 def _is_timeout_error(exc):
@@ -2009,56 +2004,52 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
 
 
 def _gemini_vision_model_candidates(*, fast=False):
-    """Ordine di prova: env override, poi modelli Flash attuali."""
-    preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
+    """Un modello principale (come Groq); fallback solo se 404."""
+    preferred = (os.environ.get('GEMINI_VISION_MODEL') or 'gemini-3.5-flash').strip()
     if fast:
-        # Classificazione/report: modello più leggero per prima, meno timeout
-        defaults = (
-            'gemini-flash-latest',
-            'gemini-3.1-flash-lite',
-            'gemini-3.5-flash',
-        )
+        defaults = (preferred, 'gemini-flash-latest')
     else:
-        defaults = (
-            'gemini-3.5-flash',
-            'gemini-flash-latest',
-            'gemini-3.1-flash-lite',
-        )
+        # Estrazione report/main: evita lite (peggiora OCR Contabile/Borderò)
+        defaults = (preferred, 'gemini-flash-latest')
     seen = set()
     ordered = []
-    for name in ((preferred,) if preferred else ()) + defaults:
+    for name in defaults:
         if name and name not in seen:
             seen.add(name)
             ordered.append(name)
-    return ordered[:2] if fast else ordered[:2]
+    return ordered[:2]
 
 
 def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
+    """Stessa strategia di Groq: riduci SEMPRE prima della chiamata, poi ritenta più piccolo."""
     api_key = _get_gemini_key()
     if not api_key:
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
 
     text_prompt = prompt or MAIN_CLOSURE_AI_PROMPT
-    # Solo classificazione multi-immagine: riduci subito. Report/main restano leggibili.
-    work_images = list(images)
-    if fast and len(work_images) > 1:
-        work_images = _shrink_images_for_gemini(work_images, max_side=960, quality=60)
+    # Allineato a _extract_ai_with_groq (profilo che funzionava)
+    if fast:
+        shrink_steps = ((720, 55), (640, 40))
+        max_out_tokens = 800
+        http_timeout = 35
+    else:
+        shrink_steps = (
+            (1100, 70) if len(images) <= 1 else (800, 55),
+            (900, 55),
+            (640, 40),
+        )
+        max_out_tokens = 2500
+        http_timeout = 45
 
     models = _gemini_vision_model_candidates(fast=fast)
     last_exc = None
     tried = []
     saw_overload = False
-    saw_timeout = False
-    max_attempts = 2
-    # Report/main: più tempo. Classify fast: timeout più basso.
-    http_timeout = 30 if fast else 70
-    sleep_base = 0.8
-    timeout_shrink_side = 900 if fast else 1200
-    timeout_shrink_quality = 60 if fast else 70
 
-    for shrink_round in range(2):
+    for step_idx, (max_side, quality) in enumerate(shrink_steps):
+        payload_images = _shrink_images_for_ai(images, max_side=max_side, quality=quality)
         parts = []
-        for image in work_images:
+        for image in payload_images:
             parts.append({
                 'inline_data': {
                     'mime_type': image['mime'],
@@ -2071,10 +2062,12 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
             'generationConfig': {
                 'temperature': 0,
                 'response_mime_type': 'application/json',
+                'maxOutputTokens': max_out_tokens,
             },
         }
         data = json.dumps(payload).encode('utf-8')
 
+        retry_smaller = False
         for model in models:
             if model not in tried:
                 tried.append(model)
@@ -2083,7 +2076,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                 f'{urllib.parse.quote(model, safe="")}:generateContent'
                 f'?key={urllib.parse.quote(api_key)}'
             )
-            for attempt in range(max_attempts):
+            for attempt in range(2):
                 req = urllib.request.Request(
                     url,
                     data=data,
@@ -2103,34 +2096,40 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
                     except Exception:
                         body = ''
                     if exc.code == 404:
-                        break
+                        break  # prova modello successivo
                     if exc.code in {429, 503}:
                         saw_overload = True
-                        if attempt < max_attempts - 1:
-                            time.sleep(sleep_base * (attempt + 1))
+                        if attempt < 1:
+                            time.sleep(0.8 * (attempt + 1))
                             continue
+                        retry_smaller = step_idx < len(shrink_steps) - 1
                         break
                     detail = f' ({body})' if body else ''
                     raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
                 except Exception as exc:
                     last_exc = exc
-                    if _is_timeout_error(exc):
-                        saw_timeout = True
-                        break  # esci dai retry modello → riduci immagini
-                    if _is_rate_limit_error(exc) and attempt < max_attempts - 1:
-                        time.sleep(sleep_base * (attempt + 1))
-                        continue
+                    if _is_timeout_error(exc) or _is_rate_limit_error(exc):
+                        if attempt < 1 and _is_rate_limit_error(exc):
+                            time.sleep(0.8 * (attempt + 1))
+                            continue
+                        retry_smaller = step_idx < len(shrink_steps) - 1
+                        break
+                    if isinstance(exc, (ValueError, json.JSONDecodeError)):
+                        retry_smaller = step_idx < len(shrink_steps) - 1
+                        break
                     raise
-            if saw_timeout:
+            if retry_smaller:
                 break
-        if saw_timeout and shrink_round == 0:
-            work_images = _shrink_images_for_gemini(
-                work_images,
-                max_side=timeout_shrink_side,
-                quality=timeout_shrink_quality,
-            )
-            saw_timeout = False
+        if retry_smaller:
             continue
+        if last_exc is not None and step_idx < len(shrink_steps) - 1:
+            if isinstance(last_exc, (ValueError, json.JSONDecodeError)) or _is_timeout_error(last_exc):
+                continue
+        if last_exc is not None and not saw_overload and not _is_timeout_error(last_exc):
+            # 404 su tutti i modelli o errore non recuperabile
+            if isinstance(last_exc, urllib.error.HTTPError) and last_exc.code == 404:
+                break
+            raise last_exc
         break
 
     if saw_overload:
@@ -2142,9 +2141,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
 
     if last_exc and _is_timeout_error(last_exc):
         raise ValueError(
-            'Timeout verso Gemini (foto troppo pesanti o rete lenta). '
-            'Riprova: le immagini verranno compresse automaticamente. '
-            'In alternativa usa Groq in Impostazioni.'
+            'Timeout verso Gemini. Riprova oppure usa Groq in Impostazioni.'
         ) from last_exc
 
     raise ValueError(
@@ -2171,7 +2168,7 @@ def _extract_report_overlays(report_slots, company, provider):
         if not prompt or not image:
             return key, None, None
         last_exc = None
-        # fast=False: Contabile/Borderò richiedono OCR più accurato
+        # Stessi prompt di Groq; fast=False = profilo OCR (1100px come Groq)
         for attempt in range(2):
             try:
                 parsed = _extract_ai_json([image], company, provider, prompt, fast=False)
@@ -2187,6 +2184,17 @@ def _extract_report_overlays(report_slots, company, provider):
     overlays = {}
     items = [(k, img) for k, img in report_slots.items() if k and img]
     if not items:
+        return overlays
+
+    # Gemini: sequenziale (meno 429, overlay più completi). Groq: parallelo.
+    if provider == 'gemini':
+        for key, image in items:
+            key, normalized, err = _one(key, image)
+            if normalized:
+                overlays[key] = normalized
+            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
+                overlays.setdefault('_errors', {})[key] = str(err)[:200]
+        close_old_connections()
         return overlays
 
     with ThreadPoolExecutor(max_workers=min(4, len(items))) as pool:
@@ -2283,17 +2291,10 @@ def _fill_missing_report_slots_safe(images, image_types, report_slots, footer_im
 def _classify_acquisition_image(image, company, provider):
     from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
 
-    # Classificazione: copia ridotta (veloce). L'estrazione usa ancora l'originale.
-    classify_image = image
-    if provider == 'gemini':
-        try:
-            classify_image = _shrink_images_for_gemini([image], max_side=900, quality=60)[0]
-        except Exception:
-            classify_image = image
-
     for attempt in range(2):
         try:
-            parsed = _extract_ai_json([classify_image], company, provider, CLASSIFY_PROMPT, fast=True)
+            # fast=True → stessa compressione 720px usata da Groq
+            parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
             return normalize_image_type(parsed.get('type'))
         except Exception as exc:
             if _is_timeout_error(exc) or _is_rate_limit_error(exc) or '503' in str(exc):
@@ -2304,29 +2305,11 @@ def _classify_acquisition_image(image, company, provider):
 
 
 def _classify_acquisition_images(images, company, provider):
-    """Classifica le foto in parallelo (evita 1 mega-richiesta a 6 immagini che va in timeout)."""
+    """Classifica le foto in parallelo (una foto per richiesta, come Groq)."""
     if not images:
         return []
     if len(images) == 1:
         return [_classify_acquisition_image(images[0], company, provider)]
-
-    # Batch solo per 2–3 foto: con 5/6 il payload è troppo grande → timeout
-    if provider == 'gemini' and len(images) <= 3:
-        from .ai_acquisition import CLASSIFY_BATCH_PROMPT, normalize_image_type
-        try:
-            batch_images = _shrink_images_for_gemini(images, max_side=900, quality=60)
-            parsed = _extract_ai_json(
-                batch_images,
-                company,
-                provider,
-                CLASSIFY_BATCH_PROMPT,
-                fast=True,
-            )
-            types = parsed.get('types') if isinstance(parsed, dict) else None
-            if isinstance(types, list) and len(types) == len(images):
-                return [normalize_image_type(t) for t in types]
-        except Exception:
-            pass
 
     results = ['other'] * len(images)
 
@@ -2334,7 +2317,9 @@ def _classify_acquisition_images(images, company, provider):
         close_old_connections()
         return idx, _classify_acquisition_image(image, company, provider)
 
-    with ThreadPoolExecutor(max_workers=min(4, len(images))) as pool:
+    # Gemini: meno parallelismo → meno 429
+    workers = min(2 if provider == 'gemini' else 4, len(images))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_one, i, img) for i, img in enumerate(images)]
         for fut in as_completed(futures):
             idx, value = fut.result()
@@ -2456,7 +2441,12 @@ def _extract_footer_summary(images, company, provider):
 
 
 def _extract_closure_five_files(images, company, provider):
-    """Protocollo a 5/6 file: classificazione report + estrazione dedicata riga riepilogo."""
+    """Protocollo a 5/6 file: report dedicati + estrazione riga riepilogo.
+
+    Gemini: stesso algoritmo affidabile usato con Groq (slot per ordine upload),
+    senza classificazione IA (lenta e spesso sbagliata su Contabile/Borderò).
+    Groq: classificazione automatica + fallback posizionale.
+    """
     from .ai_acquisition import (
         merge_five_files_summary,
         split_acquisition_images,
@@ -2466,31 +2456,34 @@ def _extract_closure_five_files(images, company, provider):
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
     image_types = []
 
-    try:
-        image_types = _classify_acquisition_images(images, company, provider)
-        main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
-    except Exception:
+    if provider == 'gemini':
+        # Algoritmo Groq "che funzionava": ordine upload fisso, stessi REPORT_PROMPTS
         main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
-        image_types = []
+        image_types = ['by_position'] * len(images)
+    else:
+        try:
+            image_types = _classify_acquisition_images(images, company, provider)
+            main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
+        except Exception:
+            main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
+            image_types = []
 
-    # Slot mancanti: riclassifica solo le `other`, mai forzare ordine upload se già parziale
-    expected = _expected_report_keys(len(images))
-    if len(report_slots) < len(expected):
-        report_slots, image_types = _fill_missing_report_slots_safe(
-            images, image_types, report_slots, footer_images, company, provider,
-        )
-        main_images, report_slots, footer_images = split_acquisition_images(
-            images, image_types if image_types else None,
-        )
-        # Se footer vuoto ma qualche main ha anche la riga Contanti, ok: footer dai main
-        report_ids = {id(img) for img in report_slots.values()}
-        footer_ids = {id(img) for img in footer_images}
-        rebuilt_main = [
-            img for img in images
-            if id(img) not in report_ids and id(img) not in footer_ids
-        ]
-        if rebuilt_main:
-            main_images = rebuilt_main
+        expected = _expected_report_keys(len(images))
+        if len(report_slots) < len(expected):
+            report_slots, image_types = _fill_missing_report_slots_safe(
+                images, image_types, report_slots, footer_images, company, provider,
+            )
+            main_images, report_slots, footer_images = split_acquisition_images(
+                images, image_types if image_types else None,
+            )
+            report_ids = {id(img) for img in report_slots.values()}
+            footer_ids = {id(img) for img in footer_images}
+            rebuilt_main = [
+                img for img in images
+                if id(img) not in report_ids and id(img) not in footer_ids
+            ]
+            if rebuilt_main:
+                main_images = rebuilt_main
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
@@ -2508,6 +2501,7 @@ def _extract_closure_five_files(images, company, provider):
 
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
     parsed['image_types'] = image_types
+    parsed['slot_strategy'] = 'position' if provider == 'gemini' else 'classify'
     has_reports = bool(report_slots)
     return parsed, operator_label, overlays, has_reports
 

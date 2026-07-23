@@ -156,6 +156,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
     const controller = createAcquisitionProgressController(imageCount, setExtractProgress, {
       twoFileMode: acquisitionFileMode === ACQUISITION_MODE_TWO,
+      positionalSlots: aiProvider === 'gemini' && acquisitionFileMode === ACQUISITION_MODE_FIVE,
     });
     progressControllerRef.current = controller;
     controller.start();
@@ -245,6 +246,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const progress = createAcquisitionProgressController(imageCount, setExtractProgress, {
       skipUpload: true,
       twoFileMode: acquisitionFileMode === ACQUISITION_MODE_TWO,
+      positionalSlots: aiProvider === 'gemini' && acquisitionFileMode === ACQUISITION_MODE_FIVE,
     });
     progressControllerRef.current = progress;
     progress.start();
@@ -770,12 +772,14 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </h1>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
         {isFiveFileMode
-          ? 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.'
+          ? (aiProvider === 'gemini'
+            ? 'Carica 5 o 6 immagini nell\'ordine: 1) riepilogo cassa (eventuale 2ª pagina), 2) Contabile Lottomatica, 3) Mooney (solo con 6 foto), 4) Premi Gratta e Vinci, 5) Borderò Sisal.'
+            : 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.')
           : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
-          ? 'Criterio: Lottomatica SOLO dal Contabile (Entrate/Uscite Gioco); Sisal SOLO dal Borderò MOVIMENTO CONTANTI (Vendite/Pagamenti TOTALE, es. 281/331,05 — non il netto); Mooney = Totale ricevuta; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati. Saldo = Entrate − Uscite: può essere negativo (es. Sisal/Lottomatica/Gratta).'
+          ? 'Criterio: Lottomatica SOLO dal Contabile (Entrate/Uscite Gioco); Sisal SOLO dal Borderò MOVIMENTO CONTANTI (Vendite/Pagamenti TOTALE, es. 281/331,05 — non il netto); Mooney = Totale ricevuta; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati. Saldo = Entrate − Uscite: può essere negativo.'
           : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
