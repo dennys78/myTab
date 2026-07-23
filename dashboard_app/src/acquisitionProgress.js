@@ -163,7 +163,7 @@ export function getCsrfToken() {
  * Poll stato job estrazione fino a ready/error.
  * @returns {Promise<object>} risposta finale con data
  */
-export async function pollDraftExtractStatus(draftId, { signal, onStatus, intervalMs = 1500, timeoutMs = 300_000 } = {}) {
+export async function pollDraftExtractStatus(draftId, { signal, onStatus, intervalMs = 1500, timeoutMs = 480_000 } = {}) {
   const started = Date.now();
   let lastStatus = '';
 

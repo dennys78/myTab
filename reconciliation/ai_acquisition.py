@@ -91,6 +91,19 @@ Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"g
 - mooney: ricevuta cartacea/PDF con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
+CLASSIFY_BATCH_PROMPT = """Classifica ciascuna immagine nell'ordine in cui ti vengono inviate (immagine 1, 2, …).
+Restituisci SOLO JSON con un array "types" della stessa lunghezza:
+{"types": ["main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other", ...]}
+
+Significato dei tipi:
+- main_closure: Riepilogo Chiusure di Cassa con tabella reparti
+- summary_footer: riga/pagina Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE
+- lottomatica: Contabile Giornaliero (Entrate Gioco / Uscite Gioco)
+- gratta: Premi pagati nel giorno Gratta e Vinci
+- sisal: BORDERÒ / MOVIMENTO CONTANTI Sisal (Vendite/Pagamenti)
+- mooney: ricevuta mooney MOVIMENTO CONTANTE
+- other: nessuno dei precedenti"""
+
 VALID_IMAGE_TYPES = frozenset({
     'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'mooney', 'other',
 })

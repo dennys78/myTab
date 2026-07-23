@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 from django.http import FileResponse, JsonResponse
@@ -1964,7 +1965,7 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
     raise last_exc
 
 
-def _gemini_vision_model_candidates():
+def _gemini_vision_model_candidates(*, fast=False):
     """Ordine di prova: env override, poi modelli Flash attuali."""
     preferred = (os.environ.get('GEMINI_VISION_MODEL') or '').strip()
     # Preferisci 3.5; in caso di 503/404 prova alternative più leggere
@@ -1972,19 +1973,20 @@ def _gemini_vision_model_candidates():
         'gemini-3.5-flash',
         'gemini-flash-latest',
         'gemini-3.1-flash-lite',
-        'gemini-3-flash-preview',
-        'gemini-2.5-flash',
     )
+    if not fast:
+        defaults = defaults + ('gemini-3-flash-preview', 'gemini-2.5-flash')
     seen = set()
     ordered = []
     for name in ((preferred,) if preferred else ()) + defaults:
         if name and name not in seen:
             seen.add(name)
             ordered.append(name)
-    return ordered
+    # In modalità fast: al massimo 2 modelli, altrimenti la pipeline 6-file esplode
+    return ordered[:2] if fast else ordered[:3]
 
 
-def _extract_ai_with_gemini(images, company=None, prompt=None):
+def _extract_ai_with_gemini(images, company=None, prompt=None, *, fast=False):
     api_key = _get_gemini_key()
     if not api_key:
         raise ValueError('Chiave API Gemini non configurata. Chiedi all\'amministratore di inserirla in Impostazioni.')
@@ -2008,10 +2010,13 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
         },
     }
     data = json.dumps(payload).encode('utf-8')
-    models = _gemini_vision_model_candidates()
+    models = _gemini_vision_model_candidates(fast=fast)
     last_exc = None
     tried = []
     saw_overload = False
+    max_attempts = 2 if fast else 3
+    http_timeout = 45 if fast else 90
+    sleep_base = 1.0 if fast else 1.5
 
     for model in models:
         tried.append(model)
@@ -2020,7 +2025,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
             f'{urllib.parse.quote(model, safe="")}:generateContent'
             f'?key={urllib.parse.quote(api_key)}'
         )
-        for attempt in range(4):
+        for attempt in range(max_attempts):
             req = urllib.request.Request(
                 url,
                 data=data,
@@ -2028,7 +2033,7 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
                 method='POST',
             )
             try:
-                with urllib.request.urlopen(req, timeout=120) as response:
+                with urllib.request.urlopen(req, timeout=http_timeout) as response:
                     result = json.loads(response.read().decode('utf-8'))
                 raw_json = result['candidates'][0]['content']['parts'][0]['text']
                 return _json_from_ai_text(raw_json)
@@ -2043,18 +2048,16 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
                     break
                 if exc.code in {429, 503}:
                     saw_overload = saw_overload or exc.code == 503
-                    if attempt < 3:
-                        # 503 high demand: backoff più lungo prima di riprovare / cambiare modello
-                        time.sleep(2.0 * (attempt + 1))
+                    if attempt < max_attempts - 1:
+                        time.sleep(sleep_base * (attempt + 1))
                         continue
-                    # Esauriti i retry su questo modello → prova il successivo
                     break
                 detail = f' ({body})' if body else ''
                 raise ValueError(f'Errore Gemini HTTP {exc.code}{detail}') from exc
             except Exception as exc:
                 last_exc = exc
-                if _is_rate_limit_error(exc) and attempt < 3:
-                    time.sleep(2.0 * (attempt + 1))
+                if _is_rate_limit_error(exc) and attempt < max_attempts - 1:
+                    time.sleep(sleep_base * (attempt + 1))
                     continue
                 raise
 
@@ -2076,35 +2079,45 @@ def _extract_ai_with_gemini(images, company=None, prompt=None):
 def _extract_ai_json(images, company, provider, prompt, *, fast=False):
     chosen = provider or 'groq'
     if chosen == 'gemini':
-        return _extract_ai_with_gemini(images, company, prompt=prompt)
+        return _extract_ai_with_gemini(images, company, prompt=prompt, fast=fast)
     return _extract_ai_with_groq(images, company, prompt=prompt, fast=fast)
 
 
 def _extract_report_overlays(report_slots, company, provider):
     from .ai_acquisition import REPORT_PROMPTS, normalize_report_overlay
 
-    overlays = {}
-    for key, image in report_slots.items():
+    def _one(key, image):
+        close_old_connections()
         prompt = REPORT_PROMPTS.get(key)
         if not prompt or not image:
-            continue
+            return key, None, None
         last_exc = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 parsed = _extract_ai_json([image], company, provider, prompt, fast=True)
-                normalized = normalize_report_overlay(key, parsed)
-                if normalized:
-                    overlays[key] = normalized
-                last_exc = None
-                break
+                return key, normalize_report_overlay(key, parsed), None
             except Exception as exc:
                 last_exc = exc
                 if _is_rate_limit_error(exc) or '503' in str(exc):
-                    time.sleep(2.0 * (attempt + 1))
+                    time.sleep(1.0 * (attempt + 1))
                     continue
                 break
-        if last_exc and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
-            overlays.setdefault('_errors', {})[key] = str(last_exc)[:200]
+        return key, None, last_exc
+
+    overlays = {}
+    items = [(k, img) for k, img in report_slots.items() if k and img]
+    if not items:
+        return overlays
+
+    with ThreadPoolExecutor(max_workers=min(4, len(items))) as pool:
+        futures = [pool.submit(_one, key, image) for key, image in items]
+        for fut in as_completed(futures):
+            key, normalized, err = fut.result()
+            if normalized:
+                overlays[key] = normalized
+            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
+                overlays.setdefault('_errors', {})[key] = str(err)[:200]
+    close_old_connections()
     return overlays
 
 
@@ -2115,9 +2128,9 @@ def _expected_report_keys(image_count):
     return list(REPORT_SLOT_ORDER)
 
 
-def _fill_missing_report_slots(images, image_types, report_slots, footer_images, company, provider):
-    """Se la classificazione omette Lottomatica/Mooney/Sisal/Gratta, recupera dalle foto residue."""
-    from .ai_acquisition import REPORT_PROMPTS, normalize_report_overlay
+def _fill_missing_report_slots_positional(images, image_types, report_slots, footer_images):
+    """Completa gli slot mancanti senza chiamate IA extra (solo ordine upload)."""
+    from .ai_acquisition import split_acquisition_images_by_position
 
     expected = _expected_report_keys(len(images))
     missing = [key for key in expected if key not in report_slots]
@@ -2125,46 +2138,21 @@ def _fill_missing_report_slots(images, image_types, report_slots, footer_images,
         return report_slots, image_types or []
 
     types = list(image_types) if image_types and len(image_types) == len(images) else ['other'] * len(images)
-    assigned_ids = {id(img) for img in report_slots.values()}
-    assigned_ids.update(id(img) for img in (footer_images or []))
+    _main_pos, slots_pos, _footer_pos = split_acquisition_images_by_position(images)
+    used = {id(img) for img in report_slots.values()}
+    used.update(id(img) for img in (footer_images or []))
 
-    candidates = []
-    for idx, img in enumerate(images):
-        if id(img) in assigned_ids:
+    for key in missing:
+        img = slots_pos.get(key)
+        if not img or id(img) in used:
             continue
-        t = types[idx]
-        if t == 'summary_footer':
-            continue
-        # Preferisci foto non già usate come main_closure
-        candidates.append((0 if t in {'other', *missing} else 1, idx, img))
-    candidates.sort(key=lambda row: row[0])
-
-    for _prio, idx, img in candidates:
-        if not missing:
-            break
-        guessed = _classify_acquisition_image(img, company, provider)
-        if guessed in missing:
-            report_slots[guessed] = img
-            types[idx] = guessed
-            missing.remove(guessed)
-            assigned_ids.add(id(img))
-            continue
-        for key in list(missing):
-            prompt = REPORT_PROMPTS.get(key)
-            if not prompt:
-                continue
-            try:
-                parsed = _extract_ai_json([img], company, provider, prompt, fast=True)
-                normalized = normalize_report_overlay(key, parsed)
-            except Exception:
-                continue
-            if not normalized:
-                continue
-            report_slots[key] = img
+        report_slots[key] = img
+        used.add(id(img))
+        try:
+            idx = next(i for i, candidate in enumerate(images) if id(candidate) == id(img))
             types[idx] = key
-            missing.remove(key)
-            assigned_ids.add(id(img))
-            break
+        except StopIteration:
+            pass
 
     return report_slots, types
 
@@ -2172,16 +2160,55 @@ def _fill_missing_report_slots(images, image_types, report_slots, footer_images,
 def _classify_acquisition_image(image, company, provider):
     from .ai_acquisition import CLASSIFY_PROMPT, normalize_image_type
 
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             parsed = _extract_ai_json([image], company, provider, CLASSIFY_PROMPT, fast=True)
             return normalize_image_type(parsed.get('type'))
         except Exception as exc:
             if _is_rate_limit_error(exc) or '503' in str(exc):
-                time.sleep(2.0 * (attempt + 1))
+                time.sleep(1.0 * (attempt + 1))
                 continue
             return 'other'
     return 'other'
+
+
+def _classify_acquisition_images(images, company, provider):
+    """Classifica tutte le foto: 1 chiamata batch Gemini, altrimenti parallelo."""
+    from .ai_acquisition import CLASSIFY_BATCH_PROMPT, normalize_image_type
+
+    if not images:
+        return []
+    if len(images) == 1:
+        return [_classify_acquisition_image(images[0], company, provider)]
+
+    if provider == 'gemini':
+        try:
+            parsed = _extract_ai_json(
+                images,
+                company,
+                provider,
+                CLASSIFY_BATCH_PROMPT,
+                fast=True,
+            )
+            types = parsed.get('types') if isinstance(parsed, dict) else None
+            if isinstance(types, list) and len(types) == len(images):
+                return [normalize_image_type(t) for t in types]
+        except Exception:
+            pass
+
+    results = ['other'] * len(images)
+
+    def _one(idx, image):
+        close_old_connections()
+        return idx, _classify_acquisition_image(image, company, provider)
+
+    with ThreadPoolExecutor(max_workers=min(4, len(images))) as pool:
+        futures = [pool.submit(_one, i, img) for i, img in enumerate(images)]
+        for fut in as_completed(futures):
+            idx, value = fut.result()
+            results[idx] = value
+    close_old_connections()
+    return results
 
 
 def _item_descrizione(item):
@@ -2275,8 +2302,8 @@ def _extract_footer_summary(images, company, provider):
 
     if not images:
         return None
-    # Groq free tier: una sola estrazione footer (evita N chiamate extra).
-    sources = images[:1] if provider == 'groq' else images
+    # Una sola foto footer: evita N chiamate (prima era N+1 su Gemini)
+    sources = images[-1:]
     candidates = []
     for image in sources:
         try:
@@ -2286,17 +2313,11 @@ def _extract_footer_summary(images, company, provider):
                     company,
                     provider,
                     FIVE_FILES_SUMMARY_PROMPT,
-                    fast=provider == 'groq',
+                    fast=True,
                 )
             )
         except Exception:
             continue
-    if provider != 'groq' and len(images) > 1:
-        try:
-            batch = _extract_ai_json(images, company, provider, FIVE_FILES_SUMMARY_PROMPT)
-            candidates.append(batch)
-        except Exception:
-            pass
     if not candidates:
         return None
     return pick_best_footer_parsed(candidates)
@@ -2314,37 +2335,24 @@ def _extract_closure_five_files(images, company, provider):
     image_types = []
 
     try:
-        image_types = [_classify_acquisition_image(img, company, provider) for img in images]
+        image_types = _classify_acquisition_images(images, company, provider)
         main_images, report_slots, footer_images = split_acquisition_images(images, image_types)
     except Exception:
-        # Fallback: ordine upload fisso se la classificazione fallisce
         main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
         image_types = []
 
-    # Se mancano Lottomatica/Mooney/Sisal/Gratta, recupera dalle foto non assegnate
+    # Slot mancanti: solo fill posizionale (niente probe IA extra)
     expected = _expected_report_keys(len(images))
     if len(report_slots) < len(expected):
-        report_slots, image_types = _fill_missing_report_slots(
-            images, image_types, report_slots, footer_images, company, provider,
+        report_slots, image_types = _fill_missing_report_slots_positional(
+            images, image_types, report_slots, footer_images,
         )
-        main_images, report_slots, footer_images = split_acquisition_images(
-            images, image_types if image_types else None,
-        )
-        # Se ancora incompleti, completa solo gli slot mancanti dall'ordine posizionale
-        if len(report_slots) < len(expected):
-            _main_pos, slots_pos, _footer_pos = split_acquisition_images_by_position(images)
-            used = {id(img) for img in report_slots.values()}
-            for key, img in slots_pos.items():
-                if key in report_slots or id(img) in used:
-                    continue
-                report_slots[key] = img
-                used.add(id(img))
-            report_ids = {id(img) for img in report_slots.values()}
-            footer_ids = {id(img) for img in footer_images}
-            main_images = [
-                img for img in images
-                if id(img) not in report_ids and id(img) not in footer_ids
-            ] or main_images
+        report_ids = {id(img) for img in report_slots.values()}
+        footer_ids = {id(img) for img in footer_images}
+        main_images = [
+            img for img in images
+            if id(img) not in report_ids and id(img) not in footer_ids
+        ] or main_images
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
@@ -2355,7 +2363,7 @@ def _extract_closure_five_files(images, company, provider):
 
     footer_sources = list(footer_images)
     if not footer_sources:
-        footer_sources = list(main_images)
+        footer_sources = list(main_images[-1:]) if main_images else []
     footer_parsed = _extract_footer_summary(footer_sources, company, provider)
     if footer_parsed:
         parsed = merge_five_files_summary(parsed, footer_parsed)
