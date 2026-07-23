@@ -83,25 +83,25 @@ REPORT_PROMPTS = {
 CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
 Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other"}
 
-- main_closure: "Riepilogo Chiusure di Cassa" con molte righe reparto (Tabacchi, Caffè, Gratta e Vinci, Lottomatica, Mooney, Sisal, Pag fornitori, ecc.) e colonne Entrate/Uscite/Saldo. Può includere la sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI".
-- summary_footer: pagina/parte del riepilogo cassa centrata sulla riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE (anche se sopra restano poche righe LOTTOMATICA/MOONEY/SISAL).
-- lottomatica: "Contabile Giornaliero" con Lotto/10eLotto/MillionDAY e totali "Entrate Gioco" / "Uscite Gioco" (e Aggio/Saldo).
+- main_closure: "Riepilogo Chiusure di Cassa" con tabella reparti (Tabacchi, Caffè, Gratta e Vinci, Pag fornitori, ecc.) e/o sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI" (LOTTOMATICA, MOONEY, SISAL con Entrate/Uscite/Saldo). Anche se in basso compare la riga Contanti/Pag.Pos/TOTALE, resta main_closure.
+- summary_footer: SOLO (o quasi solo) la riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza righe reparto con Entrate/Uscite.
+- lottomatica: "Contabile Giornaliero" con Lotto/10eLotto/MillionDAY e totali "Entrate Gioco" / "Uscite Gioco" (e Aggio/Saldo). NON è il riepilogo cassa POS.
 - gratta: "Premi pagati nel giorno" Gratta e Vinci (Prospetti) con tabella Gioco/Quantità/Importo e riga Totale.
-- sisal: schermata Sisal "BORDERÒ" o "MOVIMENTO CONTANTI" (UI gialla, calendario, Vendite/Pagamenti/TOTALE), oppure tab RICONSEGNA/ESPOSIZIONE. NON è la ricevuta cartacea Mooney.
-- mooney: ricevuta cartacea/PDF con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
+- sisal: schermata Sisal "BORDERÒ" / "MOVIMENTO CONTANTI" (UI gialla, calendario, Vendite/Pagamenti/TOTALE), oppure tab RICONSEGNA/ESPOSIZIONE. NON è la ricevuta cartacea Mooney.
+- mooney: ricevuta con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
 CLASSIFY_BATCH_PROMPT = """Classifica ciascuna immagine nell'ordine in cui ti vengono inviate (immagine 1, 2, …).
 Restituisci SOLO JSON con un array "types" della stessa lunghezza:
 {"types": ["main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other", ...]}
 
-Significato dei tipi:
-- main_closure: Riepilogo Chiusure di Cassa con tabella reparti
-- summary_footer: riga/pagina Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE
-- lottomatica: Contabile Giornaliero (Entrate Gioco / Uscite Gioco)
-- gratta: Premi pagati nel giorno Gratta e Vinci
-- sisal: BORDERÒ / MOVIMENTO CONTANTI Sisal (Vendite/Pagamenti)
-- mooney: ricevuta mooney MOVIMENTO CONTANTE
+Regole di classificazione (obbligatorie):
+- main_closure: Riepilogo Chiusure di Cassa / tabella reparti / NUOVA SEZIONE GESTORI (LOTTOMATICA, MOONEY, SISAL). Se ci sono Entrate/Uscite di reparto, NON usare summary_footer.
+- summary_footer: SOLO riga Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE senza reparti.
+- lottomatica: Contabile Giornaliero (Entrate Gioco / Uscite Gioco), non il foglio cassa.
+- gratta: Premi pagati nel giorno Gratta e Vinci.
+- sisal: BORDERÒ / MOVIMENTO CONTANTI Sisal (Vendite/Pagamenti). Non confondere con Mooney.
+- mooney: ricevuta logo mooney MOVIMENTO CONTANTE.
 - other: nessuno dei precedenti"""
 
 VALID_IMAGE_TYPES = frozenset({
@@ -250,15 +250,19 @@ def normalize_image_type(raw: str) -> str:
 
 
 def split_acquisition_images_by_position(images: list) -> tuple[list, dict[str, dict], list]:
-    """Fallback se la classificazione IA non è disponibile."""
+    """Fallback se la classificazione IA non è disponibile.
+
+    Ordine atteso upload:
+    - 6 foto: [main…] + Lottomatica, Mooney, Gratta, Sisal
+    - 5 foto: [main…] + Lottomatica, Gratta, Sisal
+    """
     n = len(images)
     if n == 6:
         report_keys = ('lottomatica', 'mooney', 'gratta', 'sisal')
         return list(images[:-4]), dict(zip(report_keys, images[-4:])), []
     if n == 5:
-        # 5 foto: main (prime 2) + Lottomatica, Gratta, Sisal
-        main = list(images[:2])
-        slots = dict(zip(REPORT_SLOT_ORDER, images[2:5]))
+        main = list(images[:-3]) or [images[0]]
+        slots = dict(zip(REPORT_SLOT_ORDER, images[-3:]))
         return main, slots, []
     if n >= 4:
         main = images[:-3]

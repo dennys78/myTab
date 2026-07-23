@@ -2122,37 +2122,80 @@ def _extract_report_overlays(report_slots, company, provider):
 
 
 def _expected_report_keys(image_count):
-    from .ai_acquisition import ALL_REPORT_SLOTS, REPORT_SLOT_ORDER
+    from .ai_acquisition import REPORT_SLOT_ORDER
+    # 6 file: Lottomatica, Mooney, Gratta, Sisal (stesso ordine del fallback posizionale)
     if int(image_count or 0) >= 6:
-        return list(ALL_REPORT_SLOTS)
+        return ['lottomatica', 'mooney', 'gratta', 'sisal']
     return list(REPORT_SLOT_ORDER)
 
 
-def _fill_missing_report_slots_positional(images, image_types, report_slots, footer_images):
-    """Completa gli slot mancanti senza chiamate IA extra (solo ordine upload)."""
+def _fill_missing_report_slots_safe(images, image_types, report_slots, footer_images, company, provider):
+    """Completa gli slot report senza rubare foto di riepilogo cassa/footer.
+
+    1) Usa tipi già classificati (lottomatica/mooney/…).
+    2) Riclassifica in parallelo solo le foto `other`.
+    3) Posizionale totale solo se non c'è nessun report riconosciuto.
+    """
     from .ai_acquisition import split_acquisition_images_by_position
 
     expected = _expected_report_keys(len(images))
-    missing = [key for key in expected if key not in report_slots]
-    if not missing:
-        return report_slots, image_types or []
-
     types = list(image_types) if image_types and len(image_types) == len(images) else ['other'] * len(images)
-    _main_pos, slots_pos, _footer_pos = split_acquisition_images_by_position(images)
     used = {id(img) for img in report_slots.values()}
     used.update(id(img) for img in (footer_images or []))
 
-    for key in missing:
-        img = slots_pos.get(key)
-        if not img or id(img) in used:
+    # 1) Tipi già corretti ma non ancora in slots
+    for idx, img in enumerate(images):
+        t = types[idx]
+        if t in expected and t not in report_slots and id(img) not in used:
+            report_slots[t] = img
+            used.add(id(img))
+
+    missing = [key for key in expected if key not in report_slots]
+    if not missing:
+        return report_slots, types
+
+    # 2) Solo foto non-main/non-footer: riclassifica le `other`
+    other_idxs = [
+        i for i, img in enumerate(images)
+        if id(img) not in used and types[i] not in {'main_closure', 'summary_footer', *expected}
+    ]
+    if other_idxs and missing:
+        def _reclass(i):
+            close_old_connections()
+            return i, _classify_acquisition_image(images[i], company, provider)
+
+        with ThreadPoolExecutor(max_workers=min(4, len(other_idxs))) as pool:
+            for fut in as_completed([pool.submit(_reclass, i) for i in other_idxs]):
+                idx, guessed = fut.result()
+                types[idx] = guessed
+                if guessed in missing and guessed not in report_slots and id(images[idx]) not in used:
+                    report_slots[guessed] = images[idx]
+                    used.add(id(images[idx]))
+                    missing = [key for key in expected if key not in report_slots]
+        close_old_connections()
+
+    missing = [key for key in expected if key not in report_slots]
+    if not missing:
+        return report_slots, types
+
+    # 3) Fallback posizionale SOLO se nessun report è stato riconosciuto
+    if report_slots:
+        # Non forzare ordine upload sulle foto rimaste: rischia di mappare Sisal→Lottomatica
+        return report_slots, types
+
+    _main_pos, slots_pos, _footer_pos = split_acquisition_images_by_position(images)
+    for key, img in slots_pos.items():
+        if key in report_slots:
             continue
-        report_slots[key] = img
-        used.add(id(img))
+        # Non assegnare un'immagine già usata come main tipizzata
         try:
             idx = next(i for i, candidate in enumerate(images) if id(candidate) == id(img))
-            types[idx] = key
         except StopIteration:
-            pass
+            continue
+        if types[idx] in {'main_closure', 'summary_footer'}:
+            continue
+        report_slots[key] = img
+        types[idx] = key
 
     return report_slots, types
 
@@ -2341,18 +2384,24 @@ def _extract_closure_five_files(images, company, provider):
         main_images, report_slots, footer_images = split_acquisition_images_by_position(images)
         image_types = []
 
-    # Slot mancanti: solo fill posizionale (niente probe IA extra)
+    # Slot mancanti: riclassifica solo le `other`, mai forzare ordine upload se già parziale
     expected = _expected_report_keys(len(images))
     if len(report_slots) < len(expected):
-        report_slots, image_types = _fill_missing_report_slots_positional(
-            images, image_types, report_slots, footer_images,
+        report_slots, image_types = _fill_missing_report_slots_safe(
+            images, image_types, report_slots, footer_images, company, provider,
         )
+        main_images, report_slots, footer_images = split_acquisition_images(
+            images, image_types if image_types else None,
+        )
+        # Se footer vuoto ma qualche main ha anche la riga Contanti, ok: footer dai main
         report_ids = {id(img) for img in report_slots.values()}
         footer_ids = {id(img) for img in footer_images}
-        main_images = [
+        rebuilt_main = [
             img for img in images
             if id(img) not in report_ids and id(img) not in footer_ids
-        ] or main_images
+        ]
+        if rebuilt_main:
+            main_images = rebuilt_main
 
     if main_images:
         parsed = _extract_main_closure_images(main_images, company, provider)
