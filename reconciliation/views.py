@@ -2013,6 +2013,16 @@ def _is_json_validate_error(exc):
     )
 
 
+def _is_model_unavailable_error(exc):
+    """Modello ritirato / non accessibile sulla chiave (es. 404 model_not_found)."""
+    msg = str(exc or '').lower()
+    return (
+        'model_not_found' in msg
+        or 'does not exist or you do not have access' in msg
+        or 'model_decommissioned' in msg
+    )
+
+
 def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
     api_key = _get_groq_key()
     if not api_key:
@@ -2033,11 +2043,12 @@ def _extract_ai_with_groq(images, company=None, prompt=None, *, fast=False):
             (640, 40),
         )
         max_out_tokens = 2500
-    model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.6-27b').strip()
+    # Qwen 3.6 ritirato su Groq; default aggiornato a 3.8 (vision + JSON).
+    model = (os.environ.get('GROQ_VISION_MODEL') or 'qwen/qwen3.8-27b').strip()
     client = OpenAI(api_key=api_key, base_url='https://api.groq.com/openai/v1')
     last_exc = None
 
-    # Qwen 3.6: con JSON mode il reasoning deve essere spento, altrimenti failed_generation vuoto.
+    # Qwen 3.x: con JSON mode il reasoning deve essere spento, altrimenti failed_generation vuoto.
     request_variants = (
         {
             'response_format': {'type': 'json_object'},
@@ -2311,6 +2322,11 @@ def _extract_ai_json(images, company, provider, prompt, *, fast=False, allow_fai
             )
         if chosen == 'groq' and _is_capacity_error(exc, 'groq'):
             _force_session_provider(alt, note=f'{chosen}_tpm→{alt}')
+            return _extract_ai_json(
+                images, company, alt, prompt, fast=fast, allow_failover=False,
+            )
+        if chosen == 'groq' and _is_model_unavailable_error(exc):
+            _force_session_provider(alt, note=f'{chosen}_model→{alt}')
             return _extract_ai_json(
                 images, company, alt, prompt, fast=fast, allow_failover=False,
             )
