@@ -784,7 +784,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
         Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>
-        {' '}— modificalo in <strong style={{ color: 'var(--text-main)' }}>Impostazioni</strong>
+        {user?.role === 'amministratore'
+          ? <> — modificalo in <strong style={{ color: 'var(--text-main)' }}>Impostazioni</strong></>
+          : <> — impostato dall&apos;amministratore</>}
       </p>
 
       {error && (

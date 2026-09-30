@@ -1114,41 +1114,13 @@ def _get_ai_provider(company):
     return provider if provider in {'groq', 'gemini'} else _default_ai_provider()
 
 
-def _get_user_ai_provider(user):
-    if not user or not getattr(user, 'is_authenticated', False):
-        return ''
-    try:
-        provider = user.profile.ai_acquisition_provider.strip().lower()
-    except UserProfile.DoesNotExist:
-        provider = ''
-    return provider if provider in {'groq', 'gemini'} else ''
-
-
-def _set_user_ai_provider(user, provider):
-    provider = str(provider or '').strip().lower()
-    if provider not in {'groq', 'gemini'}:
-        raise ValueError('Provider IA non valido.')
-    profile, _ = UserProfile.objects.get_or_create(user=user)
-    profile.ai_acquisition_provider = provider
-    profile.save(update_fields=['ai_acquisition_provider'])
-
-
 def _resolve_ai_provider(user, company=None, override=None):
+    """Motore IA aziendale: scelto dall'admin, uguale per tutti gli operatori."""
     chosen = str(override or '').strip().lower()
     if chosen in {'groq', 'gemini'}:
         return chosen
-    user_pref = _get_user_ai_provider(user)
-    if user_pref:
-        return user_pref
     if company is not None:
-        try:
-            company_pref = AppSetting.objects.get(
-                company=company, key='ai_acquisition_provider'
-            ).value.strip().lower()
-        except AppSetting.DoesNotExist:
-            company_pref = ''
-        if company_pref in {'groq', 'gemini'}:
-            return company_pref
+        return _get_ai_provider(company)
     return _default_ai_provider()
 
 
@@ -1161,7 +1133,7 @@ def _ai_provider_options(user, company=None):
     return {
         'provider': preferred,
         'effective_provider': effective,
-        'user_provider': _get_user_ai_provider(user) or None,
+        'can_change': bool(user and _is_admin(user)),
         'groq_configured': bool(_get_groq_key()),
         'gemini_configured': bool(_get_gemini_key()),
         'gemini_cooldown': _gemini_in_cooldown(),
@@ -2913,7 +2885,7 @@ def _draft_extract_status_payload(draft):
 
 @require_auth
 def api_acquisition_ai_provider(request):
-    """Preferenza modello IA per l'operatore (persiste tra le acquisizioni)."""
+    """Modello IA aziendale (GET per tutti; POST solo admin)."""
     company, err = bind_company(request)
     if err:
         return err
@@ -2922,6 +2894,11 @@ def api_acquisition_ai_provider(request):
         return JsonResponse({'status': 'success', 'data': _ai_provider_options(request.user, company)})
 
     if request.method == 'POST':
+        if not _is_admin(request.user):
+            return JsonResponse(
+                {'status': 'error', 'error': 'Solo l\'amministratore può cambiare il modello IA.'},
+                status=403,
+            )
         try:
             data = json.loads(request.body or '{}')
         except json.JSONDecodeError:
@@ -2930,7 +2907,7 @@ def api_acquisition_ai_provider(request):
         if provider not in {'groq', 'gemini'}:
             return JsonResponse({'status': 'error', 'error': 'Modello non valido'}, status=400)
         try:
-            _set_user_ai_provider(request.user, provider)
+            _set_ai_provider(company, provider)
         except ValueError as exc:
             return JsonResponse({'status': 'error', 'error': str(exc)}, status=400)
         return JsonResponse({'status': 'success', 'data': _ai_provider_options(request.user, company)})

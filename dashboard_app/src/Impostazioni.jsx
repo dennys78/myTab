@@ -27,7 +27,7 @@ export default function Impostazioni({ section = 'generali' }) {
         ? 'Registra indirizzo email mittente e parametri SMTP direttamente nella webapp.'
       : isAdmin
         ? 'Configura modelli IA, chiavi API e assistente Telegram.'
-        : 'Scegli il modello IA usato quando acquisisci le chiusure con le foto.';
+        : 'Consulta il modello IA impostato dall’amministratore per l’acquisizione chiusure.';
   const [groqKey, setGroqKey] = useState('');
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -271,17 +271,14 @@ export default function Impostazioni({ section = 'generali' }) {
       .catch(() => setError('Errore di rete.'));
   };
 
-  const handleSaveUserModel = () => {
+  const handleSaveCompanyModel = () => {
+    if (!isAdmin) return;
     if (aiProvider === 'gemini' && !geminiConfigured) {
-      setError(isAdmin
-        ? 'Salva prima la chiave API Gemini nella sezione «Chiavi API IA».'
-        : 'Chiave Gemini non configurata: chiedi all’amministratore.');
+      setError('Salva prima la chiave API Gemini nella sezione «Chiavi API IA».');
       return;
     }
     if (aiProvider === 'groq' && !keyConfigured) {
-      setError(isAdmin
-        ? 'Salva prima la chiave API Groq nella sezione «Chiavi API IA».'
-        : 'Chiave Groq non configurata: chiedi all’amministratore.');
+      setError('Salva prima la chiave API Groq nella sezione «Chiavi API IA».');
       return;
     }
     setSavingUserModel(true);
@@ -671,63 +668,75 @@ export default function Impostazioni({ section = 'generali' }) {
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
           <Zap size={20} color="var(--accent)" />
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Il tuo modello IA</h2>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Modello IA acquisizione</h2>
           <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>
             {aiProvider === 'gemini' ? 'Gemini' : 'Groq'}
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          <strong>Gemini</strong> (consigliato per 5/6 foto): una sola analisi multi-immagine → XML → regole in locale.
-          Groq resta opzionale per prove o 2 file.
+          {isAdmin
+            ? (
+              <>
+                Scelta valida per <strong>tutti gli operatori</strong> dell’azienda attiva.
+                {' '}<strong>Gemini</strong> (consigliato per 5/6 foto): una sola analisi multi-immagine → XML → regole in locale.
+                Groq resta opzionale per prove o 2 file.
+              </>
+            )
+            : (
+              <>
+                Motore usato da tutti gli operatori: <strong>{aiProvider === 'gemini' ? 'Gemini' : 'Groq'}</strong>.
+                Solo l’amministratore può modificarlo.
+              </>
+            )}
         </p>
 
         {userModelSaved && (
           <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', padding: '0.6rem 0.9rem', borderRadius: '6px', color: '#22c55e', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-            <CheckCircle size={15} /> Modello salvato per il tuo account.
+            <CheckCircle size={15} /> Modello salvato per tutta l’azienda.
           </div>
         )}
 
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Motore per Acquisisci con IA
-          </label>
-          <select
-            value={aiProvider}
-            onChange={e => setAiProvider(e.target.value)}
-            style={{ ...inputStyle, width: '100%', maxWidth: '360px', fontFamily: 'inherit' }}
-          >
-            <option value="gemini">
-              Gemini (consigliato — XML unificato){!geminiConfigured ? ' — chiave assente' : ''}
-            </option>
-            <option value="groq">
-              Groq (alternativa){!keyConfigured ? ' — chiave assente' : ''}
-            </option>
-          </select>
-          {!geminiConfigured && aiProvider === 'gemini' && (
-            <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
-              {isAdmin
-                ? 'Inserisci e salva la chiave API Gemini nella sezione «Chiavi API IA» qui sotto, poi riprova.'
-                : 'Chiedi all’amministratore di configurare la chiave API Gemini.'}
-            </p>
-          )}
-          {!keyConfigured && aiProvider === 'groq' && (
-            <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
-              {isAdmin
-                ? 'Inserisci e salva la chiave API Groq nella sezione «Chiavi API IA» qui sotto.'
-                : 'Chiedi all’amministratore di configurare la chiave API Groq.'}
-            </p>
-          )}
-        </div>
+        {isAdmin ? (
+          <>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                Motore per Acquisisci con IA
+              </label>
+              <select
+                value={aiProvider}
+                onChange={e => setAiProvider(e.target.value)}
+                style={{ ...inputStyle, width: '100%', maxWidth: '360px', fontFamily: 'inherit' }}
+              >
+                <option value="gemini">
+                  Gemini (consigliato — XML unificato){!geminiConfigured ? ' — chiave assente' : ''}
+                </option>
+                <option value="groq">
+                  Groq (alternativa){!keyConfigured ? ' — chiave assente' : ''}
+                </option>
+              </select>
+              {!geminiConfigured && aiProvider === 'gemini' && (
+                <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
+                  Inserisci e salva la chiave API Gemini nella sezione «Chiavi API IA» qui sotto, poi riprova.
+                </p>
+              )}
+              {!keyConfigured && aiProvider === 'groq' && (
+                <p style={{ color: 'var(--warning)', fontSize: '0.8rem', margin: '0.55rem 0 0' }}>
+                  Inserisci e salva la chiave API Groq nella sezione «Chiavi API IA» qui sotto.
+                </p>
+              )}
+            </div>
 
-        <button
-          type="button"
-          onClick={handleSaveUserModel}
-          disabled={savingUserModel || (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured)}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured) ? 0.55 : 1 }}
-        >
-          {savingUserModel ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-          Salva il mio modello
-        </button>
+            <button
+              type="button"
+              onClick={handleSaveCompanyModel}
+              disabled={savingUserModel || (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: (aiProvider === 'gemini' && !geminiConfigured) || (aiProvider === 'groq' && !keyConfigured) ? 0.55 : 1 }}
+            >
+              {savingUserModel ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+              Salva per tutti
+            </button>
+          </>
+        ) : null}
       </div>
       )}
 
