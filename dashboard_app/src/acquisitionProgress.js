@@ -11,47 +11,27 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
   steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 6 });
 
   if (twoFileMode) {
-    const reportCount = n >= 7 ? 5 : (n >= 6 ? 4 : (n >= 5 ? 3 : (n >= 4 ? 2 : (n >= 3 ? 1 : 0))));
-    const mainCount = Math.max(1, n - reportCount);
-    steps.push({
-      phase: 'decode',
-      label: mainCount === 1 ? 'Analisi foglio incasso…' : `Analisi foglio incasso (${mainCount} foto)…`,
-      weight: n >= 3 ? 10 : 14,
-    });
     if (n >= 3) {
+      for (let i = 1; i <= n; i += 1) {
+        steps.push({
+          phase: 'decode',
+          label: `Riconoscimento documento ${i} di ${n}…`,
+          weight: 20 / n,
+        });
+      }
+      steps.push({ phase: 'closure', label: 'Estrazione foglio cassa…', weight: 24 });
       steps.push({
         phase: 'reports',
-        label: 'Lettura ricevuta Mooney (riga MOONEY)…',
-        weight: reportCount >= 2 ? 8 : 16,
+        label: 'Lettura report riconosciuti (Mooney/LIS/Lotto/Gratta/Sisal)…',
+        weight: 24,
       });
-    }
-    if (n >= 4) {
+    } else {
       steps.push({
-        phase: 'reports',
-        label: 'Lettura LIS BORDERO\' (CASSA CONTANTI → riga LIS)…',
-        weight: 8,
+        phase: 'decode',
+        label: n === 1 ? 'Analisi foglio incasso…' : `Analisi foglio incasso (${n} foto)…`,
+        weight: 14,
       });
-    }
-    if (n >= 5) {
-      steps.push({
-        phase: 'reports',
-        label: 'Lettura Sisal Borderò (crea riga SISAL)…',
-        weight: 8,
-      });
-    }
-    if (n >= 6) {
-      steps.push({
-        phase: 'reports',
-        label: 'Premi Gratta → uscite GRATTA E VINCI…',
-        weight: 8,
-      });
-    }
-    if (n >= 7) {
-      steps.push({
-        phase: 'reports',
-        label: 'Contabile Lotto D3 → crea riga LOTTOMATICA…',
-        weight: 10,
-      });
+      steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: 42 });
     }
   } else if (positionalSlots) {
     steps.push({
@@ -59,6 +39,8 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
       label: 'Lettura unificata Gemini (XML)…',
       weight: 36,
     });
+    steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: 12 });
+    steps.push({ phase: 'reports', label: 'Applicazione regole Lotto/Sisal/Mooney/Gratta…', weight: 14 });
   } else if (n >= 3) {
     for (let i = 1; i <= n; i += 1) {
       steps.push({
@@ -67,21 +49,17 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
         weight: 22 / n,
       });
     }
+    steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: 26 });
+    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 16 });
   } else {
     steps.push({
       phase: 'decode',
       label: n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`,
       weight: 18,
     });
+    steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: 26 });
   }
 
-  steps.push({ phase: 'closure', label: 'Estrazione chiusura cassa…', weight: twoFileMode ? 42 : (positionalSlots ? 12 : 26) });
-  if (!twoFileMode && !positionalSlots) {
-    steps.push({ phase: 'reports', label: 'Lettura report reparti…', weight: 16 });
-  }
-  if (!twoFileMode && positionalSlots) {
-    steps.push({ phase: 'reports', label: 'Applicazione regole Lotto/Sisal/Mooney/Gratta…', weight: 14 });
-  }
   steps.push({ phase: 'finalize', label: 'Finalizzazione…', weight: 6 });
   return steps;
 }

@@ -13,7 +13,7 @@ export function isValidFiveModeFileCount(count) {
   return count === 5 || count === 6;
 }
 
-/** Protocollo 2–7 file: foglio; Mooney; LIS; Sisal; Premi Gratta; Contabile Lotto. */
+/** Protocollo 2–7 file: foglio; Mooney; LIS; Lotto; Premi Gratta; Sisal. */
 export function isValidTwoModeFileCount(count) {
   return count >= 1 && count <= 7;
 }

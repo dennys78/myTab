@@ -2591,29 +2591,53 @@ def _extract_main_closure_images(images, company, provider):
 
 
 def _extract_closure_two_files(images, company, provider):
-    """Protocollo Tabaccheria (2–7 file).
+    """Protocollo Tabaccheria (fino a 7 file).
 
-    Cosa cambia rispetto al solo foglio:
-    - Si rimuove la riga GESTORI DI GIOCHI E SERVIZI e i dati gioco letti dal foglio
-      (LOTTOMATICA / MOONEY / MONEY / SISAL / LIS).
-    - Si reinseriscono i reparti dalle foto dedicate, stessi campi dell'altra azienda:
-      Mooney Totale; Sisal Vendite/Pagamenti; Premi Gratta → uscite; Lotto Entrate/Uscite Gioco.
-    - Extra rispetto all'altra azienda: foto LIS (CASSA in CONTANTI).
-    - GRATTA E VINCI: entrate restano dal foglio; uscite dai Premi pagati.
-    Differenza resta sullo scassettato (with_reports=False).
+    Le foto si discriminano per contenuto (classificazione IA), non per ordine di upload:
+    foglio cassa, Mooney, LIS, Contabile Lotto, Premi Gratta, Sisal Borderò.
+
+    Poi: toglie GESTORI dal foglio e valorizza i reparti dai report (stessi campi
+    dell'altra azienda + LIS). Differenza sullo scassettato (with_reports=False).
     """
-    from .ai_acquisition import split_two_mode_images, strip_gestori_sheet_items
+    from .ai_acquisition import (
+        TWO_MODE_REPORT_KEYS,
+        split_acquisition_images,
+        split_two_mode_images,
+        strip_gestori_sheet_items,
+    )
 
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-    main_images, report_slots = split_two_mode_images(images)
+    image_types = []
+    report_slots = {}
+    main_images = list(images or [])
+
+    if len(images) >= 3:
+        try:
+            image_types = _classify_acquisition_images(images, company, provider)
+            _main, slots, _footer = split_acquisition_images(images, image_types)
+            report_slots = {
+                key: img for key, img in (slots or {}).items()
+                if key in TWO_MODE_REPORT_KEYS and img
+            }
+        except Exception:
+            image_types = []
+            report_slots = {}
+
+        # Fallback posizionale solo se la classificazione non ha trovato report
+        if not report_slots:
+            main_images, report_slots = split_two_mode_images(images)
+        else:
+            slot_ids = {id(img) for img in report_slots.values()}
+            main_images = [img for img in images if id(img) not in slot_ids]
+            if not main_images:
+                main_images = list(_main or images[:1])
+
     parsed = _extract_main_closure_images(main_images or images, company, provider)
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
 
-    # Con almeno un report: scarta gestori + reparti gioco dal foglio, poi overlay
     if report_slots:
         parsed['items'] = strip_gestori_sheet_items(parsed.get('items'))
 
-    # Stessi nomi/campi dell'altra azienda (+ LIS solo qui)
     mooney_overlay = overlays.get('mooney')
     if isinstance(mooney_overlay, dict):
         mooney_overlay['_department'] = 'MOONEY'
@@ -2626,24 +2650,15 @@ def _extract_closure_two_files(images, company, provider):
     lotto_overlay = overlays.get('lottomatica')
     if isinstance(lotto_overlay, dict):
         lotto_overlay['_department'] = 'LOTTOMATICA'
-    keys = {k for k in report_slots if k in {'mooney', 'lis', 'sisal', 'gratta', 'lottomatica'}}
-    if keys >= {'mooney', 'lis', 'sisal', 'gratta', 'lottomatica'}:
-        parsed['slot_strategy'] = 'two_mode_full_reports'
-    elif keys >= {'mooney', 'lis', 'sisal', 'gratta'}:
-        parsed['slot_strategy'] = 'two_mode_mooney_lis_sisal_gratta'
-    elif keys >= {'mooney', 'lis', 'sisal'}:
-        parsed['slot_strategy'] = 'two_mode_mooney_lis_sisal'
-    elif keys >= {'mooney', 'lis'}:
-        parsed['slot_strategy'] = 'two_mode_mooney_lis'
-    elif 'sisal' in keys:
-        parsed['slot_strategy'] = 'two_mode_sisal'
-    elif 'mooney' in keys:
-        parsed['slot_strategy'] = 'two_mode_mooney'
-    elif 'lis' in keys:
-        parsed['slot_strategy'] = 'two_mode_lis'
+
+    parsed['image_types'] = image_types
+    keys = {k for k in report_slots if k in TWO_MODE_REPORT_KEYS}
+    if image_types and keys:
+        parsed['slot_strategy'] = 'two_mode_classify'
+    elif keys:
+        parsed['slot_strategy'] = 'two_mode_positional_fallback'
     else:
         parsed['slot_strategy'] = 'two_mode'
-    # has_reports=False: l'azienda a foglio incasso continua a usare lo scassettato
     return parsed, operator_label, overlays, False
 
 

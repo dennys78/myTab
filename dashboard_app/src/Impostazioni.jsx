@@ -819,7 +819,7 @@ export default function Impostazioni({ section = 'generali' }) {
               Protocollo acquisizione chiusure (IA)
             </label>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 0, marginBottom: '0.75rem', lineHeight: 1.45 }}>
-              Scegli come analizzare le foto per questa ragione sociale: 2–7 file (foglio + Mooney + LIS + Sisal + Premi Gratta + Contabile Lotto), oppure 5/6 file con report giochi e estrazione di cassa auto, distributore, totale e resi.
+              Scegli come analizzare le foto per questa ragione sociale: 2–7 file (foglio + report riconosciuti automaticamente), oppure 5/6 file con report giochi e estrazione di cassa auto, distributore, totale e resi.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center' }}>
               <select
@@ -827,7 +827,7 @@ export default function Impostazioni({ section = 'generali' }) {
                 onChange={e => setAiAcquisitionFileMode(e.target.value)}
                 style={{ ...inputStyle, flex: '1 1 260px', minWidth: '220px', fontFamily: 'inherit' }}
               >
-                <option value="two_files">2–7 file — foglio (+ Mooney + LIS + Sisal + Gratta + Lotto)</option>
+                <option value="two_files">2–7 file — foglio + report (riconoscimento automatico)</option>
                 <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
               </select>
               <button
@@ -910,7 +910,7 @@ export default function Impostazioni({ section = 'generali' }) {
                 onChange={e => setAiAcquisitionFileMode(e.target.value)}
                 style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
               >
-                <option value="two_files">2–7 file — foglio (+ Mooney + LIS + Sisal + Gratta + Lotto)</option>
+                <option value="two_files">2–7 file — foglio + report (riconoscimento automatico)</option>
                 <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
               </select>
             </div>

@@ -151,7 +151,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return;
     }
     if (!isFiveFileMode && !isValidTwoModeFileCount(filesRef.current.length)) {
-      setError('Carica fino a 7 foto: foglio, Mooney, LIS, Sisal, Premi Gratta e Contabile Lottomatica.');
+      setError('Carica da 1 a 7 foto (foglio cassa e/o report Mooney, LIS, Lotto, Gratta, Sisal).');
       return;
     }
     const imageCount = filesRef.current.length;
@@ -784,12 +784,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
           ? (aiProvider === 'gemini'
             ? 'Gemini legge tutte le foto in una sola richiesta (XML). Ordine: 1) riepilogo cassa (+ eventuale 2ª pagina), 2) Contabile Lottomatica, 3) Mooney (solo con 6 foto), 4) Premi Gratta, 5) Borderò Sisal.'
             : 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.')
-          : 'Ordine fino a 7 foto: foglio (1–2) → Mooney → LIS → Sisal Borderò → Premi Gratta → Contabile Lottomatica (D3).'}
+          : 'Carica fino a 7 foto in qualsiasi ordine: foglio cassa, Mooney, LIS, Contabile Lotto, Premi Gratta, Sisal. L\'IA riconosce ogni documento automaticamente.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
           ? 'Criterio: Lottomatica SOLO dal Contabile (Entrate/Uscite Gioco); Sisal SOLO dal Borderò MOVIMENTO CONTANTI (Vendite/Pagamenti TOTALE, es. 281/331,05 — non il netto); Mooney = Totale ricevuta; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati. Saldo = Entrate − Uscite: può essere negativo.'
-          : 'Dal foglio si toglie GESTORI DI GIOCHI E SERVIZI (e Lotto/Mooney/Sisal letti lì). Poi si inseriscono: Mooney, Sisal, Premi Gratta, Lottomatica (stessi campi dell\'altra azienda) + LIS (CASSA CONTANTI).'}
+          : 'Toglie GESTORI dal foglio. Poi valorizza: Mooney (Totale), LIS (CASSA CONTANTI), Lottomatica (Entrate/Uscite Gioco), Premi Gratta → uscite, Sisal (Vendite/Pagamenti). Stessi campi dell\'altra azienda + LIS.'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
         Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>

@@ -13,7 +13,8 @@ AI_ACQUISITION_MIN_FILES = {
     AI_ACQUISITION_MODE_FIVE: 5,
 }
 AI_ACQUISITION_MAX_FILES = {
-    # 1–2 = foglio; 3 Mooney; 4 LIS; 5 Sisal; 6 Premi Gratta; 7 Contabile Lottomatica
+    # 1–2 = foglio; 3 Mooney; 4 LIS; 5 Contabile Lotto; 6 Premi Gratta; 7 Sisal
+    # (Lotto→Gratta→Sisal come l'altra azienda; LIS extra dopo Mooney)
     AI_ACQUISITION_MODE_TWO: 7,
     AI_ACQUISITION_MODE_FIVE: 6,
 }
@@ -21,6 +22,8 @@ AI_ACQUISITION_MAX_FILES = {
 REPORT_SLOT_ORDER = ('lottomatica', 'gratta', 'sisal')
 OPTIONAL_REPORT_SLOTS = ('mooney', 'lis')
 ALL_REPORT_SLOTS = REPORT_SLOT_ORDER + OPTIONAL_REPORT_SLOTS
+# Report del protocollo Tabaccheria (discriminati per contenuto, non per ordine upload)
+TWO_MODE_REPORT_KEYS = frozenset({'mooney', 'lis', 'lottomatica', 'gratta', 'sisal'})
 DEPARTMENTS_FULL_REPORT_OVERLAY = frozenset({'lottomatica', 'sisal', 'mooney', 'lis'})
 FOOTER_SUMMARY_KEYS = (
     'contanti',
@@ -215,43 +218,37 @@ def is_valid_five_mode_file_count(count: int) -> bool:
 
 
 def is_valid_two_mode_file_count(count: int) -> bool:
-    """1–2 = foglio; 3 Mooney; 4 LIS; 5 Sisal; 6 Premi Gratta; 7 Contabile Lotto."""
+    """1–2 = foglio; 3 Mooney; 4 LIS; 5 Lotto; 6 Premi Gratta; 7 Sisal."""
     return int(count or 0) in (1, 2, 3, 4, 5, 6, 7)
 
 
 def split_two_mode_images(images: list) -> tuple[list, dict]:
-    """Protocollo foglio incasso: ultime foto = Mooney / LIS / Sisal / Gratta / Lotto.
+    """Fallback posizionale se la classificazione IA non trova report.
 
-    Ordine atteso:
-    - 1–2 foto: tutte riepilogo cassa
-    - 3 foto: [riepilogo…] + Mooney MOVIMENTO CONTANTE
-    - 4 foto: [riepilogo…] + Mooney + LIS (BORDERO' di CASSA)
-    - 5 foto: [riepilogo…] + Mooney + LIS + Sisal Borderò MOVIMENTO CONTANTI
-    - 6 foto: [riepilogo…] + Mooney + LIS + Sisal + Premi Gratta e Vinci
-    - 7 foto: [riepilogo…] + … + Contabile Giornaliero Lottomatica (D3)
-      → crea riga LOTTOMATICA con Entrate Gioco / Uscite Gioco
+    Preferire sempre la discriminazione per contenuto (_classify + split_acquisition_images).
+    Ordine di fallback (solo emergenza): foglio… + Mooney, LIS, Lotto, Premi Gratta, Sisal.
     """
     n = len(images or [])
     if n >= 7:
         return list(images[:-5]), {
             'mooney': images[-5],
             'lis': images[-4],
-            'sisal': images[-3],
+            'lottomatica': images[-3],
             'gratta': images[-2],
-            'lottomatica': images[-1],
+            'sisal': images[-1],
         }
     if n == 6:
         return list(images[:-4]), {
             'mooney': images[-4],
             'lis': images[-3],
-            'sisal': images[-2],
+            'lottomatica': images[-2],
             'gratta': images[-1],
         }
     if n == 5:
         return list(images[:-3]), {
             'mooney': images[-3],
             'lis': images[-2],
-            'sisal': images[-1],
+            'lottomatica': images[-1],
         }
     if n == 4:
         return list(images[:-2]), {'mooney': images[-2], 'lis': images[-1]}
@@ -271,7 +268,7 @@ def validate_acquisition_file_count(company, count: int) -> None:
         )
     if mode == AI_ACQUISITION_MODE_TWO and not is_valid_two_mode_file_count(count):
         raise ValueError(
-            f'Per l\'analisi a 2–7 file: foglio, Mooney, LIS, Sisal, Premi Gratta, Contabile Lotto (ricevute {count}).'
+            f'Per l\'analisi a 2–7 file: foglio, Mooney, LIS, Contabile Lotto, Premi Gratta, Sisal (ricevute {count}).'
         )
 
 
