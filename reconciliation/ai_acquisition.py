@@ -13,14 +13,15 @@ AI_ACQUISITION_MIN_FILES = {
     AI_ACQUISITION_MODE_FIVE: 5,
 }
 AI_ACQUISITION_MAX_FILES = {
-    AI_ACQUISITION_MODE_TWO: 2,
+    # 1–2 = foglio; 3 Mooney; 4 LIS; 5 Sisal; 6 Premi Gratta; 7 Contabile Lottomatica
+    AI_ACQUISITION_MODE_TWO: 7,
     AI_ACQUISITION_MODE_FIVE: 6,
 }
 # Report esterni (foto dedicate): ordine logico, non dipende dall'upload
 REPORT_SLOT_ORDER = ('lottomatica', 'gratta', 'sisal')
-OPTIONAL_REPORT_SLOTS = ('mooney',)
+OPTIONAL_REPORT_SLOTS = ('mooney', 'lis')
 ALL_REPORT_SLOTS = REPORT_SLOT_ORDER + OPTIONAL_REPORT_SLOTS
-DEPARTMENTS_FULL_REPORT_OVERLAY = frozenset({'lottomatica', 'sisal', 'mooney'})
+DEPARTMENTS_FULL_REPORT_OVERLAY = frozenset({'lottomatica', 'sisal', 'mooney', 'lis'})
 FOOTER_SUMMARY_KEYS = (
     'contanti',
     'pag_pos',
@@ -32,7 +33,7 @@ FOOTER_SUMMARY_KEYS = (
 )
 
 LOTTO_PROMPT = """Questa immagine è il report "Contabile Giornaliero" Lottomatica
-(menu Prospetti → Contabile giornaliero, tab Giochi Lotto).
+(menu Prospetti → Contabile giornaliero, tab Giochi Lotto; terminale/ditta D3 o equivalente).
 Mostra conteggi giocate, importi (Importo giocate / Vincite pagate) e in basso i totali.
 
 Restituisci SOLO un oggetto JSON valido, senza markdown:
@@ -80,24 +81,44 @@ Numeri float positivi; se una riga non è leggibile usa 0.00.
 Nota: se Pagamenti > Vendite il saldo (entrate-uscite) sarà negativo (es. 281−331,05 = −50,05) — è corretto, non invertire né usare il netto al posto di Vendite/Pagamenti."""
 
 MOONEY_PROMPT = """Questa immagine è la ricevuta Mooney "MOVIMENTO CONTANTE" (logo mooney in alto).
+Può includere sezioni Ricariche e codici, Carte prepagate, Pagamenti e servizi (Incassato / Rimborsato).
 Restituisci SOLO un oggetto JSON valido, senza markdown:
 {"entrate": 0.00, "uscite": 0.00}
 
 Regole:
-- entrate = importo nella riga "Totale" in fondo (es. 444,92 → 444.92)
-- uscite = 0.00 se il documento mostra solo "Incassato" (Ricariche e codici / Pagamenti e servizi)
+- entrate = importo nella riga "Totale" in fondo (es. 623,93 → 623.93). È già il netto del giorno.
+- uscite = 0.00 (il Totale include già eventuali Rimborsato; non duplicarli in uscite)
 - NON sommare a mano le sezioni Incassato se è già presente Totale
+- NON confondere con Sisal BORDERÒ "MOVIMENTO CONTANTI"
 - Numeri float positivi; se non leggibile usa 0.00"""
+
+LIS_PROMPT = """Questa immagine è il "PROSPETTO GIORNALIERO SERVIZI LIS" / "BORDERO' di CASSA"
+(LIS Holding S.p.A., scontrino termico con sezioni CONTANTI / CARTE / COMPENSI).
+
+Restituisci SOLO un oggetto JSON valido, senza markdown:
+{"entrate": 0.00, "uscite": 0.00}
+
+Regole OBBLIGATORIE:
+- entrate = importo della voce "CASSA" nella sezione "CONTANTI" (es. CASSA 301,00 → 301.00)
+- uscite = 0.00
+
+VIETATO:
+- NON usare "IMPORTO" della sezione CARTE/BANCOMAT/QRCODE POSTEPAY
+- NON usare COMPENSO PV / COMPENSO netto / COMPENSO da fatturare
+- NON sommare Contanti + Carte
+
+Numeri float positivi; se CASSA non è leggibile usa 0.00."""
 
 REPORT_PROMPTS = {
     'lottomatica': LOTTO_PROMPT,
     'gratta': GRATTA_PROMPT,
     'sisal': SISAL_PROMPT,
     'mooney': MOONEY_PROMPT,
+    'lis': LIS_PROMPT,
 }
 
 CLASSIFY_PROMPT = """Classifica questa immagine di documenti per una tabaccheria italiana.
-Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other"}
+Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"lis"|"other"}
 
 - main_closure: "Riepilogo Chiusure di Cassa" con tabella reparti (Tabacchi, Caffè, Gratta e Vinci, Pag fornitori, ecc.) e/o sezione "NUOVA SEZIONE GESTORI DI GIOCHI E SERVIZI" (LOTTOMATICA, MOONEY, SISAL con Entrate/Uscite/Saldo). Anche se in basso compare la riga Contanti/Pag.Pos/TOTALE, resta main_closure.
 - summary_footer: SOLO (o quasi solo) la riga finale Contanti, Pag.Pos/Pag Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE — senza righe reparto con Entrate/Uscite.
@@ -105,11 +126,12 @@ Restituisci SOLO JSON: {"type": "main_closure"|"summary_footer"|"lottomatica"|"g
 - gratta: "Premi pagati nel giorno" Gratta e Vinci (Prospetti) con tabella Gioco/Quantità/Importo e riga Totale.
 - sisal: schermata Sisal titolo "BORDERÒ", tab "MOVIMENTO CONTANTI" (o RICONSEGNA/ESPOSIZIONE), calendario, sezioni Vendite/Pagamenti e riquadro TOTALE. Fonte ufficiale SISAL. NON è la ricevuta cartacea Mooney.
 - mooney: ricevuta con logo "mooney" e titolo "MOVIMENTO CONTANTE", sezioni Incassato e riga Totale.
+- lis: scontrino "PROSPETTO GIORNALIERO SERVIZI LIS" / "BORDERO' di CASSA" (LIS Holding) con sezioni CONTANTI (CASSA), CARTE, COMPENSI.
 - other: solo se non corrisponde a nessuna delle categorie sopra"""
 
 CLASSIFY_BATCH_PROMPT = """Classifica ciascuna immagine nell'ordine in cui ti vengono inviate (immagine 1, 2, …).
 Restituisci SOLO JSON con un array "types" della stessa lunghezza:
-{"types": ["main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"other", ...]}
+{"types": ["main_closure"|"summary_footer"|"lottomatica"|"gratta"|"sisal"|"mooney"|"lis"|"other", ...]}
 
 Regole di classificazione (obbligatorie):
 - main_closure: Riepilogo Chiusure di Cassa / tabella reparti / NUOVA SEZIONE GESTORI (LOTTOMATICA, MOONEY, SISAL). Se ci sono Entrate/Uscite di reparto, NON usare summary_footer.
@@ -118,10 +140,11 @@ Regole di classificazione (obbligatorie):
 - gratta: Premi pagati nel giorno Gratta e Vinci.
 - sisal: "BORDERÒ" + "MOVIMENTO CONTANTI" Sisal (Vendite/Pagamenti nel TOTALE). Fonte ufficiale SISAL. Non confondere con Mooney.
 - mooney: ricevuta logo mooney MOVIMENTO CONTANTE.
+- lis: PROSPETTO GIORNALIERO SERVIZI LIS / BORDERO' di CASSA (CONTANTI CASSA, CARTE, COMPENSI).
 - other: nessuno dei precedenti"""
 
 VALID_IMAGE_TYPES = frozenset({
-    'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'mooney', 'other',
+    'main_closure', 'summary_footer', 'lottomatica', 'gratta', 'sisal', 'mooney', 'lis', 'other',
 })
 
 FIVE_FILES_SUMMARY_PROMPT = """Analizza l'immagine del RIEPILOGO FINALE CHIUSURA CASSA POS (riga con Contanti, Pag.Pos, Cassa Auto, Resi, Distrib., TOTALE).
@@ -191,6 +214,52 @@ def is_valid_five_mode_file_count(count: int) -> bool:
     return int(count or 0) in (5, 6)
 
 
+def is_valid_two_mode_file_count(count: int) -> bool:
+    """1–2 = foglio; 3 Mooney; 4 LIS; 5 Sisal; 6 Premi Gratta; 7 Contabile Lotto."""
+    return int(count or 0) in (1, 2, 3, 4, 5, 6, 7)
+
+
+def split_two_mode_images(images: list) -> tuple[list, dict]:
+    """Protocollo foglio incasso: ultime foto = Mooney / LIS / Sisal / Gratta / Lotto.
+
+    Ordine atteso:
+    - 1–2 foto: tutte riepilogo cassa
+    - 3 foto: [riepilogo…] + Mooney MOVIMENTO CONTANTE
+    - 4 foto: [riepilogo…] + Mooney + LIS (BORDERO' di CASSA)
+    - 5 foto: [riepilogo…] + Mooney + LIS + Sisal Borderò MOVIMENTO CONTANTI
+    - 6 foto: [riepilogo…] + Mooney + LIS + Sisal + Premi Gratta e Vinci
+    - 7 foto: [riepilogo…] + … + Contabile Giornaliero Lottomatica (D3)
+      → crea riga LOTTOMATICA con Entrate Gioco / Uscite Gioco
+    """
+    n = len(images or [])
+    if n >= 7:
+        return list(images[:-5]), {
+            'mooney': images[-5],
+            'lis': images[-4],
+            'sisal': images[-3],
+            'gratta': images[-2],
+            'lottomatica': images[-1],
+        }
+    if n == 6:
+        return list(images[:-4]), {
+            'mooney': images[-4],
+            'lis': images[-3],
+            'sisal': images[-2],
+            'gratta': images[-1],
+        }
+    if n == 5:
+        return list(images[:-3]), {
+            'mooney': images[-3],
+            'lis': images[-2],
+            'sisal': images[-1],
+        }
+    if n == 4:
+        return list(images[:-2]), {'mooney': images[-2], 'lis': images[-1]}
+    if n == 3:
+        return list(images[:-1]), {'mooney': images[-1]}
+    return list(images or []), {}
+
+
 def validate_acquisition_file_count(company, count: int) -> None:
     mode = get_ai_acquisition_file_mode(company)
     count = int(count or 0)
@@ -200,9 +269,9 @@ def validate_acquisition_file_count(company, count: int) -> None:
         raise ValueError(
             f'Per l\'analisi a 5/6 file carica 5 immagini (standard) oppure 6 con report Mooney (ricevute {count}).'
         )
-    if mode == AI_ACQUISITION_MODE_TWO and count > 2:
+    if mode == AI_ACQUISITION_MODE_TWO and not is_valid_two_mode_file_count(count):
         raise ValueError(
-            f'Per l\'analisi a 2 file carica al massimo 2 immagini (ricevute {count}).'
+            f'Per l\'analisi a 2–7 file: foglio, Mooney, LIS, Sisal, Premi Gratta, Contabile Lotto (ricevute {count}).'
         )
 
 
@@ -325,10 +394,69 @@ def split_acquisition_images(
     return main, slots, footer
 
 
+def _collapse_department_aliases(by_name: dict, preferred: str, aliases: tuple[str, ...]) -> str:
+    """Unisce alias (es. MONEY/MOONEY) sotto `preferred`, rimuovendo i duplicati."""
+    preferred = (preferred or aliases[0]).strip().upper()
+    for alias in aliases:
+        if alias == preferred or alias not in by_name:
+            continue
+        if preferred not in by_name:
+            by_name[preferred] = {**by_name[alias], 'descrizione': preferred}
+        del by_name[alias]
+    return preferred
+
+
+# Sezione gestori sul foglio cassa: va scartata nel protocollo Tabaccheria (fonte = foto report)
+GESTORI_SECTION_MARKERS = (
+    'GESTORI DI GIOCHI',
+    'GESTORI DI GIOCHI E SERVIZI',
+    'NUOVA SEZIONE GESTORI',
+    'VECCHIA SEZIONE GESTORI',
+    'VECCHIA GESTIONE GESTORI',
+    'SEZIONE GESTORI',
+)
+# Reparti sotto gestori (o equivalenti) letti dal foglio: sostituiti dai report dedicati
+GESTORI_SHEET_DEPARTMENTS = frozenset({
+    'LOTTOMATICA',
+    'MOONEY',
+    'MONEY',
+    'SISAL',
+    'LIS',
+})
+
+
+def _is_gestori_section_label(name: str) -> bool:
+    upper = str(name or '').strip().upper()
+    if not upper:
+        return False
+    return any(marker in upper for marker in GESTORI_SECTION_MARKERS)
+
+
+def strip_gestori_sheet_items(items: list[dict] | None) -> list[dict]:
+    """Rimuove la riga GESTORI DI GIOCHI E SERVIZI e i reparti gioco letti dal foglio.
+
+    Da usare prima degli overlay Mooney/LIS/Sisal/Lottomatica/Gratta: i valori
+    ufficiali arrivano dalle foto dedicate (stessi campi dell'altra azienda).
+    GRATTA E VINCI resta (entrate dal foglio; uscite dai Premi pagati).
+    """
+    cleaned: list[dict] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('descrizione') or '').strip().upper()
+        if _is_gestori_section_label(name):
+            continue
+        if name in GESTORI_SHEET_DEPARTMENTS:
+            continue
+        cleaned.append(item)
+    return cleaned
+
+
 def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict]) -> list[dict]:
     """I report esterni sovrascrivono i reparti gioco nella maschera di acquisizione."""
     by_name = {item['descrizione']: item for item in items}
     gratta_dept = REPORT_DEPARTMENTS['gratta']
+    mooney_aliases = ('MONEY', 'MOONEY')
 
     for key, amounts in overlays.items():
         if key.startswith('_') or not amounts:
@@ -352,10 +480,29 @@ def merge_report_overlays_into_items(items: list[dict], overlays: dict[str, dict
             }
             continue
 
-        # Lottomatica, Sisal, Mooney: sostituisci sempre entrate e uscite dal report dedicato
+        # Lottomatica, Sisal, Mooney, LIS: crea/sovrascrive sempre la riga reparto
+        # (anche se assente dal foglio cassa — tipico per SISAL sul protocollo 2–5 file)
         if key in DEPARTMENTS_FULL_REPORT_OVERLAY:
             entrate = abs(float(parse_amount(amounts.get('entrate', 0))))
             uscite = abs(float(parse_amount(amounts.get('uscite', 0))))
+            if key == 'mooney':
+                # Preferisci MOONEY (come protocollo 5/6); unisci alias MONEY se presente
+                label = str(amounts.get('_department') or '').strip().upper()
+                if label in mooney_aliases:
+                    dept = label
+                elif 'MOONEY' in by_name:
+                    dept = 'MOONEY'
+                elif 'MONEY' in by_name:
+                    dept = 'MONEY'
+                else:
+                    dept = 'MOONEY'
+                dept = _collapse_department_aliases(by_name, dept, mooney_aliases)
+            elif key == 'sisal':
+                dept = str(amounts.get('_department') or 'SISAL').strip().upper() or 'SISAL'
+            elif key == 'lis':
+                dept = str(amounts.get('_department') or 'LIS').strip().upper() or 'LIS'
+            elif key == 'lottomatica':
+                dept = str(amounts.get('_department') or 'LOTTOMATICA').strip().upper() or 'LOTTOMATICA'
             by_name[dept] = {
                 'descrizione': dept,
                 'entrate': entrate,

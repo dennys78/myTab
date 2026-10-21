@@ -2375,7 +2375,7 @@ def _extract_report_overlays(report_slots, company, provider):
             key, normalized, err = _one(key, image)
             if normalized:
                 overlays[key] = normalized
-            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
+            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta', 'lis'):
                 overlays.setdefault('_errors', {})[key] = str(err)[:200]
         close_old_connections()
         return overlays
@@ -2386,7 +2386,7 @@ def _extract_report_overlays(report_slots, company, provider):
             key, normalized, err = fut.result()
             if normalized:
                 overlays[key] = normalized
-            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta'):
+            elif err and key in ('lottomatica', 'sisal', 'mooney', 'gratta', 'lis'):
                 overlays.setdefault('_errors', {})[key] = str(err)[:200]
     close_old_connections()
     return overlays
@@ -2591,10 +2591,60 @@ def _extract_main_closure_images(images, company, provider):
 
 
 def _extract_closure_two_files(images, company, provider):
-    """Protocollo a 2 file: solo riepilogo cassa, senza classificazione report."""
+    """Protocollo Tabaccheria (2–7 file).
+
+    Cosa cambia rispetto al solo foglio:
+    - Si rimuove la riga GESTORI DI GIOCHI E SERVIZI e i dati gioco letti dal foglio
+      (LOTTOMATICA / MOONEY / MONEY / SISAL / LIS).
+    - Si reinseriscono i reparti dalle foto dedicate, stessi campi dell'altra azienda:
+      Mooney Totale; Sisal Vendite/Pagamenti; Premi Gratta → uscite; Lotto Entrate/Uscite Gioco.
+    - Extra rispetto all'altra azienda: foto LIS (CASSA in CONTANTI).
+    - GRATTA E VINCI: entrate restano dal foglio; uscite dai Premi pagati.
+    Differenza resta sullo scassettato (with_reports=False).
+    """
+    from .ai_acquisition import split_two_mode_images, strip_gestori_sheet_items
+
     operator_label = 'IA Gemini' if provider == 'gemini' else 'IA Groq'
-    parsed = _extract_main_closure_images(images, company, provider)
-    return parsed, operator_label, {}, False
+    main_images, report_slots = split_two_mode_images(images)
+    parsed = _extract_main_closure_images(main_images or images, company, provider)
+    overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
+
+    # Con almeno un report: scarta gestori + reparti gioco dal foglio, poi overlay
+    if report_slots:
+        parsed['items'] = strip_gestori_sheet_items(parsed.get('items'))
+
+    # Stessi nomi/campi dell'altra azienda (+ LIS solo qui)
+    mooney_overlay = overlays.get('mooney')
+    if isinstance(mooney_overlay, dict):
+        mooney_overlay['_department'] = 'MOONEY'
+    lis_overlay = overlays.get('lis')
+    if isinstance(lis_overlay, dict):
+        lis_overlay['_department'] = 'LIS'
+    sisal_overlay = overlays.get('sisal')
+    if isinstance(sisal_overlay, dict):
+        sisal_overlay['_department'] = 'SISAL'
+    lotto_overlay = overlays.get('lottomatica')
+    if isinstance(lotto_overlay, dict):
+        lotto_overlay['_department'] = 'LOTTOMATICA'
+    keys = {k for k in report_slots if k in {'mooney', 'lis', 'sisal', 'gratta', 'lottomatica'}}
+    if keys >= {'mooney', 'lis', 'sisal', 'gratta', 'lottomatica'}:
+        parsed['slot_strategy'] = 'two_mode_full_reports'
+    elif keys >= {'mooney', 'lis', 'sisal', 'gratta'}:
+        parsed['slot_strategy'] = 'two_mode_mooney_lis_sisal_gratta'
+    elif keys >= {'mooney', 'lis', 'sisal'}:
+        parsed['slot_strategy'] = 'two_mode_mooney_lis_sisal'
+    elif keys >= {'mooney', 'lis'}:
+        parsed['slot_strategy'] = 'two_mode_mooney_lis'
+    elif 'sisal' in keys:
+        parsed['slot_strategy'] = 'two_mode_sisal'
+    elif 'mooney' in keys:
+        parsed['slot_strategy'] = 'two_mode_mooney'
+    elif 'lis' in keys:
+        parsed['slot_strategy'] = 'two_mode_lis'
+    else:
+        parsed['slot_strategy'] = 'two_mode'
+    # has_reports=False: l'azienda a foglio incasso continua a usare lo scassettato
+    return parsed, operator_label, overlays, False
 
 
 def _extract_footer_summary(images, company, provider):

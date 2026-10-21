@@ -15,6 +15,7 @@ REPORT_DEPARTMENTS = {
     'gratta': 'GRATTA E VINCI',
     'sisal': 'SISAL',
     'mooney': 'MOONEY',
+    'lis': 'LIS',
 }
 
 

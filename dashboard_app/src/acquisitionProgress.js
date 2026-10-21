@@ -11,11 +11,48 @@ export function buildAcquisitionProgressSteps(imageCount, { skipUpload = false, 
   steps.push({ phase: 'prep', label: 'Preparazione allegati…', weight: 6 });
 
   if (twoFileMode) {
+    const reportCount = n >= 7 ? 5 : (n >= 6 ? 4 : (n >= 5 ? 3 : (n >= 4 ? 2 : (n >= 3 ? 1 : 0))));
+    const mainCount = Math.max(1, n - reportCount);
     steps.push({
       phase: 'decode',
-      label: n === 1 ? 'Analisi foto…' : `Analisi ${n} foto…`,
-      weight: 10,
+      label: mainCount === 1 ? 'Analisi foglio incasso…' : `Analisi foglio incasso (${mainCount} foto)…`,
+      weight: n >= 3 ? 10 : 14,
     });
+    if (n >= 3) {
+      steps.push({
+        phase: 'reports',
+        label: 'Lettura ricevuta Mooney (riga MOONEY)…',
+        weight: reportCount >= 2 ? 8 : 16,
+      });
+    }
+    if (n >= 4) {
+      steps.push({
+        phase: 'reports',
+        label: 'Lettura LIS BORDERO\' (CASSA CONTANTI → riga LIS)…',
+        weight: 8,
+      });
+    }
+    if (n >= 5) {
+      steps.push({
+        phase: 'reports',
+        label: 'Lettura Sisal Borderò (crea riga SISAL)…',
+        weight: 8,
+      });
+    }
+    if (n >= 6) {
+      steps.push({
+        phase: 'reports',
+        label: 'Premi Gratta → uscite GRATTA E VINCI…',
+        weight: 8,
+      });
+    }
+    if (n >= 7) {
+      steps.push({
+        phase: 'reports',
+        label: 'Contabile Lotto D3 → crea riga LOTTOMATICA…',
+        weight: 10,
+      });
+    }
   } else if (positionalSlots) {
     steps.push({
       phase: 'decode',

@@ -6,6 +6,7 @@ import {
   ACQUISITION_MODE_FIVE,
   ACQUISITION_MODE_TWO,
   isValidFiveModeFileCount,
+  isValidTwoModeFileCount,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
@@ -147,6 +148,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
     if (!filesRef.current.length) return;
     if (isFiveFileMode && !isValidFiveModeFileCount(filesRef.current.length)) {
       setError('Carica 5 immagini (standard) oppure 6 con il report Mooney aggiuntivo.');
+      return;
+    }
+    if (!isFiveFileMode && !isValidTwoModeFileCount(filesRef.current.length)) {
+      setError('Carica fino a 7 foto: foglio, Mooney, LIS, Sisal, Premi Gratta e Contabile Lottomatica.');
       return;
     }
     const imageCount = filesRef.current.length;
@@ -763,7 +768,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   // ─── UPLOAD ─────────────────────────────────────────────────────────────────
   const atLimit = files.length >= maxAcquisitionFiles;
-  const canExtract = files.length > 0 && (!isFiveFileMode || isValidFiveModeFileCount(files.length));
+  const canExtract = files.length > 0 && (
+    isFiveFileMode
+      ? isValidFiveModeFileCount(files.length)
+      : isValidTwoModeFileCount(files.length)
+  );
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
@@ -775,12 +784,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
           ? (aiProvider === 'gemini'
             ? 'Gemini legge tutte le foto in una sola richiesta (XML). Ordine: 1) riepilogo cassa (+ eventuale 2ª pagina), 2) Contabile Lottomatica, 3) Mooney (solo con 6 foto), 4) Premi Gratta, 5) Borderò Sisal.'
             : 'Carica 5 o 6 immagini: riepilogo cassa (eventuale 2ª pagina) e report Lottomatica, Gratta e Vinci, Sisal; con 6 foto aggiungi anche Mooney. L\'ordine viene riconosciuto automaticamente.')
-          : 'Carica 1 o 2 immagini del riepilogo chiusura cassa (foglio incasso).'}
+          : 'Ordine fino a 7 foto: foglio (1–2) → Mooney → LIS → Sisal Borderò → Premi Gratta → Contabile Lottomatica (D3).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '0.4rem', lineHeight: 1.45 }}>
         {isFiveFileMode
           ? 'Criterio: Lottomatica SOLO dal Contabile (Entrate/Uscite Gioco); Sisal SOLO dal Borderò MOVIMENTO CONTANTI (Vendite/Pagamenti TOTALE, es. 281/331,05 — non il netto); Mooney = Totale ricevuta; Gratta = Entrate dal riepilogo e Uscite dai Premi pagati. Saldo = Entrate − Uscite: può essere negativo.'
-          : 'Il protocollo a 2 file estrae reparti e totali dal foglio incasso senza i report giochi separati.'}
+          : 'Dal foglio si toglie GESTORI DI GIOCHI E SERVIZI (e Lotto/Mooney/Sisal letti lì). Poi si inseriscono: Mooney, Sisal, Premi Gratta, Lottomatica (stessi campi dell\'altra azienda) + LIS (CASSA CONTANTI).'}
       </p>
       <p style={{ color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.78rem', marginBottom: '1.5rem' }}>
         Modello attivo: <strong style={{ color: 'var(--text-main)' }}>{providerLabel}</strong>
@@ -972,10 +981,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
       <button onClick={handleExtract} disabled={!canExtract || loading}
         style={{
           width: '100%', padding: '1rem',
-          background: files.length && !loading ? 'var(--accent)' : 'var(--bg-card)',
-          color: files.length && !loading ? 'white' : 'var(--text-muted)',
+          background: canExtract && !loading ? 'var(--accent)' : 'var(--bg-card)',
+          color: canExtract && !loading ? 'white' : 'var(--text-muted)',
           border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold',
-          cursor: files.length && !loading ? 'pointer' : 'not-allowed',
+          cursor: canExtract && !loading ? 'pointer' : 'not-allowed',
           display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem',
           minHeight: '54px',
           opacity: loading ? 0.7 : 1,
