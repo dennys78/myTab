@@ -1,6 +1,6 @@
 import { STORICO_PERIOD_OPTIONS } from './dateFilters';
 
-export default function StoricoPeriodHeader({ title, value, onChange }) {
+export default function StoricoPeriodHeader({ title, value, onChange, options = STORICO_PERIOD_OPTIONS }) {
   return (
     <div className="storico-period-header">
       <h2 className="storico-period-title">{title}</h2>
@@ -12,7 +12,7 @@ export default function StoricoPeriodHeader({ title, value, onChange }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
         >
-          {STORICO_PERIOD_OPTIONS.map((o) => (
+          {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>

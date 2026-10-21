@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileText, FileDown, Mail, Check,
+  Plus, Save, X, Trash2, Loader2, AlertCircle, Stamp, ChevronDown, ChevronRight, FileDown, Mail, Check,
 } from 'lucide-react';
 import { apiFetch } from './api';
+import { filterByPeriod, RICEVUTE_PERIOD_OPTIONS } from './dateFilters';
 import { ricevuteCardStyle, ricevuteInputStyle } from './ricevuteStyles';
+import StoricoPeriodHeader from './StoricoPeriodHeader';
 
 const TIPO_VALORE_BOLLATO = 'valore_bollato';
 const TIPO_CONTRIBUTO = 'contributo_unificato';
@@ -72,6 +74,12 @@ export default function RicevuteValoriBollati() {
   const [lines, setLines] = useState([emptyLine()]);
   const lineValoreRefs = useRef({});
   const [focusLineId, setFocusLineId] = useState(null);
+  const [periodoFiltro, setPeriodoFiltro] = useState('week');
+
+  const ricevuteFiltrate = useMemo(
+    () => filterByPeriod(ricevute, periodoFiltro),
+    [ricevute, periodoFiltro],
+  );
 
   const loadAll = () => {
     setLoading(true);
@@ -528,17 +536,23 @@ export default function RicevuteValoriBollati() {
         </div>
       </div>
 
-      <div style={{ ...ricevuteCardStyle, marginBottom: '1.5rem' }}>
-        <h2 style={{ margin: '0 0 1rem', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <FileText size={20} /> Ricevute emesse
-        </h2>
+      <div style={{ ...ricevuteCardStyle, marginBottom: '1.5rem', overflow: 'hidden', padding: 0 }}>
+        <StoricoPeriodHeader
+          title="Ricevute emesse"
+          value={periodoFiltro}
+          onChange={setPeriodoFiltro}
+          options={RICEVUTE_PERIOD_OPTIONS}
+        />
+        <div style={{ padding: '0 1.25rem 1.25rem' }}>
         {loading ? (
           <p style={{ color: 'var(--text-muted)' }}>Caricamento...</p>
         ) : ricevute.length === 0 ? (
           <p style={{ color: 'var(--text-muted)' }}>Nessuna ricevuta salvata.</p>
+        ) : ricevuteFiltrate.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>Nessuna ricevuta nel periodo selezionato.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {ricevute.map((row) => {
+            {ricevuteFiltrate.map((row) => {
               const open = expandedId === row.id;
               const detail = detailCache[row.id];
               return (
@@ -654,6 +668,7 @@ export default function RicevuteValoriBollati() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

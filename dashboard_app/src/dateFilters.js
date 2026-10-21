@@ -5,6 +5,14 @@ export const STORICO_PERIOD_OPTIONS = [
   { value: 'year', label: 'Anno' },
 ];
 
+/** Periodo elenco ricevute valori bollati */
+export const RICEVUTE_PERIOD_OPTIONS = [
+  { value: 'week', label: 'Settimana corrente' },
+  { value: 'month', label: 'Mese' },
+  { value: 'year', label: 'Anno' },
+  { value: 'all', label: 'Tutte' },
+];
+
 /** Periodi grafici dashboard: mese corrente di default */
 export const REPARTI_CHART_PERIOD_OPTIONS = [
   { value: 'week', label: 'Settimana corrente' },
