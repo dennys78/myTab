@@ -166,20 +166,22 @@ Restituisci SOLO JSON valido, senza markdown:
   }
 }
 
-Mappa le 7 colonne nell'ordine (esempio tipico: 0,00 | 431,10 | 1.841,85 | 0,00 | -5,00 | 306,40 | 2.579,35):
-1. Contanti → contanti
-2. Pag.Pos / Pagamento POS → pag_pos (NON è il totale)
+Mappa le 7 colonne nell'ordine (esempio reale: 3.072,83 | 637,60 | 0,00 | 0,00 | 0,00 | 0,00 | 9.892,80):
+1. Contanti → contanti (es. 3.072,83 → 3072.83)
+2. Pag.Pos / Pagamento POS → pag_pos (es. 637,60 → 637.60) — NON è il totale
 3. Cassa Auto → cassa_auto
 4. Reso Cont. → reso_cont
 5. Reso Auto → reso_auto (può essere negativo, es. -5.00)
 6. Distrib. / Distributore → distrib
-7. TOTALE (ultima colonna) → totale
+7. TOTALE (ultima colonna) → totale (es. 9.892,80 → 9892.80)
 
-- Usa numeri decimali con punto (1841.85 non 1.841,85 nel JSON).
-- reso_auto e reso_cont possono essere negativi; gli altri campi di solito ≥ 0.
-- totale è SEMPRE l'ultima colonna etichettata TOTALE, mai Pag.Pos né Cassa Auto.
+OBBLIGATORIO:
+- Formato italiano: punto = migliaia, virgola = decimali (3.072,83 → 3072.83).
+- totale è SEMPRE l'ultima colonna etichettata TOTALE.
+- VIETATO: totale = Contanti, totale = Pag.Pos, totale = Contanti+Pag.Pos.
+  Sul POS Contanti+Pag.Pos ≠ TOTALE (es. 3072+637 ≠ 9892).
 - Non sommare reparti: leggi solo la riga riepilogo.
-- Data YYYY-MM-DD se visibile (es. 01/06/2026 → 2026-06-01), altrimenti stringa vuota."""
+- Data YYYY-MM-DD se visibile (es. 20/10/2026 → 2026-10-20), altrimenti stringa vuota."""
 
 
 def get_ai_acquisition_file_mode(company) -> str:

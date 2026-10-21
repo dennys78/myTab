@@ -1759,7 +1759,11 @@ def _saldo_reparti(items):
 
 
 def _reconcile_totale_cassa(summary, items, pag_pos_override=None):
-    """Corregge errori IA frequenti: totale=0, totale=Pag.Pos o totale=Contanti."""
+    """Corregge errori IA frequenti: totale=0, totale=Pag.Pos o totale=Contanti.
+
+    Sul foglio POS la colonna TOTALE è la somma saldi reparti, NON Contanti+Pag.Pos+…
+    (es. Contanti 3072 + Pag.Pos 637 ≠ TOTALE 9892).
+    """
     summary = summary or {}
     totale = _money(summary.get('totale'))
     contanti = _money(summary.get('contanti'))
@@ -1773,24 +1777,27 @@ def _reconcile_totale_cassa(summary, items, pag_pos_override=None):
     saldo_reparti = _saldo_reparti(items)
 
     if totale <= 0:
-        if footer_sum > 0 and (saldo_reparti <= 0 or _amounts_close(footer_sum, saldo_reparti)):
-            return footer_sum
+        # Preferisci somma saldi; Contanti+Pag.Pos non è il TOTALE di cassa
         if saldo_reparti > 0:
             return saldo_reparti
         return footer_sum if footer_sum > 0 else MONEY_ZERO
 
-    if _amounts_close(totale, pag_pos) and saldo_reparti > totale + Decimal('1'):
-        if _amounts_close(saldo_reparti, footer_sum) and saldo_reparti > totale:
-            return saldo_reparti
-        if footer_sum > totale:
-            return footer_sum
+    # Totale scambiato con Pag.Pos o Contanti
+    if saldo_reparti > totale + Decimal('1') and (
+        _amounts_close(totale, pag_pos) or _amounts_close(totale, contanti)
+    ):
+        return saldo_reparti
 
-    if _amounts_close(totale, contanti) and saldo_reparti > totale + Decimal('1'):
-        if _amounts_close(saldo_reparti, footer_sum):
-            return saldo_reparti
-        if footer_sum > totale:
-            return footer_sum
+    # Totale scambiato con la somma metodi di pagamento (Contanti+POS+…)
+    if (
+        saldo_reparti > totale + Decimal('5')
+        and footer_sum > 0
+        and _amounts_close(totale, footer_sum)
+        and not _amounts_close(saldo_reparti, footer_sum)
+    ):
+        return saldo_reparti
 
+    # Totale troppo basso rispetto ai reparti e uguale a un pezzo del footer
     if saldo_reparti > totale + Decimal('5') and _amounts_close(saldo_reparti, footer_sum):
         return saldo_reparti
 
@@ -2593,14 +2600,13 @@ def _extract_main_closure_images(images, company, provider):
 def _extract_closure_two_files(images, company, provider):
     """Protocollo Tabaccheria (fino a 7 file).
 
-    Le foto si discriminano per contenuto (classificazione IA), non per ordine di upload:
-    foglio cassa, Mooney, LIS, Contabile Lotto, Premi Gratta, Sisal Borderò.
-
-    Poi: toglie GESTORI dal foglio e valorizza i reparti dai report (stessi campi
-    dell'altra azienda + LIS). Differenza sullo scassettato (with_reports=False).
+    Classifica le foto per contenuto; estrae reparti dal foglio + Contanti/Pag.Pos/TOTALE
+    con prompt dedicato al footer (come l'altra azienda); overlay report giochi/LIS.
+    Differenza sullo scassettato (with_reports=False).
     """
     from .ai_acquisition import (
         TWO_MODE_REPORT_KEYS,
+        merge_five_files_summary,
         split_acquisition_images,
         split_two_mode_images,
         strip_gestori_sheet_items,
@@ -2610,11 +2616,13 @@ def _extract_closure_two_files(images, company, provider):
     image_types = []
     report_slots = {}
     main_images = list(images or [])
+    footer_images = []
 
     if len(images) >= 3:
         try:
             image_types = _classify_acquisition_images(images, company, provider)
-            _main, slots, _footer = split_acquisition_images(images, image_types)
+            _main, slots, footer_images = split_acquisition_images(images, image_types)
+            footer_images = list(footer_images or [])
             report_slots = {
                 key: img for key, img in (slots or {}).items()
                 if key in TWO_MODE_REPORT_KEYS and img
@@ -2622,17 +2630,31 @@ def _extract_closure_two_files(images, company, provider):
         except Exception:
             image_types = []
             report_slots = {}
+            footer_images = []
 
-        # Fallback posizionale solo se la classificazione non ha trovato report
         if not report_slots:
             main_images, report_slots = split_two_mode_images(images)
+            footer_images = list(main_images)
         else:
             slot_ids = {id(img) for img in report_slots.values()}
+            # Reparti: tutto ciò che non è report
             main_images = [img for img in images if id(img) not in slot_ids]
             if not main_images:
                 main_images = list(_main or images[:1])
+            if not footer_images:
+                footer_images = list(main_images)
+    else:
+        # 1–2 foto: solo foglio; footer = stesse immagini
+        footer_images = list(main_images)
 
     parsed = _extract_main_closure_images(main_images or images, company, provider)
+
+    # Contanti / Pag.Pos / TOTALE: estrazione dedicata (stesso percorso dell'altra azienda)
+    footer_sources = footer_images or list(main_images or images or [])
+    footer_parsed = _extract_footer_summary(footer_sources, company, provider)
+    if footer_parsed:
+        parsed = merge_five_files_summary(parsed, footer_parsed)
+
     overlays = _extract_report_overlays(report_slots, company, provider) if report_slots else {}
 
     if report_slots:
@@ -2667,8 +2689,8 @@ def _extract_footer_summary(images, company, provider):
 
     if not images:
         return None
-    # Una sola foto footer: evita N chiamate (prima era N+1 su Gemini)
-    sources = images[-1:]
+    # Prova fino a 2 foto (tipicamente pagina coda + eventuale footer tipizzato)
+    sources = list(images[-2:]) if len(images) > 2 else list(images)
     candidates = []
     for image in sources:
         try:
@@ -2678,7 +2700,7 @@ def _extract_footer_summary(images, company, provider):
                     company,
                     provider,
                     FIVE_FILES_SUMMARY_PROMPT,
-                    fast=False,  # TOTALE/Contanti: OCR accurato
+                    fast=False,  # TOTALE/Contanti/Pag.Pos: OCR accurato
                 )
             )
         except Exception:
