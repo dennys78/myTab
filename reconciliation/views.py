@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 from django.http import FileResponse, JsonResponse
@@ -1700,7 +1701,11 @@ Restituisci SOLO un oggetto JSON valido (nessun markdown, nessun backtick, nessu
 }
 
 Regole:
-- Data in formato YYYY-MM-DD.
+- DATA (obbligatoria se visibile): leggi SOLO dal titolo
+  "Riepilogo Chiusure di Cassa del DD/MM/YYYY" (es. del 20/10/2026 → "2026-10-20").
+  In alternativa la colonna Data della tabella (stesso giorno). Formato JSON: YYYY-MM-DD.
+  VIETATO inventare la data odierna; VIETATO usare date di stampa di altri documenti
+  (Mooney, LIS, Contabile Lotto, Sisal). Se non leggibile: "".
 - Tutti gli importi sono numeri float (non stringhe).
 - "entrate" e "uscite" devono essere sempre importi positivi o 0. Non mettere mai il segno meno nella colonna "uscite".
 - saldo = entrate - uscite (PUÒ ESSERE NEGATIVO: normale per Sisal, Lottomatica, Gratta e Vinci se uscite > entrate).
@@ -1749,6 +1754,39 @@ def _json_from_ai_text(raw_json):
 
 def _amounts_close(a, b, tol=Decimal('1.00')):
     return abs(_money(a) - _money(b)) <= tol
+
+
+def _normalize_closure_date(raw) -> str:
+    """Normalizza la data del foglio incasso in YYYY-MM-DD (accetta anche DD/MM/YYYY)."""
+    if raw is None:
+        return ''
+    if hasattr(raw, 'isoformat') and not isinstance(raw, str):
+        try:
+            return raw.isoformat()[:10]
+        except Exception:
+            return ''
+    text = str(raw).strip()
+    if not text:
+        return ''
+
+    iso = re.search(r'(20\d{2})-(\d{2})-(\d{2})', text)
+    if iso:
+        try:
+            return date_cls(int(iso.group(1)), int(iso.group(2)), int(iso.group(3))).isoformat()
+        except ValueError:
+            pass
+
+    # Formato italiano DD/MM/YYYY o DD-MM-YYYY (anche dentro una frase)
+    it = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](20\d{2})', text)
+    if it:
+        day, month, year = int(it.group(1)), int(it.group(2)), int(it.group(3))
+        try:
+            return date_cls(year, month, day).isoformat()
+        except ValueError:
+            pass
+
+    parsed = parse_date(text[:10])
+    return parsed.isoformat() if parsed else ''
 
 
 def _saldo_reparti(items):
@@ -1972,7 +2010,7 @@ def _parse_ai_closure_payload(
             differenza = _money(cassetto - atteso)
 
     data = {
-        'date': parsed.get('date', ''),
+        'date': _normalize_closure_date(parsed.get('date', '')),
         'operator': operator,
         'with_reports': bool(with_reports),
         'totale_from_saldi': totale_from_saldi,
@@ -2351,7 +2389,7 @@ def _extract_gemini_unified_bundle(images, company):
     bundle = parse_unified_acquisition_xml(raw_xml)
     overlays = bundle.pop('overlays', {}) or {}
     parsed = {
-        'date': bundle.get('date') or '',
+        'date': _normalize_closure_date(bundle.get('date') or ''),
         'summary': bundle.get('summary') or {},
         'items': bundle.get('items') or [],
         'image_types': roles,
@@ -2556,8 +2594,9 @@ def _merge_two_page_parsed(base, extra):
     if not extra:
         return base
     out = dict(base)
-    if not (out.get('date') or '').strip() and (extra.get('date') or '').strip():
-        out['date'] = extra.get('date')
+    base_date = _normalize_closure_date(out.get('date'))
+    extra_date = _normalize_closure_date(extra.get('date'))
+    out['date'] = base_date or extra_date
 
     base_sum = dict(out.get('summary') or {})
     for key, value in dict(extra.get('summary') or {}).items():

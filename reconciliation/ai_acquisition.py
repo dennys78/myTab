@@ -181,7 +181,9 @@ OBBLIGATORIO:
 - VIETATO: totale = Contanti, totale = Pag.Pos, totale = Contanti+Pag.Pos.
   Sul POS Contanti+Pag.Pos ≠ TOTALE (es. 3072+637 ≠ 9892).
 - Non sommare reparti: leggi solo la riga riepilogo.
-- Data YYYY-MM-DD se visibile (es. 20/10/2026 → 2026-10-20), altrimenti stringa vuota."""
+- DATA: se in pagina c'è "Riepilogo Chiusure di Cassa del DD/MM/YYYY" oppure la colonna Data,
+  restituisci YYYY-MM-DD (es. 20/10/2026 → 2026-10-20). Non inventare la data di oggi.
+  Se non c'è una data del foglio cassa, lascia "". """
 
 
 def get_ai_acquisition_file_mode(company) -> str:
@@ -307,8 +309,13 @@ def merge_five_files_summary(parsed: dict, footer_parsed: dict | None) -> dict:
             main_summary[key] = from_main
 
     merged['summary'] = main_summary
-    if footer_parsed.get('date') and not merged.get('date'):
-        merged['date'] = footer_parsed['date']
+    # Preferisci sempre la data già letta dal foglio (titolo); footer solo se manca
+    main_date = str(merged.get('date') or '').strip()
+    footer_date = str(footer_parsed.get('date') or '').strip()
+    if not main_date and footer_date:
+        merged['date'] = footer_date
+    elif main_date:
+        merged['date'] = main_date
     return merged
 
 
@@ -575,6 +582,10 @@ Schema obbligatorio:
 </chiusura>
 
 Regole di lettura (OBBLIGATORIE):
+0) DATA: leggi SOLO dal titolo "Riepilogo Chiusure di Cassa del DD/MM/YYYY"
+   (es. del 20/10/2026 → 2026-10-20) oppure dalla colonna Data della tabella.
+   VIETATO inventare la data odierna; VIETATO usare date di stampa di Mooney/LIS/Lotto/Sisal.
+   Se non leggibile: lascia <date></date> vuoto.
 1) Riepilogo cassa (main_closure): tutte le righe reparto con Entrate/Uscite (anche NUOVA SEZIONE GESTORI).
    summary = riga Contanti, Pag.Pos, Cassa Auto, Reso Cont., Reso Auto, Distrib., TOTALE (ultima colonna = totale).
 2) Lottomatica (Contabile Giornaliero): SOLO Entrate Gioco e Uscite Gioco. VIETATO Aggio e Saldo.

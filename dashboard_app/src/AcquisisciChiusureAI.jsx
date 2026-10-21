@@ -259,21 +259,37 @@ export default function AcquisisciChiusureAI({ onBack }) {
       items,
       extract_cached: cached,
     };
-    if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
+    // Non sostituire silenziosamente con "oggi" (UTC): maschera errori di lettura data del foglio.
+    // Se manca, usa la data locale solo come ultimo fallback e segnala.
+    if (!enriched.date) {
+      const now = new Date();
+      const local = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+      ].join('-');
+      enriched.date = local;
+      enriched.date_fallback_today = true;
+    }
     setPreviewEditable(!isMobile);
     setPreviewData(enriched);
 
+    const warnings = [];
+    if (enriched.date_fallback_today) {
+      warnings.push(
+        'Data del foglio incasso non letta dall\'IA: impostata a oggi. Verifica e correggi prima di salvare.',
+      );
+    }
     const overlayErrors = data?.report_overlays_errors;
     if (overlayErrors && typeof overlayErrors === 'object') {
       const failed = Object.keys(overlayErrors);
       if (failed.length) {
-        setError(
-          `Attenzione: report non letti correttamente (${failed.join(', ')}). Controlla Entrate/Uscite prima di salvare.`,
+        warnings.push(
+          `Report non letti correttamente (${failed.join(', ')}). Controlla Entrate/Uscite prima di salvare.`,
         );
-        return;
       }
     }
-    setError(null);
+    setError(warnings.length ? `Attenzione: ${warnings.join(' ')}` : null);
   };
 
   const loadDraft = (draftId, { force = false } = {}) => {
@@ -602,8 +618,23 @@ export default function AcquisisciChiusureAI({ onBack }) {
           <div style={{ marginBottom: '1.25rem' }}>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>Data Chiusura</label>
             <input type="date" value={previewData.date}
-              onChange={e => setPreviewData(p => ({ ...p, date: e.target.value }))}
-              style={{ ...inp(), width: isMobile ? '100%' : '200px' }} />
+              onChange={e => setPreviewData(p => ({
+                ...p,
+                date: e.target.value,
+                date_fallback_today: false,
+              }))}
+              style={{
+                ...inp(),
+                width: isMobile ? '100%' : '200px',
+                ...(previewData.date_fallback_today
+                  ? { borderColor: 'var(--danger)', boxShadow: '0 0 0 1px var(--danger)' }
+                  : {}),
+              }} />
+            {previewData.date_fallback_today && (
+              <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: 'var(--danger)' }}>
+                Data non acquisita dal foglio — controlla il valore
+              </p>
+            )}
           </div>
           <div className="acq-summary-grid">
             {regularSummaryEntries.map(([key, val]) => {
