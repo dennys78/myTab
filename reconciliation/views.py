@@ -1867,11 +1867,15 @@ def _refresh_draft_extract_payload(draft, payload):
     items = payload.get('items', [])
     summary = payload.get('summary', {})
     with_reports = bool(payload.get('with_reports'))
+    totale_from_saldi = bool(payload.get('totale_from_saldi'))
     pag_pos_override = None
     if draft.pag_pos_reale and float(draft.pag_pos_reale) > 0:
         pag_pos_override = float(draft.pag_pos_reale)
 
-    totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
+    if totale_from_saldi:
+        totale = _saldo_reparti(items)
+    else:
+        totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
     pag_pos = _money(pag_pos_override) if pag_pos_override is not None else _money(summary.get('pag_pos'))
     distrib = _money(summary.get('distrib'))
     reso_auto = _money(summary.get('reso_auto'))
@@ -1891,6 +1895,7 @@ def _refresh_draft_extract_payload(draft, payload):
         'totale_cassetto': float(cassetto),
         'differenza': float(differenza),
     }
+    payload['totale_from_saldi'] = totale_from_saldi
     return payload
 
 
@@ -1950,7 +1955,12 @@ def _parse_ai_closure_payload(
     distrib = _money(summary.get('distrib'))
     reso_auto = _money(summary.get('reso_auto'))
     reso_cont = _money(summary.get('reso_cont'))
-    totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
+    # Protocollo Tabaccheria: Totale riportato da cassa = somma algebrica saldi
+    totale_from_saldi = bool(parsed.get('totale_from_saldi'))
+    if totale_from_saldi:
+        totale = _saldo_reparti(items)
+    else:
+        totale = _reconcile_totale_cassa(summary, items, pag_pos_override=pag_pos_override)
     differenza, cassetto = _calc_closure_differenza(
         totale, pag_pos, distrib, reso_auto, reso_cont, items, with_reports, totale_scassettato,
     )
@@ -1965,6 +1975,7 @@ def _parse_ai_closure_payload(
         'date': parsed.get('date', ''),
         'operator': operator,
         'with_reports': bool(with_reports),
+        'totale_from_saldi': totale_from_saldi,
         'summary': {
             'contanti': _money_number(summary.get('contanti')),
             'pag_pos': float(pag_pos),
@@ -2681,6 +2692,8 @@ def _extract_closure_two_files(images, company, provider):
         parsed['slot_strategy'] = 'two_mode_positional_fallback'
     else:
         parsed['slot_strategy'] = 'two_mode'
+    # Totale riportato da cassa = somma algebrica saldi (si aggiorna con i reparti)
+    parsed['totale_from_saldi'] = True
     return parsed, operator_label, overlays, False
 
 

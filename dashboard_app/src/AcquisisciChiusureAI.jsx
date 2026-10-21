@@ -214,12 +214,49 @@ export default function AcquisisciChiusureAI({ onBack }) {
       });
   };
 
+  const calcItemSaldo = (item) => Math.round(((Number(item.entrate) || 0) - Math.abs(Number(item.uscite) || 0)) * 100) / 100;
+
+  const calcSaldoReparti = (items) =>
+    Math.round((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0) * 100) / 100;
+
+  // Con i report giochi (5 foto): Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
+  const calcDifferenzaReparti = (s, items) =>
+    Math.round(((s.totale || 0) - calcSaldoReparti(items)) * 100) / 100;
+
+  // Solo foglio incasso: differenza basata sul totale scassettato
+  const calcDifferenzaCassetto = (s) => {
+    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
+    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
+  };
+
+  const calcDifferenza = (s, items, withReports) =>
+    withReports ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
+
+  /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
+  const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi }) => {
+    const next = { ...summary };
+    if (totaleFromSaldi) {
+      next.totale = calcSaldoReparti(items);
+    }
+    next.differenza = calcDifferenza(next, items, withReports);
+    return next;
+  };
+
   const applyPreviewData = (data, { cached = false } = {}) => {
-    const items = Array.isArray(data?.items) ? data.items : [];
+    const items = Array.isArray(data?.items)
+      ? data.items.map((item, i) => {
+          const row = { ...item, id: item.id || `p${i}_${Date.now()}` };
+          row.saldo = calcItemSaldo(row);
+          return row;
+        })
+      : [];
+    const totaleFromSaldi = !!data?.totale_from_saldi;
+    const withReports = !!data?.with_reports;
     const enriched = {
       ...data,
-      summary: { ...(data?.summary || {}) },
-      items: items.map((item, i) => ({ ...item, id: item.id || `p${i}_${Date.now()}` })),
+      totale_from_saldi: totaleFromSaldi,
+      summary: syncSummaryFromItems({ ...(data?.summary || {}) }, items, { withReports, totaleFromSaldi }),
+      items,
       extract_cached: cached,
     };
     if (!enriched.date) enriched.date = new Date().toISOString().split('T')[0];
@@ -322,8 +359,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
       .finally(() => setDeletingDraftId(null));
   };
 
-  const calcItemSaldo = (item) => Math.round(((Number(item.entrate) || 0) - Math.abs(Number(item.uscite) || 0)) * 100) / 100;
-
   const handleItemChange = (id, field, value) => {
     setPreviewData(prev => {
       const items = prev.items.map(item => {
@@ -336,30 +371,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return {
         ...prev,
         items,
-        summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) },
+        summary: syncSummaryFromItems(prev.summary, items, {
+          withReports: !!prev.with_reports,
+          totaleFromSaldi: !!prev.totale_from_saldi,
+        }),
       };
     });
   };
 
-  const calcSaldoReparti = (items) =>
-    Math.round((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0) * 100) / 100;
-
-  // Con i report giochi (5 foto): Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
-  const calcDifferenzaReparti = (s, items) =>
-    Math.round(((s.totale || 0) - calcSaldoReparti(items)) * 100) / 100;
-
-  // Solo foglio incasso (2 foto): vecchio calcolo basato sul totale scassettato
-  const calcDifferenzaCassetto = (s) => {
-    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
-    return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
-  };
-
-  const calcDifferenza = (s, items, withReports) =>
-    withReports ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
-
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
     setPreviewData(prev => {
+      // Totale riportato da cassa è calcolato dai saldi: non editabile in quel modo
+      if (name === 'totale' && prev.totale_from_saldi) return prev;
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
       updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports);
       return { ...prev, summary: updated };
@@ -368,12 +392,26 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const addItem = () => setPreviewData(prev => {
     const items = [...prev.items, { id: `n${Date.now()}`, descrizione: '', entrate: 0, uscite: 0, saldo: 0 }];
-    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) } };
+    return {
+      ...prev,
+      items,
+      summary: syncSummaryFromItems(prev.summary, items, {
+        withReports: !!prev.with_reports,
+        totaleFromSaldi: !!prev.totale_from_saldi,
+      }),
+    };
   });
 
   const removeItem = (id) => setPreviewData(prev => {
     const items = prev.items.filter(i => i.id !== id);
-    return { ...prev, items, summary: { ...prev.summary, differenza: calcDifferenza(prev.summary, items, prev.with_reports) } };
+    return {
+      ...prev,
+      items,
+      summary: syncSummaryFromItems(prev.summary, items, {
+        withReports: !!prev.with_reports,
+        totaleFromSaldi: !!prev.totale_from_saldi,
+      }),
+    };
   });
 
   const handleAcquire = async () => {
@@ -383,10 +421,15 @@ export default function AcquisisciChiusureAI({ onBack }) {
       return cleanItem;
     });
     const withReports = !!previewData.with_reports;
+    const totaleFromSaldi = !!previewData.totale_from_saldi;
+    const summarySynced = syncSummaryFromItems(previewData.summary, previewData.items, {
+      withReports,
+      totaleFromSaldi,
+    });
     const summaryPayload = {
-      ...previewData.summary,
-      totale_cassetto: withReports ? 0 : (previewData.summary.totale_cassetto || 0),
-      differenza: calcDifferenza(previewData.summary, previewData.items, withReports),
+      ...summarySynced,
+      totale_cassetto: withReports ? 0 : (summarySynced.totale_cassetto || 0),
+      differenza: summarySynced.differenza,
     };
     setSaving(true);
     setError(null);
@@ -484,7 +527,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
       ([key]) => !['totale_cassetto', 'differenza'].includes(key)
     );
     const withReports = !!previewData.with_reports;
-    const saldoTotaleReparti = previewData.items.reduce((sum, item) => sum + calcItemSaldo(item), 0);
+    const totaleFromSaldi = !!previewData.totale_from_saldi;
+    const saldoTotaleReparti = calcSaldoReparti(previewData.items);
     const totaleScassettato = previewData.summary.totale_cassetto ?? 0;
     const differenza = calcDifferenza(previewData.summary, previewData.items, withReports);
     const previewImages = previewData.images?.length
@@ -563,16 +607,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
           <div className="acq-summary-grid">
             {regularSummaryEntries.map(([key, val]) => {
+              const lockedTotale = key === 'totale' && totaleFromSaldi;
+              const displayVal = lockedTotale ? saldoTotaleReparti : val;
               return (
                 <div key={key}>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'capitalize' }}>
                     {summaryLabel(key)}
+                    {lockedTotale ? ' (= somma saldi)' : ''}
                   </label>
                   <input type="number" name={key}
-                    value={val === 0 ? '' : val}
+                    value={displayVal === 0 ? '' : displayVal}
                     onChange={handleSummaryChange} placeholder="0.00"
-                    readOnly={!summaryEditable}
-                    className={summaryEditable ? 'acq-edit-input' : 'acq-readonly-input'}
+                    readOnly={!summaryEditable || lockedTotale}
+                    className={(summaryEditable && !lockedTotale) ? 'acq-edit-input' : 'acq-readonly-input'}
                     style={{ ...numInp(), width: '100%' }} />
                 </div>
               );
@@ -641,7 +688,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.6rem 0 0' }}>
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
-              : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
+              : totaleFromSaldi
+                ? 'Totale riportato da cassa = somma algebrica saldi reparti (si aggiorna se modifichi Entrate/Uscite). Differenza dallo scassettato.'
+                : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
           </p>
         </div>
 
