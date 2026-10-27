@@ -38,8 +38,10 @@ PRELEVA_CASSA_ALIASES = frozenset({
 OPERATOR_HELP_TEXT = (
     'Comandi operatore myTab (Telegram)\n\n'
     '── Chiusura cassa ──\n'
-    '1) Invia una o più foto del foglio incasso\n'
-    '2) Scrivi il totale POS reale (es. 1240,00)\n'
+    '1) Invia le foto (foglio cassa e report: Mooney, LIS, Lotto, Gratta, Sisal).\n'
+    '   L\'ordine non conta: myTab riconosce ogni documento.\n'
+    '   Protocollo 2–7 file: da 1 a 7 foto. Protocollo 5/6: esattamente 5 o 6.\n'
+    '2) Quando hai finito le foto, scrivi il totale POS reale (es. 1240,00)\n'
     '3) Scrivi l\'importo scassettato\n'
     '→ La bozza compare in myTab per la registrazione.\n\n'
     '── Versamento in banca ──\n'

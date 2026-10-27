@@ -49,8 +49,17 @@ from reconciliation.telegram_versamento import (
     VERSAMENTO_NEEDS_AMOUNT,
     parse_versamento_message,
 )
+from reconciliation.ai_acquisition import (
+    AI_ACQUISITION_MODE_FIVE,
+    get_ai_acquisition_file_mode,
+    is_valid_five_mode_file_count,
+    is_valid_two_mode_file_count,
+    max_acquisition_files_for_mode,
+    min_acquisition_files_for_mode,
+)
 from reconciliation.views import _get_fondo_cassa, _get_saldo_cassa, _money
 
+STEP_AWAITING_PHOTOS = 'awaiting_photos'
 STEP_AWAITING_POS = 'awaiting_pos'
 STEP_AWAITING_SCASSETTO = 'awaiting_scassettato'
 STEP_VERSAMENTO_AMOUNT = 'awaiting_versamento_amount'
@@ -78,9 +87,74 @@ DATE_TODAY_ALIASES = {
 def _initial_session():
     return {
         'photos': [],
-        'step': STEP_AWAITING_POS,
+        'step': STEP_AWAITING_PHOTOS,
         'pag_pos_reale': None,
     }
+
+
+def _acquisition_limits_sync(company):
+    mode = get_ai_acquisition_file_mode(company)
+    return {
+        'mode': mode,
+        'min': min_acquisition_files_for_mode(mode),
+        'max': max_acquisition_files_for_mode(mode),
+    }
+
+
+def _is_valid_photo_count(mode, count):
+    count = int(count or 0)
+    if mode == AI_ACQUISITION_MODE_FIVE:
+        return is_valid_five_mode_file_count(count)
+    return is_valid_two_mode_file_count(count)
+
+
+def _photo_guidance(mode, count, max_files):
+    """Messaggio dopo ogni foto: criterio allineato all'acquisizione web."""
+    if mode == AI_ACQUISITION_MODE_FIVE:
+        docs = (
+            'riepilogo cassa (+ eventuale 2ª pagina), Contabile Lottomatica, '
+            'Premi Gratta, Borderò Sisal; 6ª opzionale = Mooney'
+        )
+        need = 'Servono 5 foto (standard) oppure 6 con Mooney.'
+    else:
+        docs = (
+            'foglio cassa, Mooney, LIS, Contabile Lotto, Premi Gratta, Sisal'
+        )
+        need = 'Puoi inviare da 1 a 7 foto (foglio e/o report).'
+
+    lines = [
+        f'Foto {count}/{max_files} ricevuta.',
+        f'Documenti accettati (in qualsiasi ordine): {docs}.',
+        need,
+    ]
+    if count >= max_files:
+        lines.append('Limite raggiunto. Scrivi ora il totale POS reale (es. 1240,00).')
+    elif mode == AI_ACQUISITION_MODE_FIVE and count < 5:
+        lines.append(
+            f'Ancora {5 - count} foto minime, poi scrivi il totale POS reale '
+            '(oppure continua fino a 6).'
+        )
+    else:
+        lines.append(
+            'Puoi inviare altre foto, oppure quando hai finito scrivi il totale POS reale '
+            '(es. 1240,00).'
+        )
+    lines.append('/annulla per ricominciare.')
+    return '\n'.join(lines)
+
+
+def _photo_count_error(mode, count):
+    if mode == AI_ACQUISITION_MODE_FIVE:
+        return (
+            f'Per questo protocollo servono 5 foto (standard) oppure 6 con Mooney '
+            f'(ora ne hai {count}).\n'
+            'Invia le foto mancanti, oppure /annulla.'
+        )
+    return (
+        f'Numero foto non valido ({count}). Per Tabaccheria: da 1 a 7 foto '
+        '(foglio + Mooney/LIS/Lotto/Gratta/Sisal).\n'
+        '/annulla per ricominciare.'
+    )
 
 
 def _reset(context):
@@ -509,11 +583,21 @@ async def _post_init(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
     _reset(context)
+    company = context.application.bot_data.get('company')
+    limits = await sync_to_async(_acquisition_limits_sync)(company)
+    if limits['mode'] == AI_ACQUISITION_MODE_FIVE:
+        chiusura_hint = (
+            f"foto chiusura (5 o 6, max {limits['max']}) → POS → scassettato"
+        )
+    else:
+        chiusura_hint = (
+            f"foto foglio + report (1–{limits['max']}, qualsiasi ordine) → POS → scassettato"
+        )
     await update.message.reply_text(
         "Bot myTab pronto.\n\n"
         "Scrivi /aiuto per l'elenco completo dei comandi operatore.\n\n"
         "In sintesi:\n"
-        "• Chiusura cassa: foto → POS → scassettato\n"
+        f"• Chiusura cassa: {chiusura_hint}\n"
         "• Versati / Versamento importo — versamento in banca\n"
         "• Spicci / Monete importo — uscita spicci\n"
         "• Descrizione importo — entrata in cassa\n"
@@ -533,7 +617,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _prepare_context(update, context)
     _reset(context)
     await update.message.reply_text(
-        "Operazione annullata. Invia una nuova foto per la chiusura cassa "
+        "Operazione annullata. Invia le foto della chiusura "
+        "(foglio e report in qualsiasi ordine), "
         "oppure scrivi «Versati 1234,50» (o «Versamento 1234,50») per un versamento."
     )
 
@@ -553,20 +638,19 @@ async def saldo_cassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _prepare_context(update, context)
+async def _reject_photo_during_other_flow(update, context):
     if _preleva_fondo_session(context):
         await update.message.reply_text(
             "Stai completando un prelievo da fondo.\n\n"
             "Rispondi «personale» oppure «cassa», oppure usa /annulla."
         )
-        return
+        return True
     if _spicci_session(context):
         await update.message.reply_text(
             "Stai registrando un'uscita spicci/monete.\n\n"
             "Scrivi l'importo (es. 50 o 25,50), oppure usa /annulla."
         )
-        return
+        return True
 
     if _versamento_session(context):
         session = _versamento_session(context)
@@ -581,8 +665,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Rispondi con la data (gg/mm) oppure «sì» per la data odierna, "
                 "oppure usa /annulla."
             )
-        return
+        return True
+    return False
 
+
+async def _append_closure_photo(update, context, image_bytes):
     session = context.user_data.setdefault('draft_session', _initial_session())
 
     if session.get('step') == STEP_AWAITING_SCASSETTO:
@@ -592,12 +679,55 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    company = context.application.bot_data.get('company')
+    limits = await sync_to_async(_acquisition_limits_sync)(company)
+    max_files = limits['max']
+    count = len(session.get('photos') or [])
+
+    if count >= max_files:
+        session['step'] = STEP_AWAITING_POS
+        await update.message.reply_text(
+            f"Hai già {max_files} foto (massimo per questo protocollo).\n\n"
+            "Scrivi il totale POS reale (es. 1240,00), oppure /annulla."
+        )
+        return
+
+    session['photos'].append(image_bytes)
+    count = len(session['photos'])
+    session['step'] = STEP_AWAITING_POS if count >= limits['min'] else STEP_AWAITING_PHOTOS
+
+    await update.message.reply_text(
+        _photo_guidance(limits['mode'], count, max_files)
+    )
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _prepare_context(update, context)
+    if await _reject_photo_during_other_flow(update, context):
+        return
+
     photo_file = await update.message.photo[-1].get_file()
     image_bytes = bytes(await photo_file.download_as_bytearray())
-    session['photos'].append(image_bytes)
-    session['step'] = STEP_AWAITING_POS
+    await _append_closure_photo(update, context, image_bytes)
 
-    await update.message.reply_text("Inserisci totale POS reale")
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Accetta anche immagini inviate come file (non solo compressione foto Telegram)."""
+    await _prepare_context(update, context)
+    if await _reject_photo_during_other_flow(update, context):
+        return
+
+    doc = update.message.document
+    mime = (doc.mime_type or '').lower() if doc else ''
+    if not doc or not mime.startswith('image/'):
+        await update.message.reply_text(
+            "Per la chiusura cassa invia foto o file immagine (JPEG/PNG/HEIC)."
+        )
+        return
+
+    file_obj = await doc.get_file()
+    image_bytes = bytes(await file_obj.download_as_bytearray())
+    await _append_closure_photo(update, context, image_bytes)
 
 
 async def _ask_versamento_date(update, importo):
@@ -819,20 +949,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Prima invia almeno una foto della chiusura cassa.")
         return
 
+    company = context.application.bot_data.get('company')
+    limits = await sync_to_async(_acquisition_limits_sync)(company)
+    photo_count = len(session['photos'])
+
     try:
         amount = _parse_amount(update.message.text)
     except ValueError:
-        await update.message.reply_text("Importo non valido. Scrivilo così: 1240,00")
+        if session.get('step') in (STEP_AWAITING_PHOTOS, STEP_AWAITING_POS):
+            await update.message.reply_text(
+                "Importo non valido. Scrivilo così: 1240,00\n\n"
+                "Oppure continua a inviare le foto della chiusura "
+                "(foglio e report in qualsiasi ordine)."
+            )
+        else:
+            await update.message.reply_text("Importo non valido. Scrivilo così: 1240,00")
         return
 
-    if session.get('step') == STEP_AWAITING_POS:
+    if session.get('step') in (STEP_AWAITING_PHOTOS, STEP_AWAITING_POS):
+        if not _is_valid_photo_count(limits['mode'], photo_count):
+            await update.message.reply_text(
+                _photo_count_error(limits['mode'], photo_count)
+            )
+            return
         session['pag_pos_reale'] = amount
         session['step'] = STEP_AWAITING_SCASSETTO
         await update.message.reply_text("Inserisci l'importo scassettato")
         return
 
     if session.get('step') != STEP_AWAITING_SCASSETTO:
-        await update.message.reply_text("Inserisci totale POS reale")
+        await update.message.reply_text(
+            _photo_guidance(limits['mode'], photo_count, limits['max'])
+        )
         return
 
     totale_scassettato = amount
@@ -889,6 +1037,7 @@ def run_bot():
         app.add_handler(CommandHandler("annulla", cancel))
         app.add_handler(CommandHandler("saldo", saldo_cassa))
         app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        app.add_handler(MessageHandler(filters.Document.IMAGE, handle_document))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
         print(f"Telegram bot myTab avviato per azienda: {company.denominazione}.")

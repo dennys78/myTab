@@ -1531,7 +1531,8 @@ def api_reset_telegram_sessions(request):
     if token:
         message = (
             "myTab: eventuali sessioni Telegram rimaste in sospeso sono state azzerate.\n\n"
-            "Puoi inviare nuove foto per creare una nuova bozza."
+            "Puoi inviare di nuovo le foto della chiusura "
+            "(foglio e report Mooney/LIS/Lotto/Gratta/Sisal, in qualsiasi ordine)."
         )
         for chat_id in chat_ids:
             try:
