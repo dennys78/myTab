@@ -1590,16 +1590,11 @@ tbody tr:hover {
   border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
 }
 
-/* Media Queries for Mobile Responsiveness */
-@media (max-width: 768px) {
-  body {
-    min-height: 100dvh;
-  }
-
-  button:not(:disabled):hover {
-    transform: none;
-  }
-
+/*
+ * Menu a cassetto fino a 1100px: telefoni, Z Fold aperti (~900–1000 CSS px),
+ * tablet medi. Sopra questa soglia resta la sidebar desktop fissa.
+ */
+@media (max-width: 1100px) {
   .sidebar {
     position: fixed;
     top: 0;
@@ -1626,6 +1621,24 @@ tbody tr:hover {
     padding-top: calc(0.85rem + env(safe-area-inset-top));
     padding-left: max(1rem, env(safe-area-inset-left));
     padding-right: max(1rem, env(safe-area-inset-right));
+    margin: -1rem calc(-1 * max(1rem, env(safe-area-inset-right))) 1rem calc(-1 * max(1rem, env(safe-area-inset-left)));
+  }
+
+  .main-content {
+    padding: 1rem max(1rem, env(safe-area-inset-right)) calc(1.25rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* Media Queries for Mobile Responsiveness */
+@media (max-width: 768px) {
+  body {
+    min-height: 100dvh;
+  }
+
+  button:not(:disabled):hover {
+    transform: none;
   }
 
   .main-content {
@@ -1897,7 +1910,7 @@ tbody tr:hover {
   }
 }
 
-@media (max-width: 768px) and (orientation: landscape) {
+@media (max-width: 1100px) and (orientation: landscape) {
   /* Menu contratto: sidebar a cassetto, hamburger sempre disponibile */
   .sidebar {
     display: flex;

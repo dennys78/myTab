@@ -178,10 +178,10 @@ function AppShell() {
 
   useEffect(() => {
     const closeMenuOnLandscape = () => {
-      const isLandscapePhone = window.matchMedia('(orientation: landscape) and (max-height: 560px)').matches
-        || window.matchMedia('(max-width: 768px) and (orientation: landscape)').matches;
-      // In orizzontale il menu resta contratto (più spazio); si riapre solo dal hamburger.
-      if (isLandscapePhone) setIsMobileMenuOpen(false);
+      const isLandscapeCompact = window.matchMedia('(orientation: landscape) and (max-height: 560px)').matches
+        || window.matchMedia('(max-width: 1100px) and (orientation: landscape)').matches;
+      // In orizzontale su fold/phone il menu resta contratto; si riapre dal hamburger.
+      if (isLandscapeCompact) setIsMobileMenuOpen(false);
     };
     closeMenuOnLandscape();
     window.addEventListener('resize', closeMenuOnLandscape);
