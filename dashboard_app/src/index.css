@@ -1898,14 +1898,33 @@ tbody tr:hover {
 }
 
 @media (max-width: 768px) and (orientation: landscape) {
-  .sidebar,
-  .sidebar-overlay,
+  /* Menu contratto: sidebar a cassetto, hamburger sempre disponibile */
+  .sidebar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: min(78vw, 300px);
+    padding-top: env(safe-area-inset-top);
+    transform: translateX(-100%);
+    z-index: 50;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay.show {
+    display: block;
+  }
+
   .menu-button {
-    display: none !important;
+    display: flex;
   }
 
   .mobile-header {
-    justify-content: center;
+    justify-content: space-between;
     padding-top: calc(0.55rem + env(safe-area-inset-top));
     padding-bottom: 0.55rem;
     margin-bottom: 0.75rem;
@@ -1913,6 +1932,7 @@ tbody tr:hover {
 
   .main-content {
     padding-top: 0.65rem;
+    width: 100%;
   }
 
   .expanded-content {
@@ -1957,20 +1977,39 @@ tbody tr:hover {
   }
 }
 
-@media (orientation: landscape) and (max-height: 500px) {
-  .sidebar,
-  .sidebar-overlay,
-  .menu-button {
-    display: none !important;
-  }
-
+/* Telefoni in landscape anche con width > 768px (es. iPhone Pro Max): menu contratto */
+@media (orientation: landscape) and (max-height: 560px) {
   .app-container {
     display: block;
   }
 
+  .sidebar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: min(70vw, 300px);
+    padding-top: env(safe-area-inset-top);
+    transform: translateX(-100%);
+    z-index: 50;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay.show {
+    display: block !important;
+  }
+
+  .menu-button {
+    display: flex !important;
+  }
+
   .mobile-header {
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
     position: sticky;
     top: 0;
     z-index: 30;

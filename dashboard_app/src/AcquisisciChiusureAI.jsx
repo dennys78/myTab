@@ -46,7 +46,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [drafts, setDrafts] = useState([]);
   const [loadingDraftId, setLoadingDraftId] = useState(null);
   const [deletingDraftId, setDeletingDraftId] = useState(null);
-  const [previewEditable, setPreviewEditable] = useState(false);
   const [reextracting, setReextracting] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
   const [acquisitionFileMode, setAcquisitionFileMode] = useState(ACQUISITION_MODE_FIVE);
@@ -271,7 +270,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
       enriched.date = local;
       enriched.date_fallback_today = true;
     }
-    setPreviewEditable(!isMobile);
     setPreviewData(enriched);
 
     const warnings = [];
@@ -528,7 +526,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
     ...extra,
   });
 
-  const fieldsLocked = isMobile && !previewEditable;
   const summaryEditable = true;
 
   const summaryLabel = (key) => ({
@@ -579,14 +576,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {isMobile && !previewEditable && (
-              <button
-                onClick={() => setPreviewEditable(true)}
-                style={{ padding: '0.5rem 1rem', background: 'rgba(59,130,246,0.12)', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
-              >
-                Modifica valori
-              </button>
-            )}
             {previewData.draft_id && (
               <button
                 onClick={() => loadDraft(previewData.draft_id, { force: true })}
@@ -597,7 +586,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
               </button>
             )}
             <button
-              onClick={() => { setPreviewData(null); setPreviewEditable(false); }}
+              onClick={() => { setPreviewData(null); }}
               style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               ← Indietro
@@ -750,12 +739,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h2 style={{ margin: 0, fontSize: '1rem' }}>Voci di Reparto</h2>
-            {!fieldsLocked && (
-              <button onClick={addItem}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                <Plus size={15} /> Aggiungi
-              </button>
-            )}
+            <button onClick={addItem}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+              <Plus size={15} /> Aggiungi
+            </button>
           </div>
 
           <div className="table-responsive-wrapper">
@@ -776,23 +763,20 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 {previewData.items.map(item => (
                   <tr key={item.id}>
                     <td>
-                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="text" value={item.descrizione}
+                      <input className="acq-edit-input" type="text" value={item.descrizione}
                         onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
-                        readOnly={fieldsLocked}
                         placeholder="Nome Reparto"
                         style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
                     </td>
                     <td>
-                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="number" value={item.entrate === 0 ? '' : item.entrate}
+                      <input className="acq-edit-input" type="number" value={item.entrate === 0 ? '' : item.entrate}
                         onChange={e => handleItemChange(item.id, 'entrate', e.target.value)}
-                        readOnly={fieldsLocked}
                         placeholder="0.00"
                         style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
                     </td>
                     <td>
-                      <input className={fieldsLocked ? 'acq-readonly-input' : 'acq-edit-input'} type="number" value={item.uscite === 0 ? '' : item.uscite}
+                      <input className="acq-edit-input" type="number" value={item.uscite === 0 ? '' : item.uscite}
                         onChange={e => handleItemChange(item.id, 'uscite', e.target.value)}
-                        readOnly={fieldsLocked}
                         placeholder="0.00"
                         style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
                     </td>
@@ -806,12 +790,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
                       </span>
                     </td>
                     <td>
-                      {!fieldsLocked && (
-                        <button onClick={() => removeItem(item.id)}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
-                          <X size={16} />
-                        </button>
-                      )}
+                      <button onClick={() => removeItem(item.id)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
+                        <X size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
