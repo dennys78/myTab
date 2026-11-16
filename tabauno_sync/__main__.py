@@ -8,13 +8,14 @@ import sys
 from pathlib import Path
 
 from .extract import TabaUnoError, extract_closure
-from .service import run_service
+from .service import run_agent
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description='Estrae la chiusura giornaliera da TabaUno.')
-    parser.add_argument('--service', action='store_true', help='Lascia acceso il ciclo di estrazione.')
-    parser.add_argument('--config', help='File JSON di configurazione del servizio.')
+    parser.add_argument('--agent', action='store_true', help='Attende le richieste del portale.')
+    parser.add_argument('--service', action='store_true', help='Alias di --agent.')
+    parser.add_argument('--config', help='File JSON di configurazione dell\'agente.')
     parser.add_argument('--date', help='Giorno da estrarre, YYYY-MM-DD.')
     parser.add_argument('--db', help='Percorso di TabaUno.db.')
     parser.add_argument('--storico', help='Percorso di TabaUnoStorico.db.')
@@ -23,10 +24,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.service:
+        if args.agent or args.service:
             if not args.config:
-                parser.error('--service richiede --config')
-            run_service(args.config)
+                parser.error('--agent richiede --config')
+            run_agent(args.config)
             return 0
         if not args.date or not args.db:
             parser.error('Servono --date e --db, oppure --service --config')

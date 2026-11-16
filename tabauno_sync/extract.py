@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import time
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
@@ -52,31 +54,45 @@ def _cleanup(connection):
         Path(temp_path).unlink(missing_ok=True)
 
 
-def open_readonly(path, *, snapshot=True) -> sqlite3.Connection:
-    """Apre il DB in sola lettura. Se è in uso, prima ne fa uno snapshot con backup()."""
+def _connect_ro(source: Path) -> sqlite3.Connection:
+    connection = sqlite3.connect(_sqlite_ro_uri(source), uri=True, timeout=5)
+    connection.row_factory = sqlite3.Row
+    connection.execute('PRAGMA query_only = ON')
+    connection.execute('PRAGMA busy_timeout = 5000')
+    return connection
+
+
+def open_readonly(path, *, snapshot=False) -> sqlite3.Connection:
+    """Apre il DB in sola lettura, per poco. Lo snapshot completo è solo un'opzione di debug."""
     source = Path(path)
     if not source.is_file():
         raise TabaUnoError(f'Database non trovato: {source}')
-
     if snapshot:
         return _open_snapshot(source)
 
-    try:
-        connection = sqlite3.connect(_sqlite_ro_uri(source), uri=True)
-        connection.row_factory = sqlite3.Row
-        connection.execute('SELECT 1')
-        return connection
-    except sqlite3.OperationalError:
-        return _open_snapshot(source)
+    delays = (0.5, 1.0, 2.0)
+    last_error = None
+    for attempt in range(3):
+        try:
+            return _connect_ro(source)
+        except sqlite3.OperationalError as exc:
+            last_error = exc
+            if 'locked' not in str(exc).lower() or attempt == 2:
+                break
+            time.sleep(delays[attempt])
+    if last_error is not None and 'locked' in str(last_error).lower():
+        raise TabaUnoError(
+            'Database TabaUno occupato da una scrittura. Riprova tra qualche secondo.'
+        ) from last_error
+    raise TabaUnoError(f'Impossibile aprire {source}: {last_error}') from last_error
 
 
 def _open_snapshot(source: Path) -> sqlite3.Connection:
     handle = tempfile.NamedTemporaryFile(prefix='tabauno_', suffix='.db', delete=False)
     snapshot_path = handle.name
     handle.close()
-    origin = sqlite3.connect(str(source))
+    origin = _connect_ro(source)
     try:
-        origin.execute('PRAGMA query_only = ON')
         copy = sqlite3.connect(snapshot_path)
         try:
             origin.backup(copy)
@@ -156,7 +172,7 @@ def _is_gratta_win(code, description, ragione, amount) -> bool:
     )
 
 
-def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=True) -> dict:
+def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=False) -> dict:
     """Aggrega la chiusura del giorno. gratta='B' sposta le vincite Gratta sul reparto 90."""
     rule = str(gratta or 'B').strip().upper()
     if rule not in {'A', 'B'}:
@@ -168,12 +184,12 @@ def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=Tru
     main = open_readonly(db_path, snapshot=snapshot)
     storico = None
     try:
-        main_tables = _tables(main)
         live_table = _table(main, 'cassaglobal')
         rows = _rows(main, live_table, day)
         source = 'cassaglobal'
         catalog = main
-        if not rows and storico_path and Path(storico_path).is_file():
+        today = date.today().isoformat()
+        if not rows and day < today and storico_path and Path(storico_path).is_file():
             storico = open_readonly(storico_path, snapshot=snapshot)
             history_table = _table(storico, 'CassaGlobal', 'cassaglobal')
             rows = _rows(storico, history_table, day)
@@ -184,7 +200,15 @@ def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=Tru
             catalog, _table(catalog, 'MovimentiCassa'), 'CodiceMovimentoCassa', 'DescrizioneMovimento',
         )
         conto = _conto(catalog, _table(catalog, 'conto'), day)
-        return _aggregate(day, rows, settori, movimenti, conto, rule, source)
+        pending_close = day == today and (not rows or conto is None)
+        if pending_close:
+            rows = []
+        payload = _aggregate(day, rows, settori, movimenti, conto, rule, source)
+        payload['verifiche']['chiusura_eseguita'] = conto is not None
+        payload['verifiche']['messaggio'] = (
+            'Chiusura non ancora eseguita in TabaUno per questa data' if pending_close else ''
+        )
+        return payload
     finally:
         _cleanup(main)
         if storico is not None:

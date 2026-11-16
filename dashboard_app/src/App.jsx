@@ -684,7 +684,17 @@ function AppShell() {
                             <td className="desktop-closure-col" title={closure.image_count > 0 ? `${closure.image_count} immagini associate` : 'Nessuna immagine associata'}>
                               <ImageIcon size={17} color={closure.image_count > 0 ? 'var(--success)' : 'var(--text-subtle)'} />
                             </td>
-                            <td>{closure.date}</td>
+                            <td>
+                              {closure.date}
+                              {closure.tabauno_verifiche && (
+                                closure.tabauno_verifiche.saldo_uguale_incasso === false
+                                || closure.tabauno_verifiche.pos_piu_contanti_ok === false
+                                || closure.tabauno_verifiche.chiusura_eseguita === false
+                                || (closure.tabauno_verifiche.codici_sconosciuti || []).length > 0
+                              ) && (
+                                <span title={closure.tabauno_verifiche.messaggio || 'Controlli TabaUno non superati'} style={{ marginLeft: '0.35rem', color: 'var(--danger)', fontWeight: 700 }}>!</span>
+                              )}
+                            </td>
                             <td className="desktop-closure-col">€ {closure.summary.contanti.toFixed(2)}</td>
                             <td className="desktop-closure-col">€ {closure.summary.pag_pos.toFixed(2)}</td>
                             <td className="desktop-closure-col">€ {closure.summary.distrib.toFixed(2)}</td>

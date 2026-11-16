@@ -1,8 +1,10 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 from tabauno_sync.extract import extract_closure
 
@@ -130,6 +132,59 @@ class ExtractClosureTests(unittest.TestCase):
         payload = extract_closure(live, DAY, storico_path=self.db, gratta='A', snapshot=False)
         self.assertEqual(payload['verifiche']['sorgente'], 'CassaGlobal')
         self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 1582.7)
+
+    def test_missing_conto_marks_closure_not_done(self):
+        bare = Path(self.directory.name) / 'senza_conto.db'
+        connection = sqlite3.connect(bare)
+        connection.executescript("""
+            CREATE TABLE settori (CodiceSettore TEXT, Descrizione TEXT);
+            CREATE TABLE MovimentiCassa (CodiceMovimentoCassa TEXT, DescrizioneMovimento TEXT);
+            CREATE TABLE cassaglobal (
+                Data TEXT, CodiceSettore TEXT, Descrizione TEXT, Importo REAL, RagioneSociale TEXT
+            );
+            CREATE TABLE conto (Data TEXT, Incassi REAL, Pos REAL, Contanti REAL);
+        """)
+        connection.execute("INSERT INTO settori VALUES ('01', 'TABACCHI')")
+        connection.execute(
+            "INSERT INTO cassaglobal VALUES ('2020-01-02', '01', 'TABACCHI', 10, '')"
+        )
+        connection.commit()
+        connection.close()
+        payload = extract_closure(bare, '2020-01-02', gratta='B', snapshot=False)
+        self.assertFalse(payload['verifiche']['chiusura_eseguita'])
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 10.0)
+
+    def test_today_does_not_open_storico(self):
+        today = date.today().isoformat()
+        storico = Path(self.directory.name) / 'storico_oggi.db'
+        _build_db(storico)
+        connection = sqlite3.connect(storico)
+        connection.execute(
+            "INSERT INTO cassaglobal (Data, CodiceSettore, Descrizione, Importo, RagioneSociale) VALUES (?, '01', 'TABACCHI', 12, '')",
+            (today,),
+        )
+        connection.commit()
+        connection.close()
+        payload = extract_closure(self.db, today, storico_path=storico, gratta='B', snapshot=False)
+        self.assertEqual(payload['verifiche']['sorgente'], 'cassaglobal')
+        self.assertEqual(payload['voci'], [])
+        self.assertFalse(payload['verifiche']['chiusura_eseguita'])
+        self.assertIn('non ancora eseguita', payload['verifiche']['messaggio'])
+
+    def test_locked_database_retries_then_reads(self):
+        calls = {'n': 0}
+        real = sqlite3.connect
+
+        def flaky(target, *args, **kwargs):
+            calls['n'] += 1
+            if calls['n'] < 3:
+                raise sqlite3.OperationalError('database is locked')
+            return real(target, *args, **kwargs)
+
+        with patch('tabauno_sync.extract.time.sleep'), patch('tabauno_sync.extract.sqlite3.connect', flaky):
+            payload = extract_closure(self.db, DAY, gratta='A', snapshot=False)
+        self.assertGreaterEqual(calls['n'], 3)
+        self.assertEqual(payload['totale']['saldo'], 2855.8)
 
 
 if __name__ == '__main__':

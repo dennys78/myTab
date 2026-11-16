@@ -1,104 +1,133 @@
-"""Ciclo da lasciare acceso sul PC Windows del punto vendita."""
+"""Agente sul PC del negozio: legge TabaUno solo quando il portale lo chiede."""
 
 from __future__ import annotations
 
 import json
+import logging
+import logging.handlers
 import time
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
 from pathlib import Path
 
 from .extract import TabaUnoError, extract_closure
+
+_BACKOFF = (10, 30, 60, 300)
 
 
 def load_config(path) -> dict:
     config = json.loads(Path(path).read_text(encoding='utf-8'))
     if not config.get('tabauno_db'):
         raise TabaUnoError('Config: manca tabauno_db.')
+    if not str(config.get('mytab_url') or '').strip():
+        raise TabaUnoError('Config: manca mytab_url.')
+    if not str(config.get('agent_token') or '').strip():
+        raise TabaUnoError('Config: manca agent_token.')
     config.setdefault('storico_db', '')
     config.setdefault('gratta', 'B')
-    config.setdefault('output_dir', 'output')
-    config.setdefault('poll_seconds', 300)
-    config.setdefault('mytab_url', '')
-    config.setdefault('mytab_token', '')
-    config.setdefault('company_id', None)
+    config.setdefault('poll_seconds', 10)
+    config.setdefault('log_dir', 'logs')
     return config
 
 
-def _canonical(payload) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+def _logger(config) -> logging.Logger:
+    log_dir = Path(config.get('log_dir') or 'logs')
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger('tabauno_agent')
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    handler = logging.handlers.RotatingFileHandler(
+        log_dir / 'tabauno_agent.log',
+        maxBytes=1_000_000,
+        backupCount=5,
+        encoding='utf-8',
+    )
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
 
 
-def write_if_changed(destination: Path, payload) -> bool:
-    text = json.dumps(payload, ensure_ascii=False, indent=2) + '\n'
-    if destination.is_file() and destination.read_text(encoding='utf-8') == text:
-        return False
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(text, encoding='utf-8')
-    return True
-
-
-def post_closure(config, payload) -> dict:
-    base = str(config.get('mytab_url') or '').rstrip('/')
-    token = str(config.get('mytab_token') or '').strip()
-    if not base or not token:
-        return {'skipped': True}
-    body = dict(payload)
-    if config.get('company_id'):
-        body['company_id'] = config['company_id']
+def _request(config, method, path, body=None):
+    base = str(config['mytab_url']).rstrip('/')
+    data = None if body is None else json.dumps(body).encode('utf-8')
     request = urllib.request.Request(
-        f'{base}/api/closures/import-tabauno/',
-        data=json.dumps(body).encode('utf-8'),
+        f'{base}{path}',
+        data=data,
         headers={
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {token}',
+            'Authorization': f"Bearer {config['agent_token']}",
+            'Accept': 'application/json',
+            **({'Content-Type': 'application/json'} if data is not None else {}),
         },
-        method='POST',
+        method=method,
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode('utf-8'))
+            raw = response.read()
+            if response.status == 204 or not raw:
+                return response.status, None
+            return response.status, json.loads(raw.decode('utf-8'))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', errors='replace')
-        raise TabaUnoError(f'Import myTaba {exc.code}: {detail}') from exc
+        raise TabaUnoError(f'{method} {path} -> {exc.code}: {detail}') from exc
 
 
-def sync_day(config, day: str) -> dict:
-    payload = extract_closure(
-        config['tabauno_db'],
+def poll_once(config, logger) -> None:
+    status, payload = _request(config, 'GET', '/api/tabauno/agent/next/')
+    if status == 204 or not payload:
+        return
+    request_id = payload.get('id')
+    day = payload.get('data')
+    gratta = payload.get('gratta') or config.get('gratta') or 'B'
+    started = time.perf_counter()
+    logger.info('richiesta id=%s data=%s', request_id, day)
+    try:
+        extracted = extract_closure(
+            config['tabauno_db'],
+            day,
+            storico_path=config.get('storico_db') or None,
+            gratta=gratta,
+            snapshot=False,
+        )
+    except TabaUnoError as exc:
+        logger.info('lettura fallita id=%s data=%s errore=%s', request_id, day, exc)
+        _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
+            'ok': False,
+            'errore': str(exc),
+        })
+        return
+    elapsed = time.perf_counter() - started
+    logger.info(
+        'lettura id=%s data=%s durata=%.3fs totale=%s',
+        request_id,
         day,
-        storico_path=config.get('storico_db') or None,
-        gratta=config.get('gratta') or 'B',
+        elapsed,
+        extracted.get('totale', {}).get('saldo'),
     )
-    output_dir = Path(config['output_dir'])
-    destination = output_dir / f'{day}.json'
-    changed = write_if_changed(destination, payload)
-    posted = None
-    if changed and not payload['verifiche']['senza_righe']:
-        posted = post_closure(config, payload)
-    return {'data': day, 'path': str(destination), 'changed': changed, 'posted': posted}
+    _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
+        'ok': True,
+        'payload': extracted,
+    })
 
 
-def run_once(config) -> list:
-    today = date.today()
-    days = [today.isoformat(), (today - timedelta(days=1)).isoformat()]
-    output_dir = Path(config['output_dir'])
-    results = []
-    for day in days:
-        if day != today.isoformat() and (output_dir / f'{day}.json').is_file():
-            continue
-        results.append(sync_day(config, day))
-    return results
-
-
-def run_service(config_path) -> None:
+def run_agent(config_path) -> None:
     config = load_config(config_path)
-    interval = max(30, int(config.get('poll_seconds') or 300))
+    logger = _logger(config)
+    interval = max(5, int(config.get('poll_seconds') or 10))
+    failures = 0
+    logger.info('agente avviato, poll=%ss', interval)
     while True:
         try:
-            for result in run_once(config):
-                print(f"{result['data']} {'aggiornato' if result['changed'] else 'invariato'}")
+            poll_once(config, logger)
+            failures = 0
+            time.sleep(interval)
         except TabaUnoError as exc:
-            print(f'errore: {exc}')
-        time.sleep(interval)
+            logger.warning('rete: %s', exc)
+            delay = _BACKOFF[min(failures, len(_BACKOFF) - 1)]
+            failures += 1
+            time.sleep(delay)
+        except Exception:
+            logger.exception('errore imprevisto')
+            delay = _BACKOFF[min(failures, len(_BACKOFF) - 1)]
+            failures += 1
+            time.sleep(delay)

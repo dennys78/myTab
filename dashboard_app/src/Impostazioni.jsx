@@ -58,6 +58,8 @@ export default function Impostazioni({ section = 'generali' }) {
   const [saved, setSaved] = useState(false);
   const [savingUserModel, setSavingUserModel] = useState(false);
   const [userModelSaved, setUserModelSaved] = useState(false);
+  const [tabaunoToken, setTabaunoToken] = useState('');
+  const [savingTabaunoToken, setSavingTabaunoToken] = useState(false);
   const [error, setError] = useState(null);
   const [saldoCassa, setSaldoCassa] = useState('');
   const [fondoCassa, setFondoCassa] = useState('');
@@ -304,6 +306,19 @@ export default function Impostazioni({ section = 'generali' }) {
       })
       .catch(() => setError('Errore di rete.'))
       .finally(() => setSavingUserModel(false));
+  };
+
+  const regenerateTabaunoToken = () => {
+    setSavingTabaunoToken(true);
+    setError(null);
+    apiFetch('/api/tabauno/agent/token/', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'success' && d.token) setTabaunoToken(d.token);
+        else setError(d.error || 'Impossibile generare il token.');
+      })
+      .catch(() => setError('Errore di rete.'))
+      .finally(() => setSavingTabaunoToken(false));
   };
 
   const handleSaveApiKeys = () => {
@@ -737,6 +752,22 @@ export default function Impostazioni({ section = 'generali' }) {
             </button>
           </>
         ) : null}
+      </div>
+      )}
+
+      {showGenerali && isAdmin && (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>PC negozio TabaUno</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Genera il token dell&apos;agente Windows. Viene mostrato una sola volta: copialo in config.json come agent_token.
+        </p>
+        <button type="button" onClick={regenerateTabaunoToken} disabled={savingTabaunoToken}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
+          {savingTabaunoToken ? 'Generazione…' : 'Genera token agente'}
+        </button>
+        {tabaunoToken && (
+          <p style={{ marginTop: '0.8rem', fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem', wordBreak: 'break-all' }}>{tabaunoToken}</p>
+        )}
       </div>
       )}
 

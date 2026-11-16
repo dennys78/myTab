@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import ricevute_views
+from . import tabauno_portal
 
 urlpatterns = [
     # Auth
@@ -18,6 +19,12 @@ urlpatterns = [
     # Chiusure
     path('api/closures/insert/',                    views.api_insert_closure),
     path('api/closures/import-tabauno/',            views.api_import_tabauno_closure),
+    path('api/tabauno/status/',                     tabauno_portal.api_tabauno_status),
+    path('api/tabauno/requests/',                   tabauno_portal.api_tabauno_requests),
+    path('api/tabauno/requests/<int:request_id>/',  tabauno_portal.api_tabauno_request_detail),
+    path('api/tabauno/agent/token/',                tabauno_portal.api_tabauno_rotate_token),
+    path('api/tabauno/agent/next/',                 tabauno_portal.api_tabauno_agent_next),
+    path('api/tabauno/agent/result/<int:request_id>/', tabauno_portal.api_tabauno_agent_result),
     path('api/closures/extract/',                   views.api_extract_closure),
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),

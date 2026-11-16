@@ -1,8 +1,10 @@
 import json
-import os
+from datetime import timedelta
 from decimal import Decimal
 
-from django.test import SimpleTestCase, TestCase
+from django.contrib.auth.models import User
+from django.test import Client, SimpleTestCase, TestCase
+from django.utils import timezone
 
 from reconciliation.draft_notifications import build_closure_incasso_summary
 from reconciliation.telegram_fondo_cassa import parse_fondo_command, parse_preleva_destinazione
@@ -197,59 +199,136 @@ class ClosureIncassoSummaryTests(SimpleTestCase):
         self.assertEqual(result['differenza'], -12.5)
 
 
-class TabaUnoImportTests(TestCase):
+class TabaUnoQueueTests(TestCase):
     def setUp(self):
-        from reconciliation.models import Company
+        from reconciliation.models import Company, TabaUnoAgent
+        from reconciliation.tabauno_portal import _digest
         self.company = Company.objects.create(denominazione='Tabacchi')
-        self.payload = {
-            'data': '2026-11-16',
-            'company_id': self.company.id,
-            'voci': [
-                {'reparto': '01', 'descrizione': 'TABACCHI', 'entrate': 1582.70, 'uscite': 0, 'saldo': 1582.70},
-            ],
-            'totale': {'entrate': 3302.50, 'uscite': 446.70, 'saldo': 2855.80},
-            'incasso': {'pos': 699.70, 'contanti': 2156.10, 'totale': 2855.80},
-            'verifiche': {'saldo_uguale_incasso': True},
-        }
-        self._previous = os.environ.get('TABAUNO_IMPORT_TOKEN')
-        os.environ['TABAUNO_IMPORT_TOKEN'] = 'secret-token'
+        self.other = Company.objects.create(denominazione='Altra')
+        self.user = User.objects.create_user('operatore', password='secret', is_staff=True)
+        self.token = 'agent-secret'
+        TabaUnoAgent.objects.create(company=self.company, token_hash=_digest(self.token))
+        self.client.login(username='operatore', password='secret')
+        session = self.client.session
+        session['active_company_id'] = self.company.id
+        session.save()
 
-    def tearDown(self):
-        if self._previous is None:
-            os.environ.pop('TABAUNO_IMPORT_TOKEN', None)
-        else:
-            os.environ['TABAUNO_IMPORT_TOKEN'] = self._previous
-
-    def _post(self, token='secret-token'):
+    def _queue(self, day='2026-11-16'):
         return self.client.post(
-            '/api/closures/import-tabauno/',
-            data=json.dumps(self.payload),
+            '/api/tabauno/requests/',
+            data=json.dumps({'date': day}),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {token}',
         )
 
-    def test_creates_once_and_leaves_manual_fields_empty(self):
-        from reconciliation.models import CashClosure
-        created = self._post()
-        self.assertEqual(created.status_code, 201)
-        body = created.json()
-        self.assertTrue(body['created'])
-        closure = CashClosure.objects.get(id=body['id'])
-        self.assertEqual(closure.operator, 'TabaUno')
-        self.assertEqual(closure.contanti, Decimal('2156.10'))
-        self.assertEqual(closure.pag_pos, Decimal('699.70'))
-        self.assertEqual(closure.totale_generale, Decimal('2855.80'))
-        self.assertEqual(closure.cassa_auto, Decimal('0.00'))
-        self.assertEqual(closure.reso_cont, Decimal('0.00'))
-        self.assertEqual(closure.distrib, Decimal('0.00'))
-        self.assertEqual(closure.items.get().department_name, 'TABACCHI')
+    def test_create_and_deduplicate(self):
+        first = self._queue()
+        self.assertEqual(first.status_code, 201)
+        second = self._queue()
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(second.json()['created'])
+        self.assertEqual(first.json()['id'], second.json()['id'])
 
-        again = self._post()
-        self.assertEqual(again.status_code, 200)
-        self.assertEqual(again.json()['status'], 'exists')
-        self.assertEqual(again.json()['id'], closure.id)
-        self.assertEqual(CashClosure.objects.filter(company=self.company, date='2026-11-16').count(), 1)
+    def test_future_date_rejected(self):
+        response = self._queue('2999-01-01')
+        self.assertEqual(response.status_code, 400)
 
-    def test_rejects_missing_token(self):
-        denied = self._post(token='altro')
+    def test_next_empty_then_claim_once(self):
+        empty = self.client.get(
+            '/api/tabauno/agent/next/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(empty.status_code, 204)
+        queued = self._queue()
+        request_id = queued.json()['id']
+        first = self.client.get(
+            '/api/tabauno/agent/next/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        second = self.client.get(
+            '/api/tabauno/agent/next/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()['id'], request_id)
+        self.assertEqual(second.status_code, 204)
+        self.assertNotEqual(getattr(second, 'content', b''), first.content)
+
+    def test_two_pending_are_not_the_same_claim(self):
+        first_id = self._queue('2026-11-15').json()['id']
+        second_id = self._queue('2026-11-14').json()['id']
+        claimed = []
+        for _ in range(2):
+            response = self.client.get(
+                '/api/tabauno/agent/next/',
+                HTTP_AUTHORIZATION=f'Bearer {self.token}',
+            )
+            self.assertEqual(response.status_code, 200)
+            claimed.append(response.json()['id'])
+        self.assertEqual(sorted(claimed), sorted([first_id, second_id]))
+        self.assertEqual(len(set(claimed)), 2)
+
+    def test_result_only_while_processing_and_same_company(self):
+        from reconciliation.models import TabaUnoAgent, TabaUnoRequest
+        from reconciliation.tabauno_portal import _digest
+        request_id = self._queue().json()['id']
+        too_soon = self.client.post(
+            f'/api/tabauno/agent/result/{request_id}/',
+            data=json.dumps({'ok': True, 'payload': {'data': '2026-11-16'}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(too_soon.status_code, 409)
+        self.client.get('/api/tabauno/agent/next/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        other_token = 'altro-agente'
+        TabaUnoAgent.objects.create(company=self.other, token_hash=_digest(other_token))
+        foreign = self.client.post(
+            f'/api/tabauno/agent/result/{request_id}/',
+            data=json.dumps({'ok': True, 'payload': {'data': '2026-11-16'}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {other_token}',
+        )
+        self.assertEqual(foreign.status_code, 409)
+        done = self.client.post(
+            f'/api/tabauno/agent/result/{request_id}/',
+            data=json.dumps({'ok': True, 'payload': {'data': '2026-11-16', 'voci': []}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(done.status_code, 200)
+        self.assertEqual(TabaUnoRequest.objects.get(id=request_id).status, 'done')
+
+    def test_bad_token_is_unauthorized(self):
+        denied = self.client.get(
+            '/api/tabauno/agent/next/',
+            HTTP_AUTHORIZATION='Bearer no',
+        )
         self.assertEqual(denied.status_code, 401)
+
+    def test_pending_and_processing_expire(self):
+        from reconciliation.models import TabaUnoRequest
+        request_id = self._queue().json()['id']
+        TabaUnoRequest.objects.filter(id=request_id).update(
+            created_at=timezone.now() - timedelta(minutes=11),
+        )
+        detail = self.client.get(f'/api/tabauno/requests/{request_id}/')
+        self.assertEqual(detail.json()['status'], 'expired')
+
+        fresh = self._queue('2026-11-10')
+        fresh_id = fresh.json()['id']
+        self.client.get('/api/tabauno/agent/next/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        TabaUnoRequest.objects.filter(id=fresh_id).update(
+            picked_at=timezone.now() - timedelta(minutes=6),
+        )
+        detail = self.client.get(f'/api/tabauno/requests/{fresh_id}/')
+        self.assertEqual(detail.json()['status'], 'error')
+        self.assertIn('non ha risposto', detail.json()['error'])
+
+    def test_portal_post_without_csrf_is_rejected(self):
+        client = Client(enforce_csrf_checks=True)
+        client.login(username='operatore', password='secret')
+        response = client.post(
+            '/api/tabauno/requests/',
+            data=json.dumps({'date': '2026-11-16'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)

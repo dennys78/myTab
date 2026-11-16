@@ -2,9 +2,8 @@
   "tabauno_db": "C:\\\\TabaUno\\\\DB\\\\TabaUno.db",
   "storico_db": "C:\\\\TabaUno\\\\DB\\\\TabaUnoStorico.db",
   "gratta": "B",
-  "output_dir": "output",
-  "poll_seconds": 300,
   "mytab_url": "https://www.mytab.uk",
-  "mytab_token": "",
-  "company_id": null
+  "agent_token": "",
+  "poll_seconds": 10,
+  "log_dir": "logs"
 }

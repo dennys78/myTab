@@ -72,6 +72,7 @@ class CashClosure(models.Model):
     differenza = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Differenza")
     
     image_ref = models.ImageField(upload_to='closures/%Y/%m/', null=True, blank=True, verbose_name="Immagine di Riferimento")
+    tabauno_verifiche = models.JSONField(null=True, blank=True, verbose_name='Verifiche TabaUno')
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -422,3 +423,51 @@ class BankTransaction(models.Model):
 
     def __str__(self):
         return f"{self.get_transaction_type_display()} del {self.date.strftime('%d/%m/%Y')} - €{self.amount}"
+
+
+class TabaUnoAgent(models.Model):
+    company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name='tabauno_agent')
+    token_hash = models.CharField(max_length=64, blank=True, default='')
+    last_seen = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Agente TabaUno'
+        verbose_name_plural = 'Agenti TabaUno'
+
+    def __str__(self):
+        return f'Agente {self.company}'
+
+
+class TabaUnoRequest(models.Model):
+    PENDING = 'pending'
+    PROCESSING = 'processing'
+    DONE = 'done'
+    ERROR = 'error'
+    EXPIRED = 'expired'
+    STATUS_CHOICES = [
+        (PENDING, 'In coda'),
+        (PROCESSING, 'In lettura'),
+        (DONE, 'Pronta'),
+        (ERROR, 'Errore'),
+        (EXPIRED, 'Scaduta'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tabauno_requests')
+    date = models.DateField()
+    gratta = models.CharField(max_length=1, default='B')
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=PENDING)
+    requested_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='tabauno_requests')
+    payload = models.JSONField(null=True, blank=True)
+    error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    picked_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Richiesta TabaUno'
+        verbose_name_plural = 'Richieste TabaUno'
+        ordering = ['created_at', 'id']
+
+    def __str__(self):
+        return f'{self.company} {self.date} {self.status}'

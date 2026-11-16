@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import base64
 import copy
-import hmac
 import io
 import os
 import re
@@ -19,7 +18,7 @@ from functools import wraps
 from django.http import FileResponse, JsonResponse
 from django.core.files.base import ContentFile
 from django.db import close_old_connections
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db import transaction
@@ -622,28 +621,57 @@ def api_insert_closure(request):
             if not parsed_date:
                 return JsonResponse({'error': 'Formato data non valido, usa YYYY-MM-DD'}, status=400)
 
+            from_tabauno = bool(data.get('from_tabauno'))
+            verifiche = data.get('tabauno_verifiche') if from_tabauno else None
+            existing = None
+            if from_tabauno:
+                existing = CashClosure.objects.filter(company=company, date=parsed_date).order_by('id').first()
+                if existing and not data.get('replace_existing'):
+                    return JsonResponse({
+                        'status': 'exists',
+                        'id': existing.id,
+                        'error': 'Esiste già una chiusura per questa data.',
+                    }, status=409)
+
             with transaction.atomic():
                 draft = None
                 draft_id = data.get('draft_id')
                 if draft_id:
                     draft = AcquisitionDraft.objects.prefetch_related('images').filter(id=draft_id, company=company, status='pending').first()
 
-                # Inserimento Master
-                closure = CashClosure.objects.create(
-                    company=company,
-                    date=parsed_date,
-                    operator=operator,
-                    submitted_by=draft.operator if draft else '',
-                    contanti=_money(summary.get('contanti')),
-                    pag_pos=_money(summary.get('pag_pos')),
-                    cassa_auto=_money(summary.get('cassa_auto')),
-                    reso_cont=_money(summary.get('reso_cont')),
-                    reso_auto=_money(summary.get('reso_auto')),
-                    distrib=_money(summary.get('distrib')),
-                    totale_generale=_money(summary.get('totale')),
-                    totale_cassetto=_money(summary.get('totale_cassetto')),
-                    differenza=_money(summary.get('differenza')),
-                )
+                if existing:
+                    closure = existing
+                    closure.operator = operator
+                    closure.submitted_by = draft.operator if draft else (closure.submitted_by or '')
+                    closure.contanti = _money(summary.get('contanti'))
+                    closure.pag_pos = _money(summary.get('pag_pos'))
+                    closure.cassa_auto = _money(summary.get('cassa_auto'))
+                    closure.reso_cont = _money(summary.get('reso_cont'))
+                    closure.reso_auto = _money(summary.get('reso_auto'))
+                    closure.distrib = _money(summary.get('distrib'))
+                    closure.totale_generale = _money(summary.get('totale'))
+                    closure.totale_cassetto = _money(summary.get('totale_cassetto'))
+                    closure.differenza = _money(summary.get('differenza'))
+                    closure.tabauno_verifiche = verifiche
+                    closure.save()
+                    closure.items.all().delete()
+                else:
+                    closure = CashClosure.objects.create(
+                        company=company,
+                        date=parsed_date,
+                        operator=operator,
+                        submitted_by=draft.operator if draft else '',
+                        contanti=_money(summary.get('contanti')),
+                        pag_pos=_money(summary.get('pag_pos')),
+                        cassa_auto=_money(summary.get('cassa_auto')),
+                        reso_cont=_money(summary.get('reso_cont')),
+                        reso_auto=_money(summary.get('reso_auto')),
+                        distrib=_money(summary.get('distrib')),
+                        totale_generale=_money(summary.get('totale')),
+                        totale_cassetto=_money(summary.get('totale_cassetto')),
+                        differenza=_money(summary.get('differenza')),
+                        tabauno_verifiche=verifiche,
+                    )
 
                 # Auto-popola archivio reparti e inserisce le righe
                 known_depts = list(Department.objects.filter(company=company).values_list('name', flat=True))
@@ -712,36 +740,9 @@ def api_insert_closure(request):
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
 
 
-def _tabauno_token_ok(request):
-    expected = os.environ.get('TABAUNO_IMPORT_TOKEN', '').strip()
-    if not expected:
-        expected = _get_global_setting('tabauno_import_token')
-    header = request.headers.get('Authorization', '')
-    presented = header[7:].strip() if header.lower().startswith('bearer ') else ''
-    if not expected or not presented:
-        return False
-    return hmac.compare_digest(expected, presented)
-
-
-def _company_for_tabauno(data):
-    company_id = data.get('company_id')
-    if company_id:
-        company = Company.objects.filter(id=company_id).first()
-        if not company:
-            return None, JsonResponse({'status': 'error', 'error': 'Azienda non trovata.'}, status=404)
-        return company, None
-    companies = list(Company.objects.order_by('id')[:2])
-    if len(companies) == 1:
-        return companies[0], None
-    return None, JsonResponse(
-        {'status': 'error', 'error': 'Specifica company_id: ci sono più aziende.'},
-        status=400,
-    )
-
-
-@csrf_exempt
+@require_auth
 def api_import_tabauno_closure(request):
-    """Crea la chiusura dal JSON TabaUno. Non sovrascrive un giorno già presente."""
+    """Import diretto con sessione e CSRF. Il flusso del portale usa la coda agente."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
     try:
@@ -749,16 +750,9 @@ def api_import_tabauno_closure(request):
     except json.JSONDecodeError:
         return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
 
-    if request.user.is_authenticated:
-        company, err = bind_company(request)
-        if err:
-            return err
-    elif _tabauno_token_ok(request):
-        company, err = _company_for_tabauno(data)
-        if err:
-            return err
-    else:
-        return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+    company, err = bind_company(request)
+    if err:
+        return err
 
     day = parse_date(str(data.get('data') or data.get('date') or ''))
     if not day:
@@ -788,6 +782,7 @@ def api_import_tabauno_closure(request):
             totale_generale=_money(totale.get('saldo')),
             totale_cassetto=MONEY_ZERO,
             differenza=MONEY_ZERO,
+            tabauno_verifiche=data.get('verifiche') or None,
         )
         known_depts = list(Department.objects.filter(company=company).values_list('name', flat=True))
         for item in voci:
@@ -930,6 +925,7 @@ def api_list_closures(request):
                     'totale_cassetto': float(c.totale_cassetto),
                     'differenza': float(c.differenza),
                 },
+                'tabauno_verifiche': c.tabauno_verifiche,
                 'items': items
             })
             

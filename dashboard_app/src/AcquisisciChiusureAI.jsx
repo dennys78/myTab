@@ -19,6 +19,58 @@ import {
 } from './acquisitionProgress';
 import { useCompactCaptureUI } from './useCompactCaptureUI';
 
+function localIsoDate() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function tabaunoIssues(verifiche) {
+  if (!verifiche) return [];
+  const issues = [];
+  if (verifiche.messaggio) issues.push(verifiche.messaggio);
+  else if (verifiche.chiusura_eseguita === false) issues.push('Chiusura non ancora eseguita in TabaUno.');
+  if (verifiche.saldo_uguale_incasso === false) issues.push('Il saldo delle voci non coincide con l\'incasso.');
+  if (verifiche.pos_piu_contanti_ok === false) issues.push('POS + contanti non coincidono con l\'incasso.');
+  if (Array.isArray(verifiche.codici_sconosciuti) && verifiche.codici_sconosciuti.length) {
+    issues.push(`Codici sconosciuti: ${verifiche.codici_sconosciuti.join(', ')}`);
+  }
+  return issues;
+}
+
+function previewFromTabauno(payload) {
+  const incasso = payload.incasso || {};
+  const totale = payload.totale || {};
+  return {
+    date: payload.data,
+    from_tabauno: true,
+    tabauno_verifiche: payload.verifiche || {},
+    with_reports: false,
+    totale_from_saldi: false,
+    items: (payload.voci || []).map((voce, index) => ({
+      id: `tabauno_${index}`,
+      descrizione: voce.descrizione || '',
+      entrate: Number(voce.entrate) || 0,
+      uscite: Number(voce.uscite) || 0,
+      saldo: Number(voce.saldo) || 0,
+    })),
+    summary: {
+      contanti: Number(incasso.contanti) || 0,
+      pag_pos: Number(incasso.pos) || 0,
+      cassa_auto: 0,
+      reso_cont: 0,
+      reso_auto: 0,
+      distrib: 0,
+      totale: Number(totale.saldo) || 0,
+      totale_cassetto: 0,
+      differenza: 0,
+    },
+  };
+}
+
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 1024px)').matches);
   useEffect(() => {
@@ -55,6 +107,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const loadDraftRequestIdRef = useRef(0);
   const progressControllerRef = useRef(null);
   const [extractProgress, setExtractProgress] = useState(null);
+  const [tabaunoDate, setTabaunoDate] = useState(localIsoDate);
+  const [agentOnline, setAgentOnline] = useState(null);
+  const [tabaunoWait, setTabaunoWait] = useState(false);
+  const tabaunoPollRef = useRef(null);
 
   const fetchDrafts = () => {
     apiFetch('/api/acquisition-drafts/')
@@ -66,6 +122,14 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   useEffect(() => { fetchDrafts(); }, []);
+
+  useEffect(() => {
+    apiFetch('/api/tabauno/status/')
+      .then(r => r.json())
+      .then(d => { if (d.status === 'success') setAgentOnline(Boolean(d.agent_online)); })
+      .catch(() => {});
+    return () => { if (tabaunoPollRef.current) clearTimeout(tabaunoPollRef.current); };
+  }, []);
 
   useEffect(() => {
     markAcquisitionDraftsSeen();
@@ -428,6 +492,63 @@ export default function AcquisisciChiusureAI({ onBack }) {
     };
   });
 
+  const importFromTabauno = () => {
+    if (tabaunoWait) return;
+    setError(null);
+    setTabaunoWait(true);
+    apiFetch('/api/tabauno/requests/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: tabaunoDate, gratta: 'B' }),
+    })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok || !d.id) {
+          setError(d.error || 'Impossibile accodare la richiesta.');
+          setTabaunoWait(false);
+          return;
+        }
+        if (typeof d.agent_online === 'boolean') setAgentOnline(d.agent_online);
+        const started = Date.now();
+        const poll = () => {
+          apiFetch(`/api/tabauno/requests/${d.id}/`)
+            .then(r => r.json())
+            .then(status => {
+              if (typeof status.agent_online === 'boolean') setAgentOnline(status.agent_online);
+              if (status.status === 'done') {
+                setTabaunoWait(false);
+                applyPreviewData(previewFromTabauno(status.payload || {}));
+                const issues = tabaunoIssues(status.payload?.verifiche);
+                if (issues.length) setError(issues.join(' '));
+                return;
+              }
+              if (status.status === 'error' || status.status === 'expired') {
+                setTabaunoWait(false);
+                setError(status.error || (status.status === 'expired'
+                  ? 'Il PC del negozio non ha risposto in tempo.'
+                  : 'Lettura TabaUno non riuscita.'));
+                return;
+              }
+              if (Date.now() - started > 120000) {
+                setTabaunoWait(false);
+                setError('Ancora in attesa del PC del negozio. Riprova.');
+                return;
+              }
+              tabaunoPollRef.current = setTimeout(poll, 2000);
+            })
+            .catch(() => {
+              setTabaunoWait(false);
+              setError('Errore di rete durante l\'attesa del PC del negozio.');
+            });
+        };
+        tabaunoPollRef.current = setTimeout(poll, 2000);
+      })
+      .catch(() => {
+        setTabaunoWait(false);
+        setError('Errore di rete.');
+      });
+  };
+
   const handleAcquire = async () => {
     const cleanItems = previewData.items.map(item => {
       const cleanItem = { ...item, uscite: Math.abs(Number(item.uscite) || 0), saldo: calcItemSaldo(item) };
@@ -458,10 +579,41 @@ export default function AcquisisciChiusureAI({ onBack }) {
         summary: summaryPayload,
         items: cleanItems,
         draft_id: previewData.draft_id,
+        from_tabauno: !!previewData.from_tabauno,
+        tabauno_verifiche: previewData.tabauno_verifiche || null,
+        replace_existing: false,
       }),
     })
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
+        if (r.status === 409 && d.status === 'exists' && previewData.from_tabauno) {
+          const replace = window.confirm('Esiste già una chiusura per questa data. Sostituirla con i dati in anteprima?');
+          if (!replace) {
+            setError('Salvataggio annullato: la chiusura già presente non è stata modificata.');
+            return;
+          }
+          const retry = await apiFetch('/api/closures/insert/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date: previewData.date,
+              operator: user?.username || 'IA Groq',
+              summary: summaryPayload,
+              items: cleanItems,
+              from_tabauno: true,
+              tabauno_verifiche: previewData.tabauno_verifiche || null,
+              replace_existing: true,
+            }),
+          });
+          const replaced = await retry.json().catch(() => ({}));
+          if (!retry.ok || replaced.status !== 'success') {
+            setError(replaced.error || 'Errore durante la sostituzione.');
+            return;
+          }
+          alert(replaced.confirmation_message || 'Chiusura sostituita.');
+          onBack();
+          return;
+        }
         if (!r.ok && d.status !== 'success' && !d.id) {
           setError(d.error || `Errore salvataggio (${r.status}).`);
           return;
@@ -550,6 +702,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
     return (
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        {tabaunoIssues(previewData.tabauno_verifiche).length > 0 && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.9rem 1rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            {tabaunoIssues(previewData.tabauno_verifiche).map(issue => (
+              <div key={issue}>{issue}</div>
+            ))}
+          </div>
+        )}
 
         {(extractProgress || reextracting) && (
           <div style={{ marginBottom: '1rem' }}>
@@ -859,6 +1018,29 @@ export default function AcquisisciChiusureAI({ onBack }) {
           ? <> — modificalo in <strong style={{ color: 'var(--text-main)' }}>Impostazioni</strong></>
           : <> — impostato dall&apos;amministratore</>}
       </p>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+          <strong>Importa da TabaUno</strong>
+          <span style={{ fontSize: '0.8rem', color: agentOnline ? '#22c55e' : 'var(--text-muted)' }}>
+            {agentOnline === null ? 'PC negozio …' : agentOnline ? 'PC negozio online' : 'PC negozio offline'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="date" value={tabaunoDate} max={localIsoDate()} onChange={e => setTabaunoDate(e.target.value)}
+            style={{ padding: '0.55rem 0.7rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '8px' }} />
+          <button type="button" onClick={importFromTabauno} disabled={tabaunoWait}
+            style={{ padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
+            {tabaunoWait ? 'In attesa del PC del negozio…' : 'Importa da TabaUno'}
+          </button>
+          {!tabaunoWait && error && /negozio|TabaUno/i.test(error) && (
+            <button type="button" onClick={importFromTabauno}
+              style={{ padding: '0.55rem 0.8rem', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer' }}>
+              Riprova
+            </button>
+          )}
+        </div>
+      </div>
 
       {error && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.9rem 1rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
