@@ -57,6 +57,7 @@ def _request(config, method, path, body=None):
         headers={
             'Authorization': f"Bearer {config['agent_token']}",
             'Accept': 'application/json',
+            'User-Agent': 'myTaba-TabaUnoAgent/1.0',
             **({'Content-Type': 'application/json'} if data is not None else {}),
         },
         method=method,
@@ -75,6 +76,7 @@ def _request(config, method, path, body=None):
 def poll_once(config, logger) -> None:
     status, payload = _request(config, 'GET', '/api/tabauno/agent/next/')
     if status == 204 or not payload:
+        logger.info('contatto ok, nessuna richiesta')
         return
     request_id = payload.get('id')
     day = payload.get('data')
