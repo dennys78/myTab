@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import base64
 import copy
+import hmac
 import io
 import os
 import re
@@ -18,7 +19,7 @@ from functools import wraps
 from django.http import FileResponse, JsonResponse
 from django.core.files.base import ContentFile
 from django.db import close_old_connections
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db import transaction
@@ -709,6 +710,110 @@ def api_insert_closure(request):
             return JsonResponse({'error': str(e)}, status=500)
             
     return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
+
+
+def _tabauno_token_ok(request):
+    expected = os.environ.get('TABAUNO_IMPORT_TOKEN', '').strip()
+    if not expected:
+        expected = _get_global_setting('tabauno_import_token')
+    header = request.headers.get('Authorization', '')
+    presented = header[7:].strip() if header.lower().startswith('bearer ') else ''
+    if not expected or not presented:
+        return False
+    return hmac.compare_digest(expected, presented)
+
+
+def _company_for_tabauno(data):
+    company_id = data.get('company_id')
+    if company_id:
+        company = Company.objects.filter(id=company_id).first()
+        if not company:
+            return None, JsonResponse({'status': 'error', 'error': 'Azienda non trovata.'}, status=404)
+        return company, None
+    companies = list(Company.objects.order_by('id')[:2])
+    if len(companies) == 1:
+        return companies[0], None
+    return None, JsonResponse(
+        {'status': 'error', 'error': 'Specifica company_id: ci sono più aziende.'},
+        status=400,
+    )
+
+
+@csrf_exempt
+def api_import_tabauno_closure(request):
+    """Crea la chiusura dal JSON TabaUno. Non sovrascrive un giorno già presente."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Metodo non consentito. Usa POST.'}, status=405)
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+
+    if request.user.is_authenticated:
+        company, err = bind_company(request)
+        if err:
+            return err
+    elif _tabauno_token_ok(request):
+        company, err = _company_for_tabauno(data)
+        if err:
+            return err
+    else:
+        return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+
+    day = parse_date(str(data.get('data') or data.get('date') or ''))
+    if not day:
+        return JsonResponse({'status': 'error', 'error': 'Campo data obbligatorio (YYYY-MM-DD).'}, status=400)
+    voci = data.get('voci')
+    if not isinstance(voci, list):
+        return JsonResponse({'status': 'error', 'error': 'Campo voci obbligatorio.'}, status=400)
+
+    existing = CashClosure.objects.filter(company=company, date=day).order_by('id').first()
+    if existing:
+        return JsonResponse({'status': 'exists', 'id': existing.id, 'created': False})
+
+    incasso = data.get('incasso') or {}
+    totale = data.get('totale') or {}
+    with transaction.atomic():
+        closure = CashClosure.objects.create(
+            company=company,
+            date=day,
+            operator='TabaUno',
+            submitted_by='TabaUno',
+            contanti=_money(incasso.get('contanti')),
+            pag_pos=_money(incasso.get('pos')),
+            cassa_auto=MONEY_ZERO,
+            reso_cont=MONEY_ZERO,
+            reso_auto=MONEY_ZERO,
+            distrib=MONEY_ZERO,
+            totale_generale=_money(totale.get('saldo')),
+            totale_cassetto=MONEY_ZERO,
+            differenza=MONEY_ZERO,
+        )
+        known_depts = list(Department.objects.filter(company=company).values_list('name', flat=True))
+        for item in voci:
+            dept_name = _department_for_import(
+                item.get('descrizione', ''),
+                known_depts,
+                company,
+                create_missing=True,
+            )
+            entrate = _money(item.get('entrate'))
+            uscite = abs(_money(item.get('uscite')))
+            CashClosureItem.objects.create(
+                closure=closure,
+                department_name=dept_name,
+                incomes=entrate,
+                expenses=uscite,
+                balance=_money(entrate - uscite),
+            )
+
+    return JsonResponse({
+        'status': 'success',
+        'id': closure.id,
+        'created': True,
+        'verifiche': data.get('verifiche') or {},
+    }, status=201)
+
 
 @require_admin
 def api_extract_closure(request):

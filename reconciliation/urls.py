@@ -17,6 +17,7 @@ urlpatterns = [
 
     # Chiusure
     path('api/closures/insert/',                    views.api_insert_closure),
+    path('api/closures/import-tabauno/',            views.api_import_tabauno_closure),
     path('api/closures/extract/',                   views.api_extract_closure),
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),

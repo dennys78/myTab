@@ -1,6 +1,8 @@
+import json
+import os
 from decimal import Decimal
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from reconciliation.draft_notifications import build_closure_incasso_summary
 from reconciliation.telegram_fondo_cassa import parse_fondo_command, parse_preleva_destinazione
@@ -193,3 +195,61 @@ class ClosureIncassoSummaryTests(SimpleTestCase):
         self.assertEqual(result['tabacchi'], 1200.0)
         self.assertEqual(result['gratta'], 350.0)
         self.assertEqual(result['differenza'], -12.5)
+
+
+class TabaUnoImportTests(TestCase):
+    def setUp(self):
+        from reconciliation.models import Company
+        self.company = Company.objects.create(denominazione='Tabacchi')
+        self.payload = {
+            'data': '2026-11-16',
+            'company_id': self.company.id,
+            'voci': [
+                {'reparto': '01', 'descrizione': 'TABACCHI', 'entrate': 1582.70, 'uscite': 0, 'saldo': 1582.70},
+            ],
+            'totale': {'entrate': 3302.50, 'uscite': 446.70, 'saldo': 2855.80},
+            'incasso': {'pos': 699.70, 'contanti': 2156.10, 'totale': 2855.80},
+            'verifiche': {'saldo_uguale_incasso': True},
+        }
+        self._previous = os.environ.get('TABAUNO_IMPORT_TOKEN')
+        os.environ['TABAUNO_IMPORT_TOKEN'] = 'secret-token'
+
+    def tearDown(self):
+        if self._previous is None:
+            os.environ.pop('TABAUNO_IMPORT_TOKEN', None)
+        else:
+            os.environ['TABAUNO_IMPORT_TOKEN'] = self._previous
+
+    def _post(self, token='secret-token'):
+        return self.client.post(
+            '/api/closures/import-tabauno/',
+            data=json.dumps(self.payload),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+
+    def test_creates_once_and_leaves_manual_fields_empty(self):
+        from reconciliation.models import CashClosure
+        created = self._post()
+        self.assertEqual(created.status_code, 201)
+        body = created.json()
+        self.assertTrue(body['created'])
+        closure = CashClosure.objects.get(id=body['id'])
+        self.assertEqual(closure.operator, 'TabaUno')
+        self.assertEqual(closure.contanti, Decimal('2156.10'))
+        self.assertEqual(closure.pag_pos, Decimal('699.70'))
+        self.assertEqual(closure.totale_generale, Decimal('2855.80'))
+        self.assertEqual(closure.cassa_auto, Decimal('0.00'))
+        self.assertEqual(closure.reso_cont, Decimal('0.00'))
+        self.assertEqual(closure.distrib, Decimal('0.00'))
+        self.assertEqual(closure.items.get().department_name, 'TABACCHI')
+
+        again = self._post()
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()['status'], 'exists')
+        self.assertEqual(again.json()['id'], closure.id)
+        self.assertEqual(CashClosure.objects.filter(company=self.company, date='2026-11-16').count(), 1)
+
+    def test_rejects_missing_token(self):
+        denied = self._post(token='altro')
+        self.assertEqual(denied.status_code, 401)
