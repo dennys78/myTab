@@ -15,6 +15,15 @@ GRATTA_WIN_DESC = 'VINCITE GRATTA E VINCI'
 GRATTA_CODE = '90'
 GESTORE_CODE = '97'
 _SNAPSHOTS = {}
+# «Cassa» compare solo sui tabacchi, tutti alla stessa ora: carico del distributore.
+PAYMENT_FIELDS = {
+    'pagamento contante': 'contanti',
+    'pagamento elettronico': 'pag_pos',
+    'pagamento cassa auto': 'cassa_auto',
+    'reso cassa auto': 'reso_auto',
+    'cassa': 'distrib',
+}
+PAYMENT_KEYS = ('contanti', 'pag_pos', 'cassa_auto', 'reso_cont', 'reso_auto', 'distrib', 'non_classificato')
 
 
 class TabaUnoError(Exception):
@@ -142,6 +151,72 @@ def _lookup(connection, table, key_column, value_column):
     return values
 
 
+def _payment_label(tipo) -> str:
+    text = str(tipo or '').strip()
+    return text or '(vuoto)'
+
+
+def _collect_payments(groups) -> dict:
+    """Somma Importo per tipo e arrotonda solo il totale di ciascun campo."""
+    totals = {key: ZERO for key in PAYMENT_KEYS}
+    unknown = []
+    ora = None
+    has_rows = False
+    for tipo, amount, count, ora_chiusura in groups:
+        if count:
+            has_rows = True
+        if ora_chiusura:
+            stamp = str(ora_chiusura)
+            if ora is None or stamp > ora:
+                ora = stamp
+        field = PAYMENT_FIELDS.get(str(tipo or '').strip().casefold())
+        if field:
+            totals[field] += _raw(amount)
+        else:
+            totals['non_classificato'] += _raw(amount)
+            label = _payment_label(tipo)
+            if label not in unknown:
+                unknown.append(label)
+    unknown.sort()
+    rounded = {key: _money(totals[key]) for key in PAYMENT_KEYS}
+    rounded['reso_cont'] = ZERO
+    return {
+        'importi': rounded,
+        'totale': _money(sum((rounded[key] for key in PAYMENT_KEYS), ZERO)),
+        'sconosciuti': unknown,
+        'ora_chiusura': ora,
+        'righe': has_rows,
+    }
+
+
+def _read_payments(connection, day) -> dict:
+    if connection is None:
+        return _collect_payments([])
+    table = _table(connection, 'StoricoCassa')
+    if not table:
+        return _collect_payments([])
+    groups = connection.execute(
+        f'''SELECT TipoPagamento, SUM(Importo), COUNT(*), MAX(Ora_Chiusura)
+            FROM "{table}" WHERE Data = ? GROUP BY TipoPagamento''',
+        (day,),
+    ).fetchall()
+    return _collect_payments(groups)
+
+
+def _payments_match_conto(payments, conto) -> bool:
+    if conto is None:
+        return False
+    importi = payments['importi']
+    non_pos = (
+        importi['contanti'] + importi['cassa_auto'] + importi['reso_cont']
+        + importi['reso_auto'] + importi['distrib']
+    )
+    return (
+        abs(importi['pag_pos'] - conto['pos']) <= CENT
+        and abs(non_pos - conto['contanti']) <= CENT
+    )
+
+
 def _conto(connection, table, day):
     if not table:
         return None
@@ -187,27 +262,44 @@ def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=Fal
         live_table = _table(main, 'cassaglobal')
         rows = _rows(main, live_table, day)
         source = 'cassaglobal'
-        catalog = main
         today = date.today().isoformat()
-        if not rows and day < today and storico_path and Path(storico_path).is_file():
-            storico = open_readonly(storico_path, snapshot=snapshot)
+        storico_file = Path(storico_path) if storico_path else None
+        if storico_file is not None and not storico_file.is_file():
+            raise TabaUnoError(f'Database storico non trovato: {storico_file}')
+        # Le voci di oggi restano su cassaglobal. Lo storico dei reparti si apre solo per i giorni passati vuoti.
+        if not rows and day < today and storico_file is not None:
+            storico = open_readonly(storico_file, snapshot=snapshot)
             history_table = _table(storico, 'CassaGlobal', 'cassaglobal')
             rows = _rows(storico, history_table, day)
             source = 'CassaGlobal' if rows else source
+        # I pagamenti stanno in StoricoCassa e vengono scritti alla chiusura: anche per oggi.
+        if storico is None and storico_file is not None:
+            storico = open_readonly(storico_file, snapshot=snapshot)
 
-        settori = _lookup(catalog, _table(catalog, 'settori'), 'CodiceSettore', 'Descrizione')
+        settori = _lookup(main, _table(main, 'settori'), 'CodiceSettore', 'Descrizione')
         movimenti = _lookup(
-            catalog, _table(catalog, 'MovimentiCassa'), 'CodiceMovimentoCassa', 'DescrizioneMovimento',
+            main, _table(main, 'MovimentiCassa'), 'CodiceMovimentoCassa', 'DescrizioneMovimento',
         )
-        conto = _conto(catalog, _table(catalog, 'conto'), day)
-        pending_close = day == today and (not rows or conto is None)
+        conto = _conto(main, _table(main, 'conto'), day)
+        payments = _read_payments(storico if storico is not None else main, day)
+        pending_close = day == today and (not rows or conto is None or not payments['righe'])
         if pending_close:
             rows = []
         payload = _aggregate(day, rows, settori, movimenti, conto, rule, source)
-        payload['verifiche']['chiusura_eseguita'] = conto is not None
+        importi = payments['importi']
+        payload['pagamenti'] = {
+            **{key: _num(importi[key]) for key in PAYMENT_KEYS},
+            'totale': _num(payments['totale']),
+            'ora_chiusura': payments['ora_chiusura'],
+        }
+        saldo = _raw(payload['totale']['saldo'])
+        payload['verifiche']['chiusura_eseguita'] = conto is not None and payments['righe']
         payload['verifiche']['messaggio'] = (
             'Chiusura non ancora eseguita in TabaUno per questa data' if pending_close else ''
         )
+        payload['verifiche']['pagamenti_uguale_saldo'] = abs(payments['totale'] - saldo) <= CENT
+        payload['verifiche']['pagamenti_uguale_conto'] = _payments_match_conto(payments, conto)
+        payload['verifiche']['tipi_pagamento_sconosciuti'] = payments['sconosciuti']
         return payload
     finally:
         _cleanup(main)

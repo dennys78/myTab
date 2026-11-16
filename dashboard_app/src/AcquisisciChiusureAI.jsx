@@ -35,8 +35,13 @@ function tabaunoIssues(verifiche) {
   else if (verifiche.chiusura_eseguita === false) issues.push('Chiusura non ancora eseguita in TabaUno.');
   if (verifiche.saldo_uguale_incasso === false) issues.push('Il saldo delle voci non coincide con l\'incasso.');
   if (verifiche.pos_piu_contanti_ok === false) issues.push('POS + contanti non coincidono con l\'incasso.');
+  if (verifiche.pagamenti_uguale_saldo === false) issues.push('Il totale dei pagamenti non coincide con il saldo delle voci.');
+  if (verifiche.pagamenti_uguale_conto === false) issues.push('I pagamenti non coincidono con il conto di TabaUno.');
   if (Array.isArray(verifiche.codici_sconosciuti) && verifiche.codici_sconosciuti.length) {
     issues.push(`Codici sconosciuti: ${verifiche.codici_sconosciuti.join(', ')}`);
+  }
+  if (Array.isArray(verifiche.tipi_pagamento_sconosciuti) && verifiche.tipi_pagamento_sconosciuti.length) {
+    issues.push(`Tipi di pagamento sconosciuti: ${verifiche.tipi_pagamento_sconosciuti.join(', ')}`);
   }
   return issues;
 }
@@ -44,6 +49,7 @@ function tabaunoIssues(verifiche) {
 function previewFromTabauno(payload) {
   const incasso = payload.incasso || {};
   const totale = payload.totale || {};
+  const pagamenti = payload.pagamenti || null;
   return {
     date: payload.data,
     from_tabauno: true,
@@ -58,13 +64,13 @@ function previewFromTabauno(payload) {
       saldo: Number(voce.saldo) || 0,
     })),
     summary: {
-      contanti: Number(incasso.contanti) || 0,
-      pag_pos: Number(incasso.pos) || 0,
-      cassa_auto: 0,
-      reso_cont: 0,
-      reso_auto: 0,
-      distrib: 0,
-      totale: Number(totale.saldo) || 0,
+      contanti: Number(pagamenti ? pagamenti.contanti : incasso.contanti) || 0,
+      pag_pos: Number(pagamenti ? pagamenti.pag_pos : incasso.pos) || 0,
+      cassa_auto: Number(pagamenti?.cassa_auto) || 0,
+      reso_cont: Number(pagamenti?.reso_cont) || 0,
+      reso_auto: Number(pagamenti?.reso_auto) || 0,
+      distrib: Number(pagamenti?.distrib) || 0,
+      totale: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
       totale_cassetto: 0,
       differenza: 0,
     },
@@ -681,7 +687,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const summaryEditable = true;
 
   const summaryLabel = (key) => ({
-    totale: 'Totale riportato da cassa',
+    contanti: 'Contanti',
+    pag_pos: 'Pag.Pos',
+    cassa_auto: 'Cassa Auto',
+    reso_cont: 'Reso Cont.',
+    reso_auto: 'Reso Auto',
+    distrib: 'Distrib.',
+    totale: 'Totale',
     totale_cassetto: 'Totale scassettato',
     differenza: 'Differenza',
   }[key] || key.replace(/_/g, ' '));

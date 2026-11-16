@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from tabauno_sync.extract import extract_closure
+from tabauno_sync.extract import _collect_payments, extract_closure
 
 DAY = '2026-11-16'
 
@@ -68,6 +68,21 @@ def _build_db(path, *, include_live=True):
             'INSERT INTO cassaglobal (Data, CodiceSettore, Descrizione, Importo, RagioneSociale) VALUES (?, ?, ?, ?, ?)',
             rows,
         )
+    connection.commit()
+    connection.close()
+
+
+def _add_payments(path, rows):
+    connection = sqlite3.connect(path)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS StoricoCassa (
+            Data TEXT, Importo REAL, TipoPagamento TEXT, Ora_Chiusura TEXT
+        )
+    """)
+    connection.executemany(
+        'INSERT INTO StoricoCassa (Data, Importo, TipoPagamento, Ora_Chiusura) VALUES (?, ?, ?, ?)',
+        rows,
+    )
     connection.commit()
     connection.close()
 
@@ -154,7 +169,7 @@ class ExtractClosureTests(unittest.TestCase):
         self.assertFalse(payload['verifiche']['chiusura_eseguita'])
         self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 10.0)
 
-    def test_today_does_not_open_storico(self):
+    def test_today_reads_payments_not_storico_voci(self):
         today = date.today().isoformat()
         storico = Path(self.directory.name) / 'storico_oggi.db'
         _build_db(storico)
@@ -165,11 +180,83 @@ class ExtractClosureTests(unittest.TestCase):
         )
         connection.commit()
         connection.close()
+        _add_payments(storico, [(today, 5.0, 'Pagamento elettronico', '20:23:48')])
+        live = sqlite3.connect(self.db)
+        live.execute(
+            "INSERT INTO cassaglobal (Data, CodiceSettore, Descrizione, Importo, RagioneSociale) VALUES (?, '01', 'TABACCHI', 5, '')",
+            (today,),
+        )
+        live.execute('INSERT INTO conto VALUES (?, 5, 5, 0)', (today,))
+        live.commit()
+        live.close()
         payload = extract_closure(self.db, today, storico_path=storico, gratta='B', snapshot=False)
         self.assertEqual(payload['verifiche']['sorgente'], 'cassaglobal')
-        self.assertEqual(payload['voci'], [])
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 5.0)
+        self.assertEqual(payload['pagamenti']['pag_pos'], 5.0)
+        self.assertEqual(payload['pagamenti']['ora_chiusura'], '20:23:48')
+        self.assertTrue(payload['verifiche']['chiusura_eseguita'])
+        self.assertEqual(payload['verifiche']['messaggio'], '')
+
+    def test_payments_match_control_day(self):
+        storico = Path(self.directory.name) / 'storico_pagamenti.db'
+        _add_payments(storico, [
+            (DAY, 699.70, 'Pagamento elettronico', '20:23:48'),
+            (DAY, 1000.10, 'Pagamento cassa auto', '20:23:48'),
+            (DAY, 1156.00, 'Pagamento cassa auto', '20:23:48'),
+        ])
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
+        self.assertEqual(payload['totale'], {'entrate': 3302.5, 'uscite': 446.7, 'saldo': 2855.8})
+        self.assertEqual(payload['pagamenti'], {
+            'contanti': 0.0,
+            'pag_pos': 699.7,
+            'cassa_auto': 2156.1,
+            'reso_cont': 0.0,
+            'reso_auto': 0.0,
+            'distrib': 0.0,
+            'non_classificato': 0.0,
+            'totale': 2855.8,
+            'ora_chiusura': '20:23:48',
+        })
+        self.assertTrue(payload['verifiche']['pagamenti_uguale_saldo'])
+        self.assertTrue(payload['verifiche']['pagamenti_uguale_conto'])
+        self.assertTrue(payload['verifiche']['chiusura_eseguita'])
+        self.assertEqual(payload['verifiche']['tipi_pagamento_sconosciuti'], [])
+
+    def test_unknown_payment_types_are_kept(self):
+        storico = Path(self.directory.name) / 'storico_tipi.db'
+        _add_payments(storico, [
+            (DAY, 10, '  PAGAMENTO CONTANTE ', '18:00:00'),
+            (DAY, 531.40, 'Cassa', '18:00:00'),
+            (DAY, -2.50, 'RESO CASSA AUTO', '18:00:01'),
+            (DAY, 3, 'Buono pasto', '18:00:01'),
+            (DAY, 1, None, '18:00:01'),
+        ])
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
+        pagamenti = payload['pagamenti']
+        self.assertEqual(pagamenti['contanti'], 10.0)
+        self.assertEqual(pagamenti['distrib'], 531.4)
+        self.assertEqual(pagamenti['reso_auto'], -2.5)
+        self.assertEqual(pagamenti['reso_cont'], 0.0)
+        self.assertEqual(pagamenti['non_classificato'], 4.0)
+        self.assertEqual(pagamenti['ora_chiusura'], '18:00:01')
+        self.assertEqual(payload['verifiche']['tipi_pagamento_sconosciuti'], ['(vuoto)', 'Buono pasto'])
+        self.assertFalse(payload['verifiche']['pagamenti_uguale_conto'])
+
+    def test_closure_needs_conto_and_payment_rows(self):
+        storico = Path(self.directory.name) / 'storico_vuoto.db'
+        _add_payments(storico, [])
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
         self.assertFalse(payload['verifiche']['chiusura_eseguita'])
-        self.assertIn('non ancora eseguita', payload['verifiche']['messaggio'])
+        self.assertEqual(payload['pagamenti']['totale'], 0.0)
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 1582.7)
+
+    def test_payment_rounding_is_half_up_on_the_total(self):
+        payments = _collect_payments([
+            ('Pagamento contante', Decimal('1.005'), 1, None),
+            (' pagamento contante ', Decimal('1.004'), 1, None),
+        ])
+        self.assertEqual(payments['importi']['contanti'], Decimal('2.01'))
+        self.assertEqual(payments['totale'], Decimal('2.01'))
 
     def test_locked_database_retries_then_reads(self):
         calls = {'n': 0}

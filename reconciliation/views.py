@@ -767,19 +767,36 @@ def api_import_tabauno_closure(request):
 
     incasso = data.get('incasso') or {}
     totale = data.get('totale') or {}
+    pagamenti = data.get('pagamenti') if isinstance(data.get('pagamenti'), dict) else None
+    if pagamenti:
+        contanti = _money(pagamenti.get('contanti'))
+        pag_pos = _money(pagamenti.get('pag_pos'))
+        cassa_auto = _money(pagamenti.get('cassa_auto'))
+        reso_cont = _money(pagamenti.get('reso_cont'))
+        reso_auto = _money(pagamenti.get('reso_auto'))
+        distrib = _money(pagamenti.get('distrib'))
+        totale_generale = _money(pagamenti.get('totale'))
+    else:
+        contanti = _money(incasso.get('contanti'))
+        pag_pos = _money(incasso.get('pos'))
+        cassa_auto = MONEY_ZERO
+        reso_cont = MONEY_ZERO
+        reso_auto = MONEY_ZERO
+        distrib = MONEY_ZERO
+        totale_generale = _money(totale.get('saldo'))
     with transaction.atomic():
         closure = CashClosure.objects.create(
             company=company,
             date=day,
             operator='TabaUno',
             submitted_by='TabaUno',
-            contanti=_money(incasso.get('contanti')),
-            pag_pos=_money(incasso.get('pos')),
-            cassa_auto=MONEY_ZERO,
-            reso_cont=MONEY_ZERO,
-            reso_auto=MONEY_ZERO,
-            distrib=MONEY_ZERO,
-            totale_generale=_money(totale.get('saldo')),
+            contanti=contanti,
+            pag_pos=pag_pos,
+            cassa_auto=cassa_auto,
+            reso_cont=reso_cont,
+            reso_auto=reso_auto,
+            distrib=distrib,
+            totale_generale=totale_generale,
             totale_cassetto=MONEY_ZERO,
             differenza=MONEY_ZERO,
             tabauno_verifiche=data.get('verifiche') or None,

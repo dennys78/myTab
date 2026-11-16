@@ -98,11 +98,12 @@ def poll_once(config, logger) -> None:
         return
     elapsed = time.perf_counter() - started
     logger.info(
-        'lettura id=%s data=%s durata=%.3fs totale=%s',
+        'lettura id=%s data=%s durata=%.3fs totale=%s pagamenti=%s',
         request_id,
         day,
         elapsed,
         extracted.get('totale', {}).get('saldo'),
+        (extracted.get('pagamenti') or {}).get('totale'),
     )
     _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
         'ok': True,
