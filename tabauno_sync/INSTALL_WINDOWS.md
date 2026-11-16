@@ -1,39 +1,48 @@
 # Agente TabaUno su Windows
 
-L'agente non apre porte. Ogni pochi secondi chiede a myTaba se c'è una chiusura da leggere e, solo in quel caso, apre `TabaUno.db`.
+L'agente non apre porte. Ogni 10 secondi chiede a myTaba se c'è una chiusura da leggere e, solo allora, apre i database.
 
-## Prova manuale
+## Cosa copiare sul PC del negozio
 
-1. Copia `config.example.json` in `config.json`.
-2. Imposta i percorsi dei database, `mytab_url` e `agent_token` (il token si genera in myTaba, Impostazioni).
-3. Dalla cartella del progetto:
+La cartella `tabauno_sync` (non serve il resto di myTaba). Esempio:
 
-```bat
-tabauno_sync\avvia_tabauno_sync.bat
+```text
+C:\myTaba\tabauno_sync\
 ```
 
-Una data singola, senza parlare con il portale:
+Nella stessa cartella copia `nssm.exe` (https://nssm.cc/download, la versione a 64 bit).
+
+Serve Python 3, da python.org, con "Add python.exe to PATH". Non servono librerie aggiuntive.
+
+## Prima di installare
+
+1. In myTaba, da amministratore: Impostazioni → PC negozio TabaUno → Genera token agente. Il token si vede una sola volta.
+2. Copia `config.example.json` in `config.json`.
+3. Compila `config.json`:
+   - `tabauno_db` e `storico_db`: percorsi veri, con due barre nel JSON (`C:\\TabaUno\\DB\\TabaUno.db`)
+   - `mytab_url`: `https://www.mytab.uk`
+   - `agent_token`: il token appena generato
+   - `gratta`: `B`
+
+## Installare il servizio
+
+Tasto destro su `installa_servizio.bat` → Esegui come amministratore.
+
+Il servizio si chiama TabaUnoAgent, parte da solo all'accensione del PC e si riavvia se si chiude. Il file `.bat` di avvio resta solo per una prova a finestra aperta.
+
+Log: `C:\myTaba\logs\tabauno_agent.log`. Non contiene il token.
+
+Per toglierlo: `disinstalla_servizio.bat` come amministratore.
+
+## Prova
+
+1. Nel portale, Acquisisci chiusure: accanto al pulsante deve comparire "PC negozio online".
+2. Scegli la data e premi Importa da TabaUno.
+3. Se nel log compare `lettura ... totale=...` e l'anteprima si riempie, è a posto.
+
+Una lettura senza il portale, per controllare solo i database:
 
 ```bat
+cd /d C:\myTaba
 python -m tabauno_sync --date 2026-11-16 --db C:\TabaUno\DB\TabaUno.db --storico C:\TabaUno\DB\TabaUnoStorico.db --gratta B
 ```
-
-## Servizio con NSSM
-
-Scarica NSSM e, da un prompt amministratore, nella cartella del progetto:
-
-```bat
-nssm install TabaUnoAgent C:\Path\To\python.exe -m tabauno_sync --agent --config C:\myTaba\tabauno_sync\config.json
-nssm set TabaUnoAgent AppDirectory C:\myTaba
-nssm set TabaUnoAgent AppStdout C:\myTaba\logs\nssm-stdout.log
-nssm set TabaUnoAgent AppStderr C:\myTaba\logs\nssm-stderr.log
-nssm set TabaUnoAgent AppRotateFiles 1
-nssm set TabaUnoAgent Start SERVICE_AUTO_START
-nssm set TabaUnoAgent AppExit Default Restart
-nssm set TabaUnoAgent AppRestartDelay 5000
-nssm start TabaUnoAgent
-```
-
-Sostituisci `C:\Path\To\python.exe` e `C:\myTaba` con i percorsi reali. Il log applicativo è `logs\tabauno_agent.log` (rotazione 1 MB, 5 file). Non contiene il token.
-
-Per aggiornare il codice: `nssm restart TabaUnoAgent`.
