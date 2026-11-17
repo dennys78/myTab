@@ -66,6 +66,7 @@ function AppShell() {
   const [settingsSection, setSettingsSection] = useState(isAdmin ? 'azienda' : 'generali');
   const [ricevuteOpen, setRicevuteOpen] = useState(false);
   const [ricevuteSection, setRicevuteSection] = useState('clienti');
+  const [ordiniOpen, setOrdiniOpen] = useState(false);
 
   const settingsSubsections = isAdmin
     ? [
@@ -83,6 +84,10 @@ function AppShell() {
     { id: 'valori-bollati', label: 'Emissione ricevute' },
   ];
 
+  const ordiniSubsections = [
+    { id: 'gratta', label: 'Ordine Gratta e Vinci' },
+  ];
+
   const fetchClosures = useCallback(() => {
     if (!canSeeClosures) return;
     apiFetch('/api/closures/list/')
@@ -93,6 +98,11 @@ function AppShell() {
 
   useEffect(() => {
     if (!user || !navItems.length) return;
+    if (currentView === 'ordine-gratta') {
+      setOrdiniOpen(true);
+      setCurrentView('ordini');
+      return;
+    }
     if (currentView === 'reparti' || currentView === 'utenti') {
       if (isAdmin) {
         setSettingsSection(currentView);
@@ -456,6 +466,35 @@ function AppShell() {
                 </div>
               );
             }
+            if (item.id === 'ordini') {
+              const ordiniActive = currentView === 'ordini';
+              return (
+                <div key={item.id}>
+                  <div
+                    className={`nav-item ${ordiniActive ? 'active' : ''}`}
+                    onClick={() => setOrdiniOpen(o => !o)}
+                  >
+                    <Icon size={20} /><span>{item.label}</span>
+                    {ordiniOpen
+                      ? <ChevronDown size={16} style={{ marginLeft: 'auto' }} />
+                      : <ChevronRight size={16} style={{ marginLeft: 'auto' }} />}
+                  </div>
+                  {ordiniOpen && (
+                    <div className="nav-subitems">
+                      {ordiniSubsections.map(sub => (
+                        <div
+                          key={sub.id}
+                          className={`nav-item nav-subitem ${ordiniActive ? 'active' : ''}`}
+                          onClick={() => { setCurrentView('ordini'); setIsMobileMenuOpen(false); }}
+                        >
+                          <span>{sub.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             if (item.id === 'ricevute') {
               const ricevuteActive = currentView === 'ricevute';
               return (
@@ -589,7 +628,7 @@ function AppShell() {
           />
         ) : currentView === 'fondo-cassa' ? (
           <FondoCassa />
-        ) : currentView === 'ordine-gratta' ? (
+        ) : currentView === 'ordini' ? (
           <OrdineGratta />
         ) : (
           <>
