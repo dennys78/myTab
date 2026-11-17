@@ -250,6 +250,90 @@ class ExtractClosureTests(unittest.TestCase):
         self.assertEqual(payload['pagamenti']['totale'], 0.0)
         self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 1582.7)
 
+    def test_closed_receipt_drops_sales_after_closure(self):
+        storico = Path(self.directory.name) / 'storico_scontrino.db'
+        connection = sqlite3.connect(storico)
+        connection.execute("""
+            CREATE TABLE StoricoCassa (
+                Data TEXT, CodiceSettore TEXT, Descrizione TEXT, Importo REAL,
+                RagioneSociale TEXT, TipoPagamento TEXT, Ora_Chiusura TEXT
+            )
+        """)
+        connection.executemany(
+            '''INSERT INTO StoricoCassa
+               (Data, CodiceSettore, Descrizione, Importo, RagioneSociale, TipoPagamento, Ora_Chiusura)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            [
+                (DAY, '01', 'CHESTERFIELD', 1000.00, '', 'Pagamento cassa auto', '20:23:40'),
+                (DAY, '01', 'PHILIP MORRIS', 694.90, '', 'Pagamento cassa auto', '20:23:40'),
+                (DAY, '02', 'CAFFE', 54.60, '', 'Pagamento cassa auto', '20:23:40'),
+                (DAY, '301', 'INCASSO LOTTO/10&LOTTO', 453.00, '', 'Pagamento cassa auto', '20:23:40'),
+                (DAY, '302', 'VINCITE LOTTO/10&LOTTO', -162.50, '', 'Pagamento cassa auto', '20:23:40'),
+                (DAY, '300', 'VINCITE GRATTA E VINCI', -237.00, '', 'Pagamento cassa auto', '20:23:40'),
+            ],
+        )
+        connection.commit()
+        connection.close()
+        live = sqlite3.connect(self.db)
+        live.execute(
+            "UPDATE cassaglobal SET Importo = 1706.50 WHERE Data = ? AND CodiceSettore = '01'",
+            (DAY,),
+        )
+        live.commit()
+        live.close()
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
+        self.assertEqual(payload['verifiche']['sorgente'], 'StoricoCassa')
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 1694.9)
+        self.assertEqual(_voce(payload, 'CAFFE')['entrate'], 54.6)
+        self.assertEqual(_voce(payload, 'LOTTOMATICA')['saldo'], 290.5)
+
+    def test_two_closures_on_the_same_day_are_summed(self):
+        storico = Path(self.directory.name) / 'storico_due_chiusure.db'
+        connection = sqlite3.connect(storico)
+        connection.execute("""
+            CREATE TABLE StoricoCassa (
+                Data TEXT, CodiceSettore TEXT, Descrizione TEXT, Importo REAL,
+                TipoPagamento TEXT, Ora_Chiusura TEXT
+            )
+        """)
+        connection.executemany(
+            '''INSERT INTO StoricoCassa
+               (Data, CodiceSettore, Descrizione, Importo, TipoPagamento, Ora_Chiusura)
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            [
+                (DAY, '01', 'TABACCHI', 100.00, 'Pagamento cassa auto', '18:00:00'),
+                (DAY, '01', 'TABACCHI', 5.80, 'Pagamento contante', '20:23:48'),
+            ],
+        )
+        connection.commit()
+        connection.close()
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 105.8)
+
+    def test_duplicated_closure_stamp_keeps_department_total(self):
+        storico = Path(self.directory.name) / 'storico_doppione.db'
+        connection = sqlite3.connect(storico)
+        connection.execute("""
+            CREATE TABLE StoricoCassa (
+                Data TEXT, CodiceSettore TEXT, Descrizione TEXT, Importo REAL,
+                TipoPagamento TEXT, Ora_Chiusura TEXT
+            )
+        """)
+        connection.executemany(
+            '''INSERT INTO StoricoCassa
+               (Data, CodiceSettore, Descrizione, Importo, TipoPagamento, Ora_Chiusura)
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            [
+                (DAY, '01', 'TABACCHI', 1582.70, 'Pagamento cassa auto', '08:00:00'),
+                (DAY, '01', 'TABACCHI', 1582.70, 'Pagamento cassa auto', '20:00:00'),
+            ],
+        )
+        connection.commit()
+        connection.close()
+        payload = extract_closure(self.db, DAY, storico_path=storico, gratta='B', snapshot=False)
+        self.assertEqual(payload['verifiche']['sorgente'], 'cassaglobal')
+        self.assertEqual(_voce(payload, 'TABACCHI')['entrate'], 1582.7)
+
     def test_payment_rounding_is_half_up_on_the_total(self):
         payments = _collect_payments([
             ('Pagamento contante', Decimal('1.005'), 1, None),

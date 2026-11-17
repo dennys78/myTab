@@ -11,6 +11,9 @@ from pathlib import Path
 
 CENT = Decimal('0.01')
 ZERO = Decimal('0')
+# Oltre questo scarto lo scontrino non è una seconda chiusura da sommare:
+# gli stessi movimenti sono rimasti sotto due orari di chiusura.
+DUPLICATE_CLOSURE = Decimal('100')
 GRATTA_WIN_DESC = 'VINCITE GRATTA E VINCI'
 GRATTA_CODE = '90'
 GESTORE_CODE = '97'
@@ -138,6 +141,61 @@ def _rows(connection, table, day):
         f'SELECT CodiceSettore, Descrizione, Importo, RagioneSociale FROM "{table}" WHERE Data = ?',
         (day,),
     ))
+
+
+def _columns(connection, table):
+    return {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
+
+
+def _closure_rows(connection, day):
+    """Righe dello scontrino chiuso. Vuoto se la tabella ha solo i pagamenti."""
+    if connection is None:
+        return []
+    table = _table(connection, 'StoricoCassa')
+    if not table:
+        return []
+    columns = _columns(connection, table)
+    if 'CodiceSettore' not in columns or 'Importo' not in columns:
+        return []
+    description = 'Descrizione' if 'Descrizione' in columns else "''"
+    ragione = 'RagioneSociale' if 'RagioneSociale' in columns else "''"
+    return list(connection.execute(
+        f'''SELECT CodiceSettore, {description} AS Descrizione, Importo,
+                   {ragione} AS RagioneSociale
+            FROM "{table}" WHERE Data = ?''',
+        (day,),
+    ))
+
+
+def _prefer_closure_rows(department_rows, closure_rows):
+    """Somma gli scontrini del giorno e lascia fuori le vendite dopo la chiusura.
+
+    Il totale reparto le tiene ancora; lo scontrino no. Se invece lo scontrino
+    supera il reparto di molto, è un doppione e resta il reparto.
+    """
+    if not closure_rows:
+        return department_rows, False
+    department_total = sum((_raw(row['Importo']) for row in department_rows), ZERO)
+    closure_total = sum((_raw(row['Importo']) for row in closure_rows), ZERO)
+    if department_rows and closure_total > department_total + DUPLICATE_CLOSURE:
+        return department_rows, False
+    known = {}
+    for row in department_rows:
+        code = str(row['CodiceSettore'] or '').strip()
+        ragione = str(row['RagioneSociale'] or '').strip()
+        if code and ragione and code not in known:
+            known[code] = ragione
+    replaced = []
+    for row in closure_rows:
+        code = str(row['CodiceSettore'] or '').strip()
+        ragione = str(row['RagioneSociale'] or '').strip() or known.get(code, '')
+        replaced.append({
+            'CodiceSettore': row['CodiceSettore'],
+            'Descrizione': row['Descrizione'],
+            'Importo': row['Importo'],
+            'RagioneSociale': ragione,
+        })
+    return replaced, True
 
 
 def _lookup(connection, table, key_column, value_column):
@@ -281,7 +339,11 @@ def extract_closure(db_path, day, *, storico_path=None, gratta='B', snapshot=Fal
             main, _table(main, 'MovimentiCassa'), 'CodiceMovimentoCassa', 'DescrizioneMovimento',
         )
         conto = _conto(main, _table(main, 'conto'), day)
-        payments = _read_payments(storico if storico is not None else main, day)
+        payment_db = storico if storico is not None else main
+        payments = _read_payments(payment_db, day)
+        rows, from_closure = _prefer_closure_rows(rows, _closure_rows(payment_db, day))
+        if from_closure:
+            source = 'StoricoCassa'
         pending_close = day == today and (not rows or conto is None or not payments['righe'])
         if pending_close:
             rows = []
