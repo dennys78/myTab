@@ -344,8 +344,20 @@ export default function AcquisisciChiusureAI({ onBack }) {
     return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
   };
 
-  const calcDifferenza = (s, items, withReports, fromTabauno = false, cassettoManuale = false) =>
-    (withReports || (fromTabauno && !cassettoManuale)) ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
+  const calcDifferenzaSomma = (s, items) => {
+    const resi = (Number(s.reso_auto) || 0) + (Number(s.reso_cont) || 0);
+    const value = calcSaldoReparti(items)
+      - (Number(s.pag_pos) || 0)
+      - (Number(s.distrib) || 0)
+      - resi
+      - (Number(s.totale_cassetto) || 0);
+    return Math.round(value * 100) / 100;
+  };
+
+  const calcDifferenza = (s, items, withReports, fromTabauno = false, cassettoManuale = false) => {
+    if (cassettoManuale) return calcDifferenzaSomma(s, items);
+    return (withReports || fromTabauno) ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
+  };
 
   /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
   const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno, cassettoManuale }) => {
@@ -969,7 +981,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : previewData.scassettato_manuale
-                ? 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Resi).'
+                ? 'Differenza = Somma saldi − Pag.Pos − Distrib. − Resi − Totale scassettato.'
                 : cassettoAutomatico
                 ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti.'
                 : totaleFromSaldi
