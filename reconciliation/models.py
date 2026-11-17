@@ -566,7 +566,7 @@ class TabacchiPreordine(models.Model):
     request = models.ForeignKey(TabaUnoRequest, on_delete=models.PROTECT, related_name='preordini_tabacchi')
     data_consegna = models.DateField()
     giorni_copertura = models.PositiveSmallIntegerField(default=7)
-    scorta_pct = models.PositiveSmallIntegerField(default=100)
+    scorta_pct = models.PositiveSmallIntegerField(default=200)
     stato = models.CharField(max_length=32, choices=STATO_CHOICES, default=BOZZA)
     totale = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     kg = models.DecimalField(max_digits=12, decimal_places=3, default=0)

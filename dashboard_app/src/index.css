@@ -2879,6 +2879,24 @@ tbody tr:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.tab-sort {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tab-sort.active {
+  color: var(--tab-accent);
+  font-weight: 600;
+}
+
 .tab-table th:nth-child(n+2),
 .tab-table td.tab-num {
   text-align: right;

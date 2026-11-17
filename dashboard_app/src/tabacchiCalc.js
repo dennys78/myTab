@@ -1,7 +1,7 @@
 const GIORNI = [5, 7, 10, 14];
-const DEFAULT_SCORTA_PCT = 100;
+const DEFAULT_SCORTA_PCT = 200;
 const SCORTA_PCT_MIN = 10;
-const SCORTA_PCT_MAX = 150;
+const SCORTA_PCT_MAX = 250;
 const FAMIGLIE = [
   'Sigarette',
   'Tabacco riscaldato',
@@ -152,33 +152,44 @@ export function isoLocale(date) {
   return `${y}-${m}-${d}`;
 }
 
-export function gruppiDaOrdinare(righe) {
+export function confrontaRighe(a, b, chiave = 'finisce', direzione = 'asc') {
+  const dir = direzione === 'desc' ? -1 : 1;
+  let cmp = 0;
+  if (chiave === 'descrizione') {
+    cmp = String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it', { sensitivity: 'base' });
+  } else if (chiave === 'importo') {
+    cmp = Number(a.importo || 0) - Number(b.importo || 0);
+  } else {
+    const ga = a.giorni_fine == null ? 1e9 : Number(a.giorni_fine);
+    const gb = b.giorni_fine == null ? 1e9 : Number(b.giorni_fine);
+    cmp = ga - gb;
+    if (cmp === 0) {
+      cmp = String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it', { sensitivity: 'base' });
+    }
+  }
+  if (cmp === 0) {
+    cmp = String(a.aams || '').localeCompare(String(b.aams || ''), 'it');
+  }
+  return cmp * dir;
+}
+
+export function gruppiDaOrdinare(righe, { chiave = 'finisce', direzione = 'asc' } = {}) {
   const attivi = righe.filter(riga => Number(riga.unita) > 0);
   return FAMIGLIE
     .map(famiglia => {
       const items = attivi
         .filter(riga => riga.famiglia === famiglia)
-        .sort((a, b) => {
-          const ga = a.giorni_fine == null ? 1e9 : a.giorni_fine;
-          const gb = b.giorni_fine == null ? 1e9 : b.giorni_fine;
-          if (ga !== gb) return ga - gb;
-          return String(a.descrizione).localeCompare(String(b.descrizione), 'it');
-        });
+        .sort((a, b) => confrontaRighe(a, b, chiave, direzione));
       const subtotale = roundMoney(items.reduce((sum, riga) => sum + Number(riga.importo || 0), 0));
       return { famiglia, items, subtotale };
     })
     .filter(group => group.items.length > 0);
 }
 
-export function altriArticoli(righe) {
+export function altriArticoli(righe, { chiave = 'finisce', direzione = 'asc' } = {}) {
   return [...righe]
     .filter(riga => Number(riga.unita) <= 0)
-    .sort((a, b) => {
-      const ga = a.giorni_fine == null ? 1e9 : a.giorni_fine;
-      const gb = b.giorni_fine == null ? 1e9 : b.giorni_fine;
-      if (ga !== gb) return ga - gb;
-      return String(a.descrizione).localeCompare(String(b.descrizione), 'it');
-    });
+    .sort((a, b) => confrontaRighe(a, b, chiave, direzione));
 }
 
 export { GIORNI, FAMIGLIE, DEFAULT_SCORTA_PCT, SCORTA_PCT_MIN, SCORTA_PCT_MAX };

@@ -37,6 +37,7 @@ export default function OrdineTabacchi() {
   const [altriAperti, setAltriAperti] = useState(false);
   const [ricerca, setRicerca] = useState('');
   const [copiato, setCopiato] = useState(false);
+  const [ordinamento, setOrdinamento] = useState({ chiave: 'finisce', direzione: 'asc' });
   const pollRef = useRef(null);
   const saveRef = useRef(null);
   const copiaRef = useRef(null);
@@ -262,19 +263,43 @@ export default function OrdineTabacchi() {
     }
   };
 
+  const impostaOrdinamento = (chiave) => {
+    setOrdinamento(prev => {
+      if (prev.chiave === chiave) {
+        return { chiave, direzione: prev.direzione === 'asc' ? 'desc' : 'asc' };
+      }
+      return { chiave, direzione: chiave === 'importo' ? 'desc' : 'asc' };
+    });
+  };
+
+  const etichettaSort = (chiave, label) => {
+    const attivo = ordinamento.chiave === chiave;
+    const freccia = !attivo ? '' : ordinamento.direzione === 'asc' ? ' ↑' : ' ↓';
+    return (
+      <button
+        type="button"
+        className={`tab-sort${attivo ? ' active' : ''}`}
+        onClick={() => impostaOrdinamento(chiave)}
+        aria-label={`Ordina per ${label}`}
+      >
+        {label}{freccia}
+      </button>
+    );
+  };
+
   const gruppi = useMemo(
-    () => (preordine ? gruppiDaOrdinare(preordine.righe) : []),
-    [preordine],
+    () => (preordine ? gruppiDaOrdinare(preordine.righe, ordinamento) : []),
+    [preordine, ordinamento],
   );
   const altri = useMemo(() => {
-    const rows = preordine ? altriArticoli(preordine.righe) : [];
+    const rows = preordine ? altriArticoli(preordine.righe, ordinamento) : [];
     const q = ricerca.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter(riga => (
       String(riga.descrizione).toLowerCase().includes(q)
       || String(riga.aams).toLowerCase().includes(q)
     ));
-  }, [preordine, ricerca]);
+  }, [preordine, ricerca, ordinamento]);
   const haCorrezioni = !!preordine?.righe?.some(riga => riga.corretto_a_mano);
 
   const rigaTabella = (riga, { conStepper = true } = {}) => (
@@ -390,7 +415,7 @@ export default function OrdineTabacchi() {
               />
               <div className="tab-scorta-scale">
                 <span>{SCORTA_PCT_MIN}%</span>
-                <span>100%</span>
+                <span>200%</span>
                 <span>{SCORTA_PCT_MAX}%</span>
               </div>
             </div>
@@ -414,12 +439,12 @@ export default function OrdineTabacchi() {
                     <table className="tab-table">
                       <thead>
                         <tr>
-                          <th>Articolo</th>
+                          <th>{etichettaSort('descrizione', 'Articolo')}</th>
                           <th>Giac.</th>
                           <th>Vende/gg</th>
-                          <th>Finisce</th>
+                          <th>{etichettaSort('finisce', 'Finisce')}</th>
                           <th>Stecche</th>
-                          <th>Importo</th>
+                          <th>{etichettaSort('importo', 'Importo')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -451,12 +476,12 @@ export default function OrdineTabacchi() {
                   <table className="tab-table">
                     <thead>
                       <tr>
-                        <th>Articolo</th>
+                        <th>{etichettaSort('descrizione', 'Articolo')}</th>
                         <th>Giac.</th>
                         <th>Vende/gg</th>
-                        <th>Finisce</th>
+                        <th>{etichettaSort('finisce', 'Finisce')}</th>
                         <th></th>
-                        <th>Importo</th>
+                        <th>{etichettaSort('importo', 'Importo')}</th>
                       </tr>
                     </thead>
                     <tbody>

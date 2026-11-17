@@ -50,15 +50,15 @@ class FormulaTabacchiTests(TestCase):
 
     def test_righe_di_esempio_a_sette_giorni(self):
         for _aams, _nome, media, giacenza, u, atteso in ESEMPI:
-            proposta = proposta_unita(media, giacenza, u, 7, 6)
+            proposta = proposta_unita(media, giacenza, u, 7, 6, 100)
             self.assertEqual(proposta['unita'], atteso, msg=_nome)
 
     def test_scorta_pct_scala_la_proposta(self):
         self.assertEqual(normalizza_scorta_pct(5), 10)
-        self.assertEqual(normalizza_scorta_pct(200), 150)
+        self.assertEqual(normalizza_scorta_pct(300), 250)
         base = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 100)
         meta = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 50)
-        piena = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 150)
+        piena = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 200)
         self.assertEqual(base['unita'], 3)
         self.assertLess(meta['unita'], base['unita'])
         self.assertGreaterEqual(piena['unita'], base['unita'])
@@ -178,7 +178,7 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(preordine.status_code, 201)
         body = preordine.json()['preordine']
         self.assertEqual(body['giorni_copertura'], 7)
-        self.assertEqual(body['scorta_pct'], 100)
+        self.assertEqual(body['scorta_pct'], 200)
         self.assertTrue(any(r['aams'] == '201' for r in body['righe']))
         self.assertFalse(any(r['aams'] == '999' for r in body['righe']))
 
