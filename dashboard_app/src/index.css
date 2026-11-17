@@ -170,15 +170,19 @@ textarea:focus {
   width: 100%;
 }
 
-/* Header for mobile */
+/* Barra compatta: l'hamburger sta a sinistra su ogni schermo. */
 .mobile-header {
-  display: none;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: calc(0.55rem + env(safe-area-inset-top)) 2.25rem 0.55rem 2.25rem;
   background: rgba(17, 28, 47, 0.92);
   border-bottom: 1px solid var(--border);
-  margin: -2rem -2rem 2rem -2rem;
+  margin: -2.25rem -2.25rem 1.25rem -2.25rem;
 }
 
 .menu-button {
@@ -205,6 +209,10 @@ textarea:focus {
   background: rgba(0,0,0,0.5);
   z-index: 40;
   backdrop-filter: blur(2px);
+}
+
+.sidebar-overlay.show {
+  display: block;
 }
 
 /* Typography */
@@ -1464,19 +1472,29 @@ tbody tr:hover {
 
 /* Sidebar */
 .sidebar {
-  width: 280px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100dvh;
+  width: min(86vw, 280px);
+  padding-top: env(safe-area-inset-top);
   background: rgba(12, 22, 38, 0.96);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   z-index: 50;
+  transform: translateX(-100%);
   transition: transform 0.3s ease;
   backdrop-filter: blur(16px);
 }
 
+.sidebar.open {
+  transform: translateX(0);
+}
+
 .sidebar-header {
-  padding: 1.75rem 1.4rem;
-  font-size: 1.5rem;
+  padding: 1rem 1.05rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: -0.025em;
@@ -1484,14 +1502,14 @@ tbody tr:hover {
 }
 
 .nav-links {
-  padding: 1.25rem 0.85rem;
+  padding: 0.75rem 0.7rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.3rem;
 }
 
 .nav-item {
-  padding: 0.8rem 0.95rem;
+  padding: 0.62rem 0.75rem;
   border-radius: 12px;
   color: var(--text-muted);
   text-decoration: none;
@@ -1591,8 +1609,8 @@ tbody tr:hover {
 }
 
 /*
- * Menu a cassetto fino a 1100px: telefoni, Z Fold aperti (~900–1000 CSS px),
- * tablet medi. Sopra questa soglia resta la sidebar desktop fissa.
+ * Il menu è un cassetto su ogni schermo. Queste regole adattano solo
+ * padding e larghezza su telefoni, fold e tablet.
  */
 @media (max-width: 1100px) {
   .sidebar {
@@ -1937,7 +1955,7 @@ tbody tr:hover {
   }
 
   .mobile-header {
-    justify-content: space-between;
+    justify-content: flex-start;
     padding-top: calc(0.55rem + env(safe-area-inset-top));
     padding-bottom: 0.55rem;
     margin-bottom: 0.75rem;
@@ -2022,7 +2040,8 @@ tbody tr:hover {
 
   .mobile-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 0.35rem;
     position: sticky;
     top: 0;
     z-index: 30;

@@ -544,10 +544,10 @@ function AppShell() {
 
       <main className="main-content">
         <div className="mobile-header">
-          <MyTabBrand onClick={goHome} className="mytab-brand--mobile" />
-          <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)}>
-            <Menu size={24} />
+          <button className="menu-button" onClick={() => setIsMobileMenuOpen(true)} aria-label="Apri menu">
+            <Menu size={22} />
           </button>
+          <MyTabBrand onClick={goHome} className="mytab-brand--mobile" />
         </div>
 
         {(currentView === 'versamenti' || currentView === 'movimenti') && (
