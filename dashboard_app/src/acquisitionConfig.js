@@ -13,6 +13,22 @@ export function isValidFiveModeFileCount(count) {
   return count === 5 || count === 6;
 }
 
+/** Inserimenti a mano in chiusura, criterio D3 Solution. */
+export const MANUAL_VOCI_D3 = ['LOTTOMATICA', 'MOONEY', 'SISAL', 'GRATTA E VINCI'];
+
+/** L'altra azienda usa lo stesso elenco e aggiunge LIS. */
+export function manualVociForMode(mode) {
+  if (mode === ACQUISITION_MODE_TWO) return [...MANUAL_VOCI_D3, 'LIS'];
+  return [...MANUAL_VOCI_D3];
+}
+
+export function manualVociHint(mode) {
+  const base = 'Lottomatica, Mooney, Sisal e Gratta e Vinci';
+  return mode === ACQUISITION_MODE_TWO
+    ? 'Lottomatica, Mooney, Sisal, Gratta e Vinci e LIS'
+    : base;
+}
+
 /** Protocollo 2–7 file: foglio; Mooney; LIS; Lotto; Premi Gratta; Sisal. */
 export function isValidTwoModeFileCount(count) {
   return count >= 1 && count <= 7;

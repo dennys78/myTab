@@ -850,7 +850,7 @@ export default function Impostazioni({ section = 'generali' }) {
               Protocollo acquisizione chiusure (IA)
             </label>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 0, marginBottom: '0.75rem', lineHeight: 1.45 }}>
-              Scegli come analizzare le foto per questa ragione sociale: 2–7 file (foglio + report riconosciuti automaticamente), oppure 5/6 file con report giochi e estrazione di cassa auto, distributore, totale e resi.
+              D3 Solution: 5/6 file, inserimenti Lottomatica, Mooney, Sisal e Gratta e Vinci. L&apos;altra azienda: 2–7 file, gli stessi inserimenti più LIS.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', alignItems: 'center' }}>
               <select
@@ -858,8 +858,8 @@ export default function Impostazioni({ section = 'generali' }) {
                 onChange={e => setAiAcquisitionFileMode(e.target.value)}
                 style={{ ...inputStyle, flex: '1 1 260px', minWidth: '220px', fontFamily: 'inherit' }}
               >
-                <option value="two_files">2–7 file — foglio + report (riconoscimento automatico)</option>
-                <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
+                <option value="two_files">Altra azienda — stessi inserimenti di D3 + LIS</option>
+                <option value="five_files">D3 Solution — Lottomatica, Mooney, Sisal, Gratta e Vinci</option>
               </select>
               <button
                 type="button"
@@ -941,8 +941,8 @@ export default function Impostazioni({ section = 'generali' }) {
                 onChange={e => setAiAcquisitionFileMode(e.target.value)}
                 style={{ ...inputStyle, width: '100%', maxWidth: '420px', fontFamily: 'inherit' }}
               >
-                <option value="two_files">2–7 file — foglio + report (riconoscimento automatico)</option>
-                <option value="five_files">5/6 file — riepilogo + Lottomatica, Gratta, Vinci, Sisal (+ Mooney)</option>
+                <option value="two_files">Altra azienda — stessi inserimenti di D3 + LIS</option>
+                <option value="five_files">D3 Solution — Lottomatica, Mooney, Sisal, Gratta e Vinci</option>
               </select>
             </div>
           )}

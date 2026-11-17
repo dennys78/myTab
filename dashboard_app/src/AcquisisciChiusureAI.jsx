@@ -7,6 +7,8 @@ import {
   ACQUISITION_MODE_TWO,
   isValidFiveModeFileCount,
   isValidTwoModeFileCount,
+  manualVociForMode,
+  manualVociHint,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
@@ -28,14 +30,25 @@ function localIsoDate() {
   ].join('-');
 }
 
-const MANUAL_VOCI = ['LOTTOMATICA', 'MOONEY', 'SISAL', 'GRATTA E VINCI'];
-
 function voceKey(name) {
   return String(name || '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
-function isManualVoce(name) {
-  return MANUAL_VOCI.includes(voceKey(name));
+function isManualVoce(name, voci) {
+  return voci.includes(voceKey(name));
+}
+
+function ensureManualRows(items, voci) {
+  const present = new Set(items.map(item => voceKey(item.descrizione)));
+  const missing = voci.filter(name => !present.has(name)).map((name, index) => ({
+    id: `manual_${voceKey(name)}_${index}`,
+    descrizione: name,
+    entrate: 0,
+    uscite: 0,
+    saldo: 0,
+    imported: true,
+  }));
+  return missing.length ? [...items, ...missing] : items;
 }
 
 function tabaunoIssues(verifiche) {
@@ -54,7 +67,7 @@ function tabaunoIssues(verifiche) {
   return issues;
 }
 
-function previewFromTabauno(payload) {
+function previewFromTabauno(payload, manualVoci) {
   const incasso = payload.incasso || {};
   const totale = payload.totale || {};
   const pagamenti = payload.pagamenti || null;
@@ -70,10 +83,10 @@ function previewFromTabauno(payload) {
   const others = [];
   imported.forEach(item => {
     const key = voceKey(item.descrizione);
-    if (isManualVoce(key) && !manualByName.has(key)) manualByName.set(key, item);
+    if (isManualVoce(key, manualVoci) && !manualByName.has(key)) manualByName.set(key, item);
     else others.push(item);
   });
-  const manual = MANUAL_VOCI.map((name, index) => manualByName.get(name) || {
+  const manual = manualVoci.map((name, index) => manualByName.get(name) || {
     id: `tabauno_manual_${index}`,
     descrizione: name,
     entrate: 0,
@@ -343,13 +356,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   const applyPreviewData = (data, { cached = false } = {}) => {
-    const items = Array.isArray(data?.items)
+    const manualVoci = manualVociForMode(acquisitionFileMode);
+    const parsedItems = Array.isArray(data?.items)
       ? data.items.map((item, i) => {
           const row = { ...item, id: item.id || `p${i}_${Date.now()}` };
           row.saldo = calcItemSaldo(row);
           return row;
         })
       : [];
+    const items = (data?.from_tabauno || acquisitionFileMode === ACQUISITION_MODE_TWO)
+      ? ensureManualRows(parsedItems, manualVoci)
+      : parsedItems;
     const totaleFromSaldi = !!data?.totale_from_saldi;
     const withReports = !!data?.with_reports;
     const enriched = {
@@ -562,7 +579,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
               if (typeof status.agent_online === 'boolean') setAgentOnline(status.agent_online);
               if (status.status === 'done') {
                 setTabaunoWait(false);
-                applyPreviewData(previewFromTabauno(status.payload || {}));
+                applyPreviewData(previewFromTabauno(status.payload || {}, manualVociForMode(acquisitionFileMode)));
                 const issues = tabaunoIssues(status.payload?.verifiche);
                 if (issues.length) setError(issues.join(' '));
                 return;
@@ -963,11 +980,12 @@ export default function AcquisisciChiusureAI({ onBack }) {
             const importedRest = [];
             const addedItems = [];
             previewData.items.forEach(item => {
-              if (isManualVoce(item.descrizione)) manualItems.push(item);
+              if (isManualVoce(item.descrizione, manualVociForMode(acquisitionFileMode))) manualItems.push(item);
               else if (previewData.from_tabauno && item.imported) importedRest.push(item);
               else addedItems.push(item);
             });
-            manualItems.sort((a, b) => MANUAL_VOCI.indexOf(voceKey(a.descrizione)) - MANUAL_VOCI.indexOf(voceKey(b.descrizione)));
+            const manualVoci = manualVociForMode(acquisitionFileMode);
+            manualItems.sort((a, b) => manualVoci.indexOf(voceKey(a.descrizione)) - manualVoci.indexOf(voceKey(b.descrizione)));
             const lockImported = previewData.from_tabauno && !editImported;
             const moneyInput = (item, field, highlight) => (
               <input
@@ -1026,7 +1044,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
           {previewData.from_tabauno && (
             <p style={{ color: '#f59e0b', fontSize: '0.8rem', margin: '0 0 0.8rem' }}>
-              Da compilare a mano: entrate e uscite di Lottomatica, Mooney, Sisal e Gratta e Vinci.
+              Da compilare a mano: entrate e uscite di {manualVociHint(acquisitionFileMode)}.
             </p>
           )}
 
