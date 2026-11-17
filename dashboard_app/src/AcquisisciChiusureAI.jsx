@@ -113,6 +113,7 @@ function previewFromTabauno(payload, manualVoci, { cassettoManuale = false } = {
       reso_auto: Number(pagamenti?.reso_auto) || 0,
       distrib: Number(pagamenti?.distrib) || 0,
       totale: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
+      totale_incasso: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
       totale_cassetto: cassettoManuale ? 0 : saldoReparti,
       differenza: 0,
     },
@@ -332,12 +333,14 @@ export default function AcquisisciChiusureAI({ onBack }) {
     Math.round((items || []).reduce((sum, item) => sum + calcItemSaldo(item), 0) * 100) / 100;
 
   // Con i report giochi (5 foto): Differenza = Totale riportato da cassa - Somma algebrica saldi reparti
+  const totaleIncasso = (s) => (s.totale_incasso != null ? Number(s.totale_incasso) : (Number(s.totale) || 0));
+
   const calcDifferenzaReparti = (s, items) =>
-    Math.round(((s.totale || 0) - calcSaldoReparti(items)) * 100) / 100;
+    Math.round((totaleIncasso(s) - calcSaldoReparti(items)) * 100) / 100;
 
   // Solo foglio incasso: differenza basata sul totale scassettato
   const calcDifferenzaCassetto = (s) => {
-    const atteso = (s.totale || 0) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
+    const atteso = totaleIncasso(s) - (s.pag_pos || 0) - (s.distrib || 0) - (s.reso_auto || 0) - (s.reso_cont || 0);
     return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
   };
 
@@ -347,7 +350,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
   /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
   const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno, cassettoManuale }) => {
     const next = { ...summary };
-    if (totaleFromSaldi) {
+    if ((totaleFromSaldi || fromTabauno) && fromTabauno && next.totale_incasso == null) {
+      next.totale_incasso = Number(summary.totale) || 0;
+    }
+    if (totaleFromSaldi || fromTabauno) {
       next.totale = calcSaldoReparti(items);
     }
     if (fromTabauno && !cassettoManuale) {
@@ -526,7 +532,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const handleSummaryChange = (e) => {
     const { name, value } = e.target;
     setPreviewData(prev => {
-      if (name === 'totale' && prev.totale_from_saldi) return prev;
+      if (name === 'totale' && (prev.totale_from_saldi || prev.from_tabauno)) return prev;
       if (name === 'totale_cassetto' && prev.from_tabauno && !prev.scassettato_manuale) return prev;
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
       updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports, prev.from_tabauno, prev.scassettato_manuale);
@@ -771,7 +777,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   // ─── PREVIEW ────────────────────────────────────────────────────────────────
   if (previewData) {
     const regularSummaryEntries = Object.entries(previewData.summary).filter(
-      ([key]) => !['totale_cassetto', 'differenza'].includes(key)
+      ([key]) => !['totale_cassetto', 'differenza', 'totale_incasso'].includes(key)
     );
     const withReports = !!previewData.with_reports;
     const totaleFromSaldi = !!previewData.totale_from_saldi;
@@ -871,7 +877,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
           <div className="acq-summary-grid">
             {regularSummaryEntries.map(([key, val]) => {
-              const lockedTotale = key === 'totale' && totaleFromSaldi;
+              const lockedTotale = key === 'totale' && (totaleFromSaldi || previewData.from_tabauno);
               const displayVal = lockedTotale ? saldoTotaleReparti : val;
               return (
                 <div key={key}>
