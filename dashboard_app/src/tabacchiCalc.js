@@ -8,6 +8,8 @@ const FAMIGLIE = [
   'Trinciati',
   'Sigari e sigaretti',
   'Altri tabacchi',
+  'Dispositivi',
+  'Solidi',
 ];
 
 export function normalizzaScortaPct(value, fallback = DEFAULT_SCORTA_PCT) {

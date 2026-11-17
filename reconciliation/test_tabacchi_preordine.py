@@ -10,12 +10,14 @@ from django.utils import timezone
 from reconciliation.models import Company, TabacchiPreordine, TabaUnoRequest
 from reconciliation.tabacchi_preordine import (
     calcola_righe,
+    famiglia_da_categoria,
     giorni_alla_consegna,
     media_riferimento,
     normalizza_scorta_pct,
     prossimo_giorno_consegna,
     proposta_unita,
     unita_ordine,
+    unita_ordine_dispositivo,
 )
 
 
@@ -62,6 +64,47 @@ class FormulaTabacchiTests(TestCase):
         self.assertEqual(base['unita'], 3)
         self.assertLess(meta['unita'], base['unita'])
         self.assertGreaterEqual(piena['unita'], base['unita'])
+
+    def test_dispositivi_e_solidi_in_confezioni(self):
+        self.assertEqual(famiglia_da_categoria('SIGARETTE ELETTRONICHE'), 'Dispositivi')
+        self.assertEqual(
+            famiglia_da_categoria('PRODOTTI SENZA COMBUSTIONE - SOLIDI DIVERSI DA TABACCO'),
+            'Solidi',
+        )
+        pezzi, kg = unita_ordine_dispositivo(10)
+        self.assertEqual(pezzi, 10)
+        self.assertEqual(kg, 0)
+        ultimo = date(2026, 11, 16)
+        aperture = [(ultimo - timedelta(days=i)).isoformat() for i in range(0, 14)]
+        dati = {
+            'ultimo_giorno_chiuso': ultimo.isoformat(),
+            'giorni_apertura': aperture,
+            'articoli': [{
+                'aams': 'K0011',
+                'descrizione': '11 - LEVIA RUBY WALTZ',
+                'categoria': 'PRODOTTI SENZA COMBUSTIONE - SOLIDI DIVERSI DA TABACCO',
+                'tipo': 'dispositivo',
+                'prezzo': 5.5,
+                'prezzo_kg': 0,
+                'minimo_grammi': 1,
+                'pacstecca': 10,
+                'giacenza': 5,
+                'vendite_giornaliere': {day: 2 for day in aperture},
+                'giacenze_fine_giorno': {},
+            }],
+        }
+        righe, scartati = calcola_righe(
+            dati,
+            date(2026, 11, 17),
+            giorni_copertura=7,
+            data_consegna=date(2026, 11, 23),
+            scorta_pct=200,
+        )
+        self.assertEqual(scartati, [])
+        self.assertEqual(righe[0]['famiglia'], 'Solidi')
+        self.assertEqual(righe[0]['pacchetti_per_unita'], 10)
+        self.assertEqual(righe[0]['kg_per_unita'], 0)
+        self.assertGreater(righe[0]['unita'], 0)
 
     def test_media_esclude_giorni_esauriti_e_pesa_3_2_1(self):
         ultimo = date(2026, 11, 16)

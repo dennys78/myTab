@@ -23,6 +23,8 @@ FAMIGLIE = (
     'Trinciati',
     'Sigari e sigaretti',
     'Altri tabacchi',
+    'Dispositivi',
+    'Solidi',
 )
 
 _CATEGORIA_FAMIGLIA = {
@@ -32,6 +34,12 @@ _CATEGORIA_FAMIGLIA = {
     'TRINCIATI PER SIGARETTE': 'Trinciati',
     'SIGARI': 'Sigari e sigaretti',
     'SIGARETTI': 'Sigari e sigaretti',
+    'DISPOSITIVI ELETTRONICI E ALTRI PRODOTTI': 'Dispositivi',
+    'SIGARETTE ELETTRONICHE': 'Dispositivi',
+    'SIGARETTE ELETTRONICHE RICARICABILI E RICARICHE': 'Dispositivi',
+    'SIGARETTE ELETTRONICHE MONOUSO': 'Dispositivi',
+    'PRODOTTI SENZA COMBUSTIONE - SOLIDI DIVERSI DA TABACCO': 'Solidi',
+    'NICOTINE POUCHES': 'Solidi',
 }
 
 
@@ -86,6 +94,20 @@ def unita_ordine(prezzo, prezzo_kg, minimo_grammi):
     if unita <= 0:
         return None, 'unità zero'
     return unita, _kg(minimo / Decimal('1000'))
+
+
+def unita_ordine_dispositivo(pacstecca):
+    """Confezione dispositivo/solido: pezzi per unità d'ordine, senza kg."""
+    pezzi = int(_decimal(pacstecca))
+    if pezzi <= 0:
+        pezzi = 1
+    return pezzi, ZERO
+
+
+def is_dispositivo(articolo) -> bool:
+    if (articolo or {}).get('tipo') == 'dispositivo':
+        return True
+    return famiglia_da_categoria((articolo or {}).get('categoria')) in {'Dispositivi', 'Solidi'}
 
 
 def giorni_alla_consegna(oggi, ultimo_chiuso, data_consegna) -> int:
@@ -206,13 +228,16 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
     scartati = []
     for articolo in (dati_agente or {}).get('articoli') or []:
         aams = _text_code(articolo.get('aams'))
-        unita_size, kg_or_reason = unita_ordine(
-            articolo.get('prezzo'), articolo.get('prezzo_kg'), articolo.get('minimo_grammi'),
-        )
-        if unita_size is None:
-            scartati.append({'aams': aams, 'motivo': kg_or_reason})
-            continue
-        kg_per_unita = kg_or_reason
+        if is_dispositivo(articolo):
+            unita_size, kg_per_unita = unita_ordine_dispositivo(articolo.get('pacstecca'))
+        else:
+            unita_size, kg_or_reason = unita_ordine(
+                articolo.get('prezzo'), articolo.get('prezzo_kg'), articolo.get('minimo_grammi'),
+            )
+            if unita_size is None:
+                scartati.append({'aams': aams, 'motivo': kg_or_reason})
+                continue
+            kg_per_unita = kg_or_reason
         media, _esclusi = media_riferimento(
             articolo.get('vendite_giornaliere') or {},
             articolo.get('giacenze_fine_giorno') or {},
@@ -234,6 +259,7 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
             'aams': aams,
             'descrizione': ' '.join(str(articolo.get('descrizione') or '').split()),
             'famiglia': famiglia,
+            'tipo': 'dispositivo' if is_dispositivo(articolo) else 'tabacco',
             'prezzo': prezzo,
             'pacchetti_per_unita': unita_size,
             'kg_per_unita': kg_per_unita,

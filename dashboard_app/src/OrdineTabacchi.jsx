@@ -443,7 +443,7 @@ export default function OrdineTabacchi() {
                           <th>Giac.</th>
                           <th>Vende/gg</th>
                           <th>{etichettaSort('finisce', 'Finisce')}</th>
-                          <th>Stecche</th>
+                          <th>Conf.</th>
                           <th>{etichettaSort('importo', 'Importo')}</th>
                         </tr>
                       </thead>
