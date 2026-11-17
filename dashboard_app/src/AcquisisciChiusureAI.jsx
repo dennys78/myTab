@@ -994,7 +994,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
         )}
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
+        <div className="acq-voci-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '0.65rem 0.4rem' : '1.5rem', marginBottom: '1.5rem' }}>
           {(() => {
             const manualItems = [];
             const importedRest = [];
@@ -1014,23 +1014,27 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 value={item[field] === 0 ? '' : item[field]}
                 onChange={e => handleItemChange(item.id, field, e.target.value)}
                 placeholder="0.00"
-                style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }}
+                style={{ ...numInp({ width: isMobile ? '100%' : '78px', padding: isMobile ? '0.28rem 0.15rem' : '0.5rem 0.4rem' }) }}
               />
             );
             const editableRow = (item, highlight) => (
               <tr key={item.id} className={highlight ? 'acq-manual-row' : undefined}>
                 <td>
-                  <input className="acq-edit-input" type="text" value={item.descrizione}
-                    onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
-                    placeholder="Nome Reparto"
-                    style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
+                  {highlight ? (
+                    <span className="acq-voce-name">{item.descrizione}</span>
+                  ) : (
+                    <input className="acq-edit-input" type="text" value={item.descrizione}
+                      onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
+                      placeholder="Nome Reparto"
+                      style={{ ...inp({ width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', padding: isMobile ? '0.22rem 0.12rem' : '0.5rem 0.5rem' }) }} />
+                  )}
                 </td>
                 <td>{moneyInput(item, 'entrate', highlight)}</td>
                 <td>{moneyInput(item, 'uscite', highlight)}</td>
                 <td>
                   <span style={{
-                    display: 'inline-block', minWidth: isMobile ? '60px' : '80px',
-                    padding: '0.5rem 0.4rem', fontWeight: '600', fontSize: '0.9rem',
+                    display: 'inline-block', minWidth: isMobile ? 0 : '64px',
+                    padding: isMobile ? '0.15rem 0' : '0.5rem 0.25rem', fontWeight: '600', fontSize: isMobile ? '0.75rem' : '0.9rem',
                     color: calcItemSaldo(item) > 0 ? '#22c55e' : calcItemSaldo(item) < 0 ? 'var(--danger)' : 'var(--text-muted)',
                   }}>
                     {calcItemSaldo(item).toFixed(2)}
