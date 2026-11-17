@@ -687,9 +687,7 @@ function AppShell() {
                             <td>
                               {closure.date}
                               {closure.tabauno_verifiche && (
-                                closure.tabauno_verifiche.saldo_uguale_incasso === false
-                                || closure.tabauno_verifiche.pos_piu_contanti_ok === false
-                                || closure.tabauno_verifiche.pagamenti_uguale_saldo === false
+                                closure.tabauno_verifiche.pos_piu_contanti_ok === false
                                 || closure.tabauno_verifiche.pagamenti_uguale_conto === false
                                 || closure.tabauno_verifiche.chiusura_eseguita === false
                                 || (closure.tabauno_verifiche.codici_sconosciuti || []).length > 0
