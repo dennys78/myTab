@@ -346,12 +346,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const calcDifferenzaSomma = (s, items) => {
     const resi = (Number(s.reso_auto) || 0) + (Number(s.reso_cont) || 0);
-    const value = (Number(s.totale_cassetto) || 0)
-      - calcSaldoReparti(items)
+    const atteso = calcSaldoReparti(items)
       - (Number(s.pag_pos) || 0)
       - (Number(s.distrib) || 0)
       - resi;
-    return Math.round(value * 100) / 100;
+    return Math.round(((Number(s.totale_cassetto) || 0) - atteso) * 100) / 100;
   };
 
   const calcDifferenza = (s, items, withReports, fromTabauno = false, cassettoManuale = false) => {
@@ -973,7 +972,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 background: 'var(--bg-dark)',
                 color: differenza > 0 ? 'var(--success)' : differenza < 0 ? 'var(--danger)' : 'var(--text-muted)',
               }}>
-                {differenza >= 0 ? '+' : ''}{Number(differenza).toFixed(2)}
+                {previewData.scassettato_manuale && differenza < 0 ? 'Mancanti ' : ''}
+                {previewData.scassettato_manuale && differenza > 0 ? 'In più ' : ''}
+                {!previewData.scassettato_manuale && differenza >= 0 ? '+' : ''}{Number(differenza).toFixed(2)}
               </div>
             </div>
           </div>
@@ -981,7 +982,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : previewData.scassettato_manuale
-                ? 'Differenza = Totale scassettato − Somma saldi − Pag.Pos − Distrib. − Resi.'
+                ? 'Differenza = Totale scassettato − (Somma saldi − Pag.Pos − Distrib. − Resi). Negativo: mancanti. Positivo: in più.'
                 : cassettoAutomatico
                 ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti.'
                 : totaleFromSaldi
