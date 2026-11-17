@@ -5,6 +5,7 @@ SIDEBAR_ITEMS = [
     {'id': 'versamenti', 'label': 'Versamenti', 'admin_only': False},
     {'id': 'movimenti', 'label': 'Movimenti', 'admin_only': False},
     {'id': 'fondo-cassa', 'label': 'Fondo Cassa', 'admin_only': False},
+    {'id': 'ricevute', 'label': 'Ricevute', 'admin_only': False},
     {'id': 'ordini', 'label': 'Ordini', 'admin_only': False},
     {'id': 'impostazioni', 'label': 'Impostazioni', 'admin_only': False},
 ]
@@ -22,10 +23,4 @@ def normalize_sidebar_menu(menu_ids, is_admin):
     selected = [item_id for item_id in (menu_ids or []) if item_id in ALL_MENU_IDS]
     if not selected:
         return default_sidebar_menu(is_admin)
-    ordered = [item['id'] for item in SIDEBAR_ITEMS if item['id'] in selected]
-    if 'ordini' not in ordered:
-        if 'impostazioni' in ordered:
-            ordered.insert(ordered.index('impostazioni'), 'ordini')
-        else:
-            ordered.append('ordini')
-    return ordered
+    return [item['id'] for item in SIDEBAR_ITEMS if item['id'] in selected]

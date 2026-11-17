@@ -33,18 +33,7 @@ export function normalizeSidebarMenu(role, menuIds) {
   const allIds = new Set(SIDEBAR_ITEMS.map(item => item.id));
   const selected = (menuIds || []).filter(id => allIds.has(id));
   if (!selected.length) return getDefaultSidebarMenu(role);
-  const ordered = SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
-  if (!ordered.includes('ricevute') && selected.length > 0) {
-    const impostazioniIdx = ordered.indexOf('impostazioni');
-    if (impostazioniIdx >= 0) ordered.splice(impostazioniIdx, 0, 'ricevute');
-    else ordered.push('ricevute');
-  }
-  if (!ordered.includes('ordini')) {
-    const impostazioniIdx = ordered.indexOf('impostazioni');
-    if (impostazioniIdx >= 0) ordered.splice(impostazioniIdx, 0, 'ordini');
-    else ordered.push('ordini');
-  }
-  return ordered;
+  return SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
 }
 
 export function getVisibleNavItems(role, menuIds) {
