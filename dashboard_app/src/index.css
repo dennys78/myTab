@@ -2100,6 +2100,24 @@ tbody tr:hover {
   border-color: var(--border-strong) !important;
 }
 
+.acq-manual-row td {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.acq-items-table input.acq-manual-input {
+  background: rgba(245, 158, 11, 0.22) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.75);
+  font-weight: 700;
+}
+
+.acq-imported-compact td {
+  padding-top: 0.22rem;
+  padding-bottom: 0.22rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 .acq-actions {
   display: flex;
   gap: 0.75rem;

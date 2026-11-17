@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2 } from 'lucide-react';
+import { Save, Loader2, X, Plus, Sparkles, Calculator, Camera, Images, Trash2, Pencil } from 'lucide-react';
 import { apiFetch } from './api';
 import { useAuth } from './auth';
 import {
@@ -28,6 +28,16 @@ function localIsoDate() {
   ].join('-');
 }
 
+const MANUAL_VOCI = ['LOTTOMATICA', 'MOONEY', 'SISAL', 'GRATTA E VINCI'];
+
+function voceKey(name) {
+  return String(name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function isManualVoce(name) {
+  return MANUAL_VOCI.includes(voceKey(name));
+}
+
 function tabaunoIssues(verifiche) {
   if (!verifiche) return [];
   const issues = [];
@@ -50,19 +60,36 @@ function previewFromTabauno(payload) {
   const incasso = payload.incasso || {};
   const totale = payload.totale || {};
   const pagamenti = payload.pagamenti || null;
+  const imported = (payload.voci || []).map((voce, index) => ({
+    id: `tabauno_${index}`,
+    descrizione: voce.descrizione || '',
+    entrate: Number(voce.entrate) || 0,
+    uscite: Number(voce.uscite) || 0,
+    saldo: Number(voce.saldo) || 0,
+    imported: true,
+  }));
+  const manualByName = new Map();
+  const others = [];
+  imported.forEach(item => {
+    const key = voceKey(item.descrizione);
+    if (isManualVoce(key) && !manualByName.has(key)) manualByName.set(key, item);
+    else others.push(item);
+  });
+  const manual = MANUAL_VOCI.map((name, index) => manualByName.get(name) || {
+    id: `tabauno_manual_${index}`,
+    descrizione: name,
+    entrate: 0,
+    uscite: 0,
+    saldo: 0,
+    imported: true,
+  });
   return {
     date: payload.data,
     from_tabauno: true,
     tabauno_verifiche: payload.verifiche || {},
     with_reports: false,
     totale_from_saldi: false,
-    items: (payload.voci || []).map((voce, index) => ({
-      id: `tabauno_${index}`,
-      descrizione: voce.descrizione || '',
-      entrate: Number(voce.entrate) || 0,
-      uscite: Number(voce.uscite) || 0,
-      saldo: Number(voce.saldo) || 0,
-    })),
+    items: [...manual, ...others],
     summary: {
       contanti: Number(pagamenti ? pagamenti.contanti : incasso.contanti) || 0,
       pag_pos: Number(pagamenti ? pagamenti.pag_pos : incasso.pos) || 0,
@@ -116,6 +143,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const [tabaunoDate, setTabaunoDate] = useState(localIsoDate);
   const [agentOnline, setAgentOnline] = useState(null);
   const [tabaunoWait, setTabaunoWait] = useState(false);
+  const [editImported, setEditImported] = useState(false);
   const tabaunoPollRef = useRef(null);
 
   const fetchDrafts = () => {
@@ -340,6 +368,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       enriched.date = local;
       enriched.date_fallback_today = true;
     }
+    setEditImported(false);
     setPreviewData(enriched);
 
     const warnings = [];
@@ -908,13 +937,77 @@ export default function AcquisisciChiusureAI({ onBack }) {
         )}
 
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: isMobile ? '1rem' : '1.5rem', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          {(() => {
+            const manualItems = [];
+            const importedRest = [];
+            const addedItems = [];
+            previewData.items.forEach(item => {
+              if (isManualVoce(item.descrizione)) manualItems.push(item);
+              else if (previewData.from_tabauno && item.imported) importedRest.push(item);
+              else addedItems.push(item);
+            });
+            manualItems.sort((a, b) => MANUAL_VOCI.indexOf(voceKey(a.descrizione)) - MANUAL_VOCI.indexOf(voceKey(b.descrizione)));
+            const lockImported = previewData.from_tabauno && !editImported;
+            const moneyInput = (item, field, highlight) => (
+              <input
+                className={highlight ? 'acq-edit-input acq-manual-input' : 'acq-edit-input'}
+                type="number"
+                value={item[field] === 0 ? '' : item[field]}
+                onChange={e => handleItemChange(item.id, field, e.target.value)}
+                placeholder="0.00"
+                style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }}
+              />
+            );
+            const editableRow = (item, highlight) => (
+              <tr key={item.id} className={highlight ? 'acq-manual-row' : undefined}>
+                <td>
+                  <input className="acq-edit-input" type="text" value={item.descrizione}
+                    onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
+                    placeholder="Nome Reparto"
+                    style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
+                </td>
+                <td>{moneyInput(item, 'entrate', highlight)}</td>
+                <td>{moneyInput(item, 'uscite', highlight)}</td>
+                <td>
+                  <span style={{
+                    display: 'inline-block', minWidth: isMobile ? '60px' : '80px',
+                    padding: '0.5rem 0.4rem', fontWeight: '600', fontSize: '0.9rem',
+                    color: calcItemSaldo(item) > 0 ? '#22c55e' : calcItemSaldo(item) < 0 ? 'var(--danger)' : 'var(--text-muted)',
+                  }}>
+                    {calcItemSaldo(item).toFixed(2)}
+                  </span>
+                </td>
+                <td>
+                  <button onClick={() => removeItem(item.id)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
+                    <X size={16} />
+                  </button>
+                </td>
+              </tr>
+            );
+            return (
+              <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, fontSize: '1rem' }}>Voci di Reparto</h2>
-            <button onClick={addItem}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
-              <Plus size={15} /> Aggiungi
-            </button>
+            <div style={{ display: 'flex', gap: '0.45rem' }}>
+              {previewData.from_tabauno && importedRest.length > 0 && (
+                <button type="button" onClick={() => setEditImported(value => !value)}
+                  aria-pressed={editImported}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: editImported ? 'rgba(245,158,11,0.16)' : 'transparent', color: editImported ? '#f59e0b' : 'var(--text-main)', border: `1px solid ${editImported ? '#f59e0b' : 'var(--border)'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  <Pencil size={15} /> Modifica
+                </button>
+              )}
+              <button onClick={addItem}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.8rem', background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                <Plus size={15} /> Aggiungi
+              </button>
+            </div>
           </div>
+          {previewData.from_tabauno && (
+            <p style={{ color: '#f59e0b', fontSize: '0.8rem', margin: '0 0 0.8rem' }}>
+              Da compilare a mano: entrate e uscite di Lottomatica, Mooney, Sisal e Gratta e Vinci.
+            </p>
+          )}
 
           <div className="table-responsive-wrapper">
             <table className="acq-items-table">
@@ -931,42 +1024,25 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 {previewData.items.length === 0 && (
                   <tr><td colSpan="5" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}>Nessuna voce. Clicca Aggiungi.</td></tr>
                 )}
-                {previewData.items.map(item => (
-                  <tr key={item.id}>
-                    <td>
-                      <input className="acq-edit-input" type="text" value={item.descrizione}
-                        onChange={e => handleItemChange(item.id, 'descrizione', e.target.value)}
-                        placeholder="Nome Reparto"
-                        style={{ ...inp({ width: '100%', minWidth: isMobile ? '110px' : '150px' }) }} />
-                    </td>
-                    <td>
-                      <input className="acq-edit-input" type="number" value={item.entrate === 0 ? '' : item.entrate}
-                        onChange={e => handleItemChange(item.id, 'entrate', e.target.value)}
-                        placeholder="0.00"
-                        style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
-                    </td>
-                    <td>
-                      <input className="acq-edit-input" type="number" value={item.uscite === 0 ? '' : item.uscite}
-                        onChange={e => handleItemChange(item.id, 'uscite', e.target.value)}
-                        placeholder="0.00"
-                        style={{ ...numInp({ width: isMobile ? '75px' : '95px' }) }} />
-                    </td>
-                    <td>
-                      <span style={{
-                        display: 'inline-block', minWidth: isMobile ? '60px' : '80px',
-                        padding: '0.5rem 0.4rem', fontWeight: '600', fontSize: '0.9rem',
-                        color: calcItemSaldo(item) > 0 ? '#22c55e' : calcItemSaldo(item) < 0 ? 'var(--danger)' : 'var(--text-muted)',
-                      }}>
-                        {calcItemSaldo(item).toFixed(2)}
-                      </span>
-                    </td>
-                    <td>
-                      <button onClick={() => removeItem(item.id)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '0.4rem' }}>
-                        <X size={16} />
-                      </button>
+                {manualItems.map(item => editableRow(item, true))}
+                {addedItems.map(item => editableRow(item, false))}
+                {importedRest.length > 0 && lockImported && (
+                  <tr>
+                    <td colSpan="5" style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.04em', textTransform: 'uppercase', paddingBottom: '0.25rem' }}>
+                      Importate dal PC · {importedRest.length} voci
                     </td>
                   </tr>
+                )}
+                {importedRest.map(item => (
+                  lockImported ? (
+                    <tr key={item.id} className="acq-imported-compact">
+                      <td>{item.descrizione}</td>
+                      <td>{Number(item.entrate).toFixed(2)}</td>
+                      <td>{Number(item.uscite).toFixed(2)}</td>
+                      <td>{calcItemSaldo(item).toFixed(2)}</td>
+                      <td></td>
+                    </tr>
+                  ) : editableRow(item, false)
                 ))}
                 {previewData.items.length > 0 && (
                   <tr className="acq-total-row">
@@ -982,6 +1058,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
               </tbody>
             </table>
           </div>
+              </>
+            );
+          })()}
         </div>
 
         <div className="acq-actions">
