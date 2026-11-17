@@ -452,10 +452,18 @@ class TabaUnoRequest(models.Model):
         (ERROR, 'Errore'),
         (EXPIRED, 'Scaduta'),
     ]
+    TIPO_CHIUSURA = 'chiusura'
+    TIPO_PREORDINE_GRATTA = 'preordine_gratta'
+    TIPO_CHOICES = [
+        (TIPO_CHIUSURA, 'Chiusura'),
+        (TIPO_PREORDINE_GRATTA, 'Preordine gratta'),
+    ]
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tabauno_requests')
     date = models.DateField()
     gratta = models.CharField(max_length=1, default='B')
+    tipo = models.CharField(max_length=32, choices=TIPO_CHOICES, default=TIPO_CHIUSURA)
+    parametri = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=PENDING)
     requested_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='tabauno_requests')
     payload = models.JSONField(null=True, blank=True)
@@ -470,4 +478,71 @@ class TabaUnoRequest(models.Model):
         ordering = ['created_at', 'id']
 
     def __str__(self):
-        return f'{self.company} {self.date} {self.status}'
+        return f'{self.company} {self.date} {self.tipo} {self.status}'
+
+
+class GrattaPreordine(models.Model):
+    BOZZA = 'bozza'
+    INVIATO_N8N = 'inviato_n8n'
+    CARRELLO_PRONTO = 'carrello_pronto'
+    CONFERMATO = 'confermato'
+    INVIATO_PORTALE = 'inviato_portale'
+    ANNULLATO = 'annullato'
+    ERRORE = 'errore'
+    STATO_CHOICES = [
+        (BOZZA, 'Bozza'),
+        (INVIATO_N8N, 'Inviato al bot'),
+        (CARRELLO_PRONTO, 'Carrello pronto'),
+        (CONFERMATO, 'Confermato'),
+        (INVIATO_PORTALE, 'Inviato al portale'),
+        (ANNULLATO, 'Annullato'),
+        (ERRORE, 'Errore'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='gratta_preordini')
+    creato_da = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='gratta_preordini')
+    creato_il = models.DateTimeField(auto_now_add=True)
+    request = models.ForeignKey(TabaUnoRequest, on_delete=models.PROTECT, related_name='preordini_gratta')
+    data_consegna = models.DateField()
+    giorni_copertura = models.PositiveSmallIntegerField(default=7)
+    stato = models.CharField(max_length=32, choices=STATO_CHOICES, default=BOZZA)
+    totale = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    messaggio_stato = models.TextField(blank=True, default='')
+    payload_inviato = models.JSONField(null=True, blank=True)
+    callback_token_hash = models.CharField(max_length=64, blank=True, default='')
+    aggiornato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Preordine gratta'
+        verbose_name_plural = 'Preordini gratta'
+        ordering = ['-creato_il', '-id']
+
+    def __str__(self):
+        return f'Preordine gratta {self.id} {self.stato}'
+
+
+class GrattaPreordineRiga(models.Model):
+    preordine = models.ForeignKey(GrattaPreordine, on_delete=models.CASCADE, related_name='righe')
+    id_articolo = models.CharField(max_length=80)
+    codice = models.CharField(max_length=32)
+    descrizione = models.CharField(max_length=200, blank=True, default='')
+    prezzo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    biglietti_pacco = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    valore_pacco = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    giacenza = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    media = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    giorni_esauriti = models.PositiveSmallIntegerField(default=0)
+    settimane = models.JSONField(default=list, blank=True)
+    pacchi_proposti = models.PositiveIntegerField(default=0)
+    pacchi = models.PositiveIntegerField(default=0)
+    corretto_a_mano = models.BooleanField(default=False)
+    importo = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    escluso = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = 'Riga preordine gratta'
+        verbose_name_plural = 'Righe preordine gratta'
+        ordering = ['codice', 'id']
+
+    def __str__(self):
+        return f'{self.codice} x{self.pacchi}'

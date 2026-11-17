@@ -12,6 +12,7 @@ import GestioneUtenti from './GestioneUtenti';
 import Versamenti from './Versamenti';
 import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
+import OrdineGratta from './OrdineGratta';
 import InstallPwa from './InstallPwa';
 import WebPushSetup from './WebPushSetup';
 import PushNotifyButton from './PushNotifyButton';
@@ -588,6 +589,8 @@ function AppShell() {
           />
         ) : currentView === 'fondo-cassa' ? (
           <FondoCassa />
+        ) : currentView === 'ordine-gratta' ? (
+          <OrdineGratta />
         ) : (
           <>
             <h1>{currentView === 'chiusure' ? 'Chiusure Cassa' : 'Panoramica'}</h1>

@@ -1,6 +1,7 @@
 {
   "tabauno_db": "C:\\TabaUno\\DB\\TabaUno.db",
   "storico_db": "C:\\TabaUno\\DB\\TabaUnoStorico.db",
+  "magx_db": "C:\\TabaUno\\DB\\Db_MagX.db",
   "gratta": "B",
   "mytab_url": "https://www.my-tab.uk",
   "agent_token": "",

@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 from .extract import TabaUnoError, extract_closure
+from .gratta import extract_gratta_data
 
 _BACKOFF = (10, 30, 60, 300)
 
@@ -24,6 +25,7 @@ def load_config(path) -> dict:
     if not str(config.get('agent_token') or '').strip():
         raise TabaUnoError('Config: manca agent_token.')
     config.setdefault('storico_db', '')
+    config.setdefault('magx_db', '')
     config.setdefault('gratta', 'B')
     config.setdefault('poll_seconds', 10)
     config.setdefault('log_dir', 'logs')
@@ -73,6 +75,29 @@ def _request(config, method, path, body=None):
         raise TabaUnoError(f'{method} {path} -> {exc.code}: {detail}') from exc
 
 
+def _extract_request(config, payload):
+    tipo = str(payload.get('tipo') or 'chiusura')
+    day = payload.get('data')
+    if tipo == 'chiusura':
+        return extract_closure(
+            config['tabauno_db'],
+            day,
+            storico_path=config.get('storico_db') or None,
+            gratta=payload.get('gratta') or config.get('gratta') or 'B',
+            snapshot=False,
+        )
+    if tipo == 'preordine_gratta':
+        if not config.get('magx_db'):
+            raise TabaUnoError('Config: manca magx_db.')
+        return extract_gratta_data(
+            config['tabauno_db'],
+            config.get('storico_db') or None,
+            config.get('magx_db'),
+            day,
+        )
+    raise TabaUnoError(f'Tipo richiesta sconosciuto: {tipo}')
+
+
 def poll_once(config, logger) -> None:
     status, payload = _request(config, 'GET', '/api/tabauno/agent/next/')
     if status == 204 or not payload:
@@ -80,33 +105,33 @@ def poll_once(config, logger) -> None:
         return
     request_id = payload.get('id')
     day = payload.get('data')
-    gratta = payload.get('gratta') or config.get('gratta') or 'B'
+    tipo = payload.get('tipo') or 'chiusura'
     started = time.perf_counter()
-    logger.info('richiesta id=%s data=%s', request_id, day)
+    logger.info('richiesta id=%s tipo=%s data=%s', request_id, tipo, day)
     try:
-        extracted = extract_closure(
-            config['tabauno_db'],
-            day,
-            storico_path=config.get('storico_db') or None,
-            gratta=gratta,
-            snapshot=False,
-        )
+        extracted = _extract_request(config, payload)
     except TabaUnoError as exc:
-        logger.info('lettura fallita id=%s data=%s errore=%s', request_id, day, exc)
+        logger.info('lettura fallita id=%s tipo=%s data=%s errore=%s', request_id, tipo, day, exc)
         _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
             'ok': False,
             'errore': str(exc),
         })
         return
     elapsed = time.perf_counter() - started
-    logger.info(
-        'lettura id=%s data=%s durata=%.3fs totale=%s pagamenti=%s',
-        request_id,
-        day,
-        elapsed,
-        extracted.get('totale', {}).get('saldo'),
-        (extracted.get('pagamenti') or {}).get('totale'),
-    )
+    if tipo == 'preordine_gratta':
+        logger.info(
+            'lettura id=%s tipo=%s data=%s durata=%.3fs giochi=%s',
+            request_id, tipo, day, elapsed, len(extracted.get('giochi') or []),
+        )
+    else:
+        logger.info(
+            'lettura id=%s data=%s durata=%.3fs totale=%s pagamenti=%s',
+            request_id,
+            day,
+            elapsed,
+            extracted.get('totale', {}).get('saldo'),
+            (extracted.get('pagamenti') or {}).get('totale'),
+        )
     _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
         'ok': True,
         'payload': extracted,

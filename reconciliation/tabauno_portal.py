@@ -157,6 +157,7 @@ def api_tabauno_requests(request):
     existing = TabaUnoRequest.objects.filter(
         company=company,
         date=day,
+        tipo=TabaUnoRequest.TIPO_CHIUSURA,
         status__in=(TabaUnoRequest.PENDING, TabaUnoRequest.PROCESSING),
     ).order_by('created_at', 'id').first()
     if existing:
@@ -165,6 +166,7 @@ def api_tabauno_requests(request):
         company=company,
         date=day,
         gratta=gratta,
+        tipo=TabaUnoRequest.TIPO_CHIUSURA,
         requested_by=request.user,
     )
     return JsonResponse({'status': 'success', 'created': True, **_request_body(row, company)}, status=201)
@@ -210,7 +212,13 @@ def api_tabauno_agent_next(request):
     row = claim_next_request(agent.company)
     if row is None:
         return HttpResponse(status=204)
-    return JsonResponse({'id': row.id, 'data': row.date.isoformat(), 'gratta': row.gratta})
+    return JsonResponse({
+        'id': row.id,
+        'data': row.date.isoformat(),
+        'gratta': row.gratta,
+        'tipo': row.tipo,
+        'parametri': row.parametri or {},
+    })
 
 
 @csrf_exempt

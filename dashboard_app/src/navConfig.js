@@ -7,6 +7,7 @@ import {
   PiggyBank,
   Settings,
   ScrollText,
+  Ticket,
 } from 'lucide-react';
 
 export const SIDEBAR_ITEMS = [
@@ -17,6 +18,7 @@ export const SIDEBAR_ITEMS = [
   { id: 'movimenti', label: 'Movimenti', icon: ArrowLeftRight, adminOnly: false },
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
   { id: 'ricevute', label: 'Ricevute', icon: ScrollText, adminOnly: false },
+  { id: 'ordine-gratta', label: 'Ordine Gratta', icon: Ticket, adminOnly: false },
   { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: false, pushToBottom: true },
 ];
 
@@ -36,6 +38,11 @@ export function normalizeSidebarMenu(role, menuIds) {
     const impostazioniIdx = ordered.indexOf('impostazioni');
     if (impostazioniIdx >= 0) ordered.splice(impostazioniIdx, 0, 'ricevute');
     else ordered.push('ricevute');
+  }
+  if (!ordered.includes('ordine-gratta')) {
+    const impostazioniIdx = ordered.indexOf('impostazioni');
+    if (impostazioniIdx >= 0) ordered.splice(impostazioniIdx, 0, 'ordine-gratta');
+    else ordered.push('ordine-gratta');
   }
   return ordered;
 }

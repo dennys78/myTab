@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import ricevute_views
+from . import gratta_views
 from . import tabauno_portal
 
 urlpatterns = [
@@ -25,6 +26,12 @@ urlpatterns = [
     path('api/tabauno/agent/token/',                tabauno_portal.api_tabauno_rotate_token),
     path('api/tabauno/agent/next/',                 tabauno_portal.api_tabauno_agent_next),
     path('api/tabauno/agent/result/<int:request_id>/', tabauno_portal.api_tabauno_agent_result),
+    path('api/gratta/preordini/', gratta_views.api_gratta_preordini),
+    path('api/gratta/preordini/da-richiesta/<int:request_id>/', gratta_views.api_gratta_preordine_da_richiesta),
+    path('api/gratta/preordini/<int:preordine_id>/', gratta_views.api_gratta_preordine_detail),
+    path('api/gratta/preordini/<int:preordine_id>/invia/', gratta_views.api_gratta_preordine_invia),
+    path('api/gratta/preordini/<int:preordine_id>/json/', gratta_views.api_gratta_preordine_json),
+    path('api/gratta/preordini/<int:preordine_id>/stato/', gratta_views.api_gratta_preordine_stato),
     path('api/closures/extract/',                   views.api_extract_closure),
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),

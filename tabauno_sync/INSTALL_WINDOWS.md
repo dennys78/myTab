@@ -19,7 +19,7 @@ Serve Python 3, da python.org, con "Add python.exe to PATH". Non servono libreri
 1. In myTaba, da amministratore: Impostazioni → PC negozio TabaUno → Genera token agente. Il token si vede una sola volta.
 2. Copia `config.example.json` in `config.json`.
 3. Compila `config.json`:
-   - `tabauno_db` e `storico_db`: percorsi veri, con due barre nel JSON (`C:\\TabaUno\\DB\\TabaUno.db`)
+   - `tabauno_db`, `storico_db` e `magx_db`: percorsi veri, con due barre nel JSON (`C:\\TabaUno\\DB\\TabaUno.db`, `Db_MagX.db` nella stessa cartella)
    - `mytab_url`: `https://www.my-tab.uk`
    - `agent_token`: il token appena generato
    - `gratta`: `B`

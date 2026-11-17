@@ -2375,3 +2375,215 @@ tbody tr:hover {
   border-radius: 999px;
   transition: width 0.15s ease-out;
 }
+
+.gratta-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+}
+
+.gratta-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.gratta-top h1 {
+  margin-bottom: 0.2rem;
+}
+
+.gratta-meta,
+.gratta-frase,
+.gratta-empty {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.gratta-read,
+.gratta-dock-actions button,
+.gratta-days button,
+.gratta-step button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.gratta-read:disabled,
+.gratta-dock-actions button:disabled,
+.gratta-days button:disabled,
+.gratta-step button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.gratta-error,
+.gratta-status {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+}
+
+.gratta-error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.gratta-status {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gratta-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: flex-end;
+}
+
+.gratta-choices span,
+.gratta-choices label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.gratta-days {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.gratta-days button.is-on,
+.gratta-dock-actions .is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
+}
+
+.gratta-choices input {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-main);
+  padding: 0 0.7rem;
+}
+
+.gratta-group h2 {
+  font-size: 1rem;
+  margin: 0 0 0.55rem;
+}
+
+.gratta-fold {
+  background: none;
+  border: none;
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 650;
+  padding: 0;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.gratta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.gratta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gratta-row.is-ordinare { border-left-color: var(--danger); }
+.gratta-row.is-occhio { border-left-color: #eab308; }
+.gratta-row.is-coperti { border-left-color: var(--success); }
+
+.gratta-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.gratta-row-main span,
+.gratta-step small {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.gratta-weeks {
+  letter-spacing: 0.02em;
+}
+
+.gratta-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.gratta-step button {
+  width: 48px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gratta-step b {
+  min-width: 1.4rem;
+  text-align: center;
+  font-size: 1.15rem;
+}
+
+.gratta-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: rgba(12, 22, 38, 0.96);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.gratta-dock div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.gratta-dock em {
+  color: var(--danger);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.gratta-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
