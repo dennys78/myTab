@@ -81,28 +81,26 @@ function previewFromTabauno(payload) {
     saldo: 0,
     imported: true,
   });
+  const voci = [...manual, ...others];
+  const saldoReparti = Math.round(voci.reduce((sum, item) => sum + ((Number(item.entrate) || 0) - Math.abs(Number(item.uscite) || 0)), 0) * 100) / 100;
   return {
     date: payload.data,
     from_tabauno: true,
     tabauno_verifiche: payload.verifiche || {},
     with_reports: false,
     totale_from_saldi: true,
-    items: [...manual, ...others],
-    summary: (() => {
-      const contanti = Number(pagamenti ? pagamenti.contanti : incasso.contanti) || 0;
-      const cassaAuto = Number(pagamenti?.cassa_auto) || 0;
-      return {
-        contanti,
-        pag_pos: Number(pagamenti ? pagamenti.pag_pos : incasso.pos) || 0,
-        cassa_auto: cassaAuto,
-        reso_cont: Number(pagamenti?.reso_cont) || 0,
-        reso_auto: Number(pagamenti?.reso_auto) || 0,
-        distrib: Number(pagamenti?.distrib) || 0,
-        totale: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
-        totale_cassetto: Math.round((contanti + cassaAuto) * 100) / 100,
-        differenza: 0,
-      };
-    })(),
+    items: voci,
+    summary: {
+      contanti: Number(pagamenti ? pagamenti.contanti : incasso.contanti) || 0,
+      pag_pos: Number(pagamenti ? pagamenti.pag_pos : incasso.pos) || 0,
+      cassa_auto: Number(pagamenti?.cassa_auto) || 0,
+      reso_cont: Number(pagamenti?.reso_cont) || 0,
+      reso_auto: Number(pagamenti?.reso_auto) || 0,
+      distrib: Number(pagamenti?.distrib) || 0,
+      totale: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
+      totale_cassetto: saldoReparti,
+      differenza: 0,
+    },
   };
 }
 
@@ -332,16 +330,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
     withReports ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
 
   /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
-  const cassettoDaContanti = (summary) =>
-    Math.round(((Number(summary.contanti) || 0) + (Number(summary.cassa_auto) || 0)) * 100) / 100;
-
   const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno }) => {
     const next = { ...summary };
     if (totaleFromSaldi) {
       next.totale = calcSaldoReparti(items);
     }
     if (fromTabauno) {
-      next.totale_cassetto = cassettoDaContanti(next);
+      next.totale_cassetto = calcSaldoReparti(items);
     }
     next.differenza = calcDifferenza(next, items, withReports);
     return next;
@@ -511,9 +506,6 @@ export default function AcquisisciChiusureAI({ onBack }) {
       if (name === 'totale' && prev.totale_from_saldi) return prev;
       if (name === 'totale_cassetto' && prev.from_tabauno) return prev;
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      if (prev.from_tabauno && (name === 'contanti' || name === 'cassa_auto')) {
-        updated.totale_cassetto = cassettoDaContanti(updated);
-      }
       updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports);
       return { ...prev, summary: updated };
     });
@@ -756,7 +748,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const saldoTotaleReparti = calcSaldoReparti(previewData.items);
     const cassettoAutomatico = !!previewData.from_tabauno;
     const totaleScassettato = cassettoAutomatico
-      ? cassettoDaContanti(previewData.summary)
+      ? saldoTotaleReparti
       : (previewData.summary.totale_cassetto ?? 0);
     const differenza = calcDifferenza(previewData.summary, previewData.items, withReports);
     const previewImages = previewData.images?.length
@@ -910,7 +902,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 />
                 {cassettoAutomatico && (
                   <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Contanti + Cassa Auto
+                    Somma algebrica dei reparti
                   </p>
                 )}
               </div>
@@ -936,7 +928,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : cassettoAutomatico
-                ? 'Totale = somma dei saldi reparto e si aggiorna mentre modifichi entrate e uscite. Totale scassettato = Contanti + Cassa Auto.'
+                ? 'Totale e totale scassettato seguono la somma algebrica dei reparti mentre modifichi entrate e uscite.'
                 : totaleFromSaldi
                   ? 'Totale riportato da cassa = somma algebrica saldi reparti (si aggiorna se modifichi Entrate/Uscite). Differenza dallo scassettato.'
                   : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
