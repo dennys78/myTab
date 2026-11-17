@@ -62,7 +62,11 @@ export default function OrdineGratta() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => { caricaStato(); }, [caricaStato]);
+  useEffect(() => {
+    caricaStato();
+    const timer = setInterval(caricaStato, 5000);
+    return () => clearInterval(timer);
+  }, [caricaStato]);
 
   const apri = useCallback(async (id) => {
     const response = await apiFetch(`/api/gratta/preordini/${id}/`);
@@ -219,6 +223,16 @@ export default function OrdineGratta() {
     if (preordine) window.location.assign(`/api/gratta/preordini/${preordine.id}/json/`);
   };
 
+  const elimina = async () => {
+    if (!preordine) return;
+    if (!window.confirm('Eliminare questo ordine? Poi puoi rifare la lettura dal PC.')) return;
+    setErrore('');
+    const response = await apiFetch(`/api/gratta/preordini/${preordine.id}/`, { method: 'DELETE' });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.status === 'success') setPreordine(null);
+    else setErrore(data.error || 'Eliminazione non riuscita.');
+  };
+
   const gruppi = useMemo(() => {
     const righe = preordine?.righe || [];
     const perCopertura = (a, b) => (a.giorni_coperti ?? 9999) - (b.giorni_coperti ?? 9999);
@@ -246,8 +260,8 @@ export default function OrdineGratta() {
             PC negozio {online ? 'online' : online === false ? 'offline' : '…'}
           </p>
         </div>
-        <button type="button" className="gratta-read" onClick={leggi} disabled={attesa}>
-          {attesa ? 'In attesa del PC…' : 'Leggi da TabaUno'}
+        <button type="button" className="gratta-read" onClick={leggi} disabled={attesa || online !== true}>
+          {attesa ? 'In attesa del PC…' : 'Leggi da PC'}
         </button>
       </header>
 
@@ -309,6 +323,7 @@ export default function OrdineGratta() {
               {totale.sottoMinimo && <em>Sotto il minimo di 900 €</em>}
             </div>
             <div className="gratta-dock-actions">
+              <button type="button" className="is-danger" onClick={elimina}>Elimina ordine</button>
               <button type="button" onClick={annullaCorrezioni} disabled={bloccato}>Annulla correzioni</button>
               <button type="button" onClick={scarica}>Scarica JSON</button>
               <button type="button" className="is-primary" onClick={invia} disabled={bloccato || invio || totale.sottoMinimo}>

@@ -353,8 +353,11 @@ def api_gratta_preordine_detail(request, preordine_id):
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
     if request.method == 'GET':
         return JsonResponse({'status': 'success', 'preordine': _preordine_json(preordine, company)})
+    if request.method == 'DELETE':
+        preordine.delete()
+        return JsonResponse({'status': 'success'})
     if request.method != 'PATCH':
-        return JsonResponse({'status': 'error', 'error': 'Usa GET o PATCH'}, status=405)
+        return JsonResponse({'status': 'error', 'error': 'Usa GET, PATCH o DELETE'}, status=405)
     if preordine.stato not in STATI_MODIFICABILI:
         return JsonResponse({'status': 'error', 'error': 'Ordine già inviato: non si può modificare.'}, status=409)
     data = _body(request)

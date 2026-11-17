@@ -2380,6 +2380,7 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  padding-top: 0.85rem;
   padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
 }
 
@@ -2465,6 +2466,11 @@ tbody tr:hover {
   background: var(--accent);
   border-color: transparent;
   color: white;
+}
+
+.gratta-dock-actions .is-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 
 .gratta-choices input {

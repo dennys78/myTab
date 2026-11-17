@@ -204,6 +204,21 @@ class GrattaApiTests(TestCase):
         self.assertEqual(pronto.json()['preordine']['stato'], 'bozza')
         self.assertEqual(pronto.json()['preordine']['righe'][0]['codice'], '3116')
 
+    def test_elimina_ordine_e_consente_una_nuova_lettura(self):
+        lettura = self._lettura([self._gioco()])
+        creato = self.client.post(
+            f'/api/gratta/preordini/da-richiesta/{lettura.id}/',
+            data=json.dumps({'giorni_copertura': 7, 'data_consegna': '2026-11-18'}),
+            content_type='application/json',
+        )
+        preordine_id = creato.json()['preordine']['id']
+        eliminato = self.client.delete(f'/api/gratta/preordini/{preordine_id}/')
+        self.assertEqual(eliminato.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/gratta/preordini/{preordine_id}/').status_code, 404)
+        nuova = self.client.post('/api/gratta/preordini/', data='{}', content_type='application/json')
+        self.assertEqual(nuova.status_code, 201)
+        self.assertNotEqual(nuova.json()['id'], lettura.id)
+
     def test_patch_conserva_la_correzione_manuale(self):
         lettura = self._lettura([self._gioco('3116', giacenza=0), self._gioco('3058', giacenza=0)])
         creato = self.client.post(
