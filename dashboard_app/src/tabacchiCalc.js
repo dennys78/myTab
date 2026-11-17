@@ -1,4 +1,7 @@
 const GIORNI = [5, 7, 10, 14];
+const DEFAULT_SCORTA_PCT = 100;
+const SCORTA_PCT_MIN = 10;
+const SCORTA_PCT_MAX = 150;
 const FAMIGLIE = [
   'Sigarette',
   'Tabacco riscaldato',
@@ -6,6 +9,12 @@ const FAMIGLIE = [
   'Sigari e sigaretti',
   'Altri tabacchi',
 ];
+
+export function normalizzaScortaPct(value, fallback = DEFAULT_SCORTA_PCT) {
+  const pct = Number.parseInt(value, 10);
+  if (!Number.isFinite(pct)) return fallback;
+  return Math.max(SCORTA_PCT_MIN, Math.min(SCORTA_PCT_MAX, pct));
+}
 
 export function giorniAllaConsegna(oggi, ultimoChiuso, dataConsegna) {
   const inizio = oggi > ultimoChiuso ? oggi : addDays(ultimoChiuso, 1);
@@ -36,10 +45,12 @@ export function unitaOrdine(prezzo, prezzoKg, minimoGrammi) {
   return { pacchettiPerUnita: u, kgPerUnita: roundKg(minimo / 1000) };
 }
 
-export function propostaUnita(media, giacenza, pacchettiPerUnita, giorniCopertura, giorniAlla) {
+export function propostaUnita(media, giacenza, pacchettiPerUnita, giorniCopertura, giorniAlla, scortaPct = DEFAULT_SCORTA_PCT) {
   const u = Number(pacchettiPerUnita) || 0;
+  const fattore = normalizzaScortaPct(scortaPct) / 100;
   const alla = Math.max(0, Number(giacenza) - Number(media) * Number(giorniAlla));
-  const mancano = Number(media) * Number(giorniCopertura) - alla;
+  const target = Number(media) * Number(giorniCopertura) * fattore;
+  const mancano = target - alla;
   const soglia = 0.25 * u;
   let unita = 0;
   if (u > 0 && mancano >= soglia - 1e-9) {
@@ -58,12 +69,13 @@ export function urgenzaDataFine(giorniFine, giorniAlla, giorniCopertura) {
   return 'normale';
 }
 
-export function ricalcolaRighe(righe, { giorniCopertura, oggi, ultimoChiuso, dataConsegna }) {
+export function ricalcolaRighe(righe, { giorniCopertura, oggi, ultimoChiuso, dataConsegna, scortaPct = DEFAULT_SCORTA_PCT }) {
   const distanza = giorniAllaConsegna(oggi, ultimoChiuso, dataConsegna);
   const inizio = inizioVendite(oggi, ultimoChiuso);
+  const pct = normalizzaScortaPct(scortaPct);
   return righe.map(riga => {
     const proposta = propostaUnita(
-      riga.media, riga.giacenza, riga.pacchetti_per_unita, giorniCopertura, distanza,
+      riga.media, riga.giacenza, riga.pacchetti_per_unita, giorniCopertura, distanza, pct,
     );
     const proposti = proposta.unita;
     const unita = riga.corretto_a_mano ? Number(riga.unita) : proposti;
@@ -97,13 +109,14 @@ export function totaliOrdine(righe) {
   };
 }
 
-export function fraseCopertura(giorniAlla, giorniCopertura) {
+export function fraseCopertura(giorniAlla, giorniCopertura, scortaPct = DEFAULT_SCORTA_PCT) {
+  const pct = normalizzaScortaPct(scortaPct);
   const vende = giorniAlla <= 0
     ? 'Fino alla consegna non restano giorni di vendita'
     : giorniAlla === 1
       ? 'Fino alla consegna si vende ancora 1 giorno'
       : `Fino alla consegna si vendono ancora ${giorniAlla} giorni`;
-  return `${vende}; poi la merce deve bastare ${giorniCopertura} giorni. Le quantità sono in stecche da 10 pacchetti (o nella confezione minima per trinciati e sigari).`;
+  return `${vende}; poi la merce deve bastare ${giorniCopertura} giorni al ${pct}% di scorta. Le quantità sono in stecche da 10 pacchetti (o nella confezione minima per trinciati e sigari).`;
 }
 
 export function formattaFinisce(iso) {
@@ -168,7 +181,7 @@ export function altriArticoli(righe) {
     });
 }
 
-export { GIORNI, FAMIGLIE };
+export { GIORNI, FAMIGLIE, DEFAULT_SCORTA_PCT, SCORTA_PCT_MIN, SCORTA_PCT_MAX };
 
 function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;

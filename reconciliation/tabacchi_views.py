@@ -16,6 +16,7 @@ from .company_scope import bind_company
 from .models import AppSetting, TabacchiPreordine, TabacchiPreordineRiga, TabaUnoRequest
 from .tabacchi_preordine import (
     DEFAULT_GIORNO_CONSEGNA,
+    DEFAULT_SCORTA_PCT,
     FAMIGLIE,
     GIORNI_VALIDI,
     _decimal,
@@ -24,6 +25,7 @@ from .tabacchi_preordine import (
     calcola_righe,
     giorni_alla_consegna,
     inizio_vendite,
+    normalizza_scorta_pct,
     numero_json,
     proposta_unita,
     prossimo_giorno_consegna,
@@ -97,8 +99,10 @@ def _distanza(preordine):
     return giorni_alla_consegna(timezone.localdate(), ultimo, preordine.data_consegna)
 
 
-def _applica_proposta(riga, giorni, distanza, unita_forzate=None, toccata=False):
-    proposta = proposta_unita(riga.media, riga.giacenza, riga.pacchetti_per_unita, giorni, distanza)
+def _applica_proposta(riga, giorni, distanza, scorta_pct=DEFAULT_SCORTA_PCT, unita_forzate=None, toccata=False):
+    proposta = proposta_unita(
+        riga.media, riga.giacenza, riga.pacchetti_per_unita, giorni, distanza, scorta_pct,
+    )
     proposti = proposta['unita']
     riga.unita_proposte = proposti
     if toccata:
@@ -118,8 +122,10 @@ def _salva_totali(preordine):
     preordine.save()
 
 
-def _riga_json(riga, distanza, giorni, inizio):
-    proposta = proposta_unita(riga.media, riga.giacenza, riga.pacchetti_per_unita, giorni, distanza)
+def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT):
+    proposta = proposta_unita(
+        riga.media, riga.giacenza, riga.pacchetti_per_unita, giorni, distanza, scorta_pct,
+    )
     giorni_fine = proposta['giorni_fine']
     if riga.data_fine:
         data_fine = riga.data_fine.isoformat()
@@ -154,12 +160,17 @@ def _preordine_json(preordine, company):
     distanza = _distanza(preordine)
     ultimo = _ultimo(preordine)
     inizio = inizio_vendite(timezone.localdate(), ultimo) if ultimo else timezone.localdate()
-    righe = [_riga_json(riga, distanza, preordine.giorni_copertura, inizio) for riga in preordine.righe.all()]
+    scorta_pct = normalizza_scorta_pct(getattr(preordine, 'scorta_pct', DEFAULT_SCORTA_PCT))
+    righe = [
+        _riga_json(riga, distanza, preordine.giorni_copertura, inizio, scorta_pct)
+        for riga in preordine.righe.all()
+    ]
     totali = totali_ordine(righe)
     return {
         'id': preordine.id,
         'stato': preordine.stato,
         'giorni_copertura': preordine.giorni_copertura,
+        'scorta_pct': scorta_pct,
         'data_consegna': preordine.data_consegna.isoformat(),
         'giorni_alla_consegna': distanza,
         'ultimo_giorno_chiuso': ultimo,
@@ -183,6 +194,7 @@ def _crea_righe(preordine, dati):
         timezone.localdate(),
         giorni_copertura=preordine.giorni_copertura,
         data_consegna=preordine.data_consegna,
+        scorta_pct=getattr(preordine, 'scorta_pct', DEFAULT_SCORTA_PCT),
     )
     TabacchiPreordineRiga.objects.bulk_create([
         TabacchiPreordineRiga(
@@ -306,12 +318,14 @@ def api_tabacchi_preordine_da_richiesta(request, request_id):
     esistente = TabacchiPreordine.objects.filter(company=company, request=lettura).order_by('-id').first()
     if esistente:
         return JsonResponse({'status': 'success', 'created': False, 'preordine': _preordine_json(esistente, company)})
+    scorta_pct = normalizza_scorta_pct(data.get('scorta_pct'), DEFAULT_SCORTA_PCT)
     preordine = TabacchiPreordine.objects.create(
         company=company,
         creato_da=request.user,
         request=lettura,
         data_consegna=consegna,
         giorni_copertura=giorni,
+        scorta_pct=scorta_pct,
     )
     _crea_righe(preordine, lettura.payload)
     preordine.refresh_from_db()
@@ -343,6 +357,8 @@ def api_tabacchi_preordine_detail(request, preordine_id):
         if giorni is None:
             return JsonResponse({'status': 'error', 'error': 'Giorni di copertura non validi.'}, status=400)
         preordine.giorni_copertura = giorni
+    if 'scorta_pct' in data:
+        preordine.scorta_pct = normalizza_scorta_pct(data.get('scorta_pct'))
     if 'data_consegna' in data:
         consegna = parse_date(str(data.get('data_consegna') or ''))
         if not consegna:
@@ -356,6 +372,7 @@ def api_tabacchi_preordine_detail(request, preordine_id):
         return JsonResponse({'status': 'error', 'error': 'Manca la data di chiusura letta da TabaUno.'}, status=409)
     distanza = giorni_alla_consegna(timezone.localdate(), ultimo, preordine.data_consegna)
     inizio = inizio_vendite(timezone.localdate(), ultimo)
+    scorta_pct = normalizza_scorta_pct(preordine.scorta_pct)
     inviate = {}
     for item in data.get('righe') or []:
         if isinstance(item, dict) and item.get('aams') is not None:
@@ -368,8 +385,9 @@ def api_tabacchi_preordine_detail(request, preordine_id):
             riga,
             preordine.giorni_copertura,
             distanza,
-            inviate.get(riga.aams),
-            riga.aams in inviate,
+            scorta_pct=scorta_pct,
+            unita_forzate=inviate.get(riga.aams),
+            toccata=riga.aams in inviate,
         )
         if proposta['giorni_fine'] is None:
             riga.data_fine = None

@@ -12,6 +12,7 @@ from reconciliation.tabacchi_preordine import (
     calcola_righe,
     giorni_alla_consegna,
     media_riferimento,
+    normalizza_scorta_pct,
     prossimo_giorno_consegna,
     proposta_unita,
     unita_ordine,
@@ -51,6 +52,16 @@ class FormulaTabacchiTests(TestCase):
         for _aams, _nome, media, giacenza, u, atteso in ESEMPI:
             proposta = proposta_unita(media, giacenza, u, 7, 6)
             self.assertEqual(proposta['unita'], atteso, msg=_nome)
+
+    def test_scorta_pct_scala_la_proposta(self):
+        self.assertEqual(normalizza_scorta_pct(5), 10)
+        self.assertEqual(normalizza_scorta_pct(200), 150)
+        base = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 100)
+        meta = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 50)
+        piena = proposta_unita(Decimal('9.40'), 96, 10, 7, 6, 150)
+        self.assertEqual(base['unita'], 3)
+        self.assertLess(meta['unita'], base['unita'])
+        self.assertGreaterEqual(piena['unita'], base['unita'])
 
     def test_media_esclude_giorni_esauriti_e_pesa_3_2_1(self):
         ultimo = date(2026, 11, 16)
@@ -167,6 +178,7 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(preordine.status_code, 201)
         body = preordine.json()['preordine']
         self.assertEqual(body['giorni_copertura'], 7)
+        self.assertEqual(body['scorta_pct'], 100)
         self.assertTrue(any(r['aams'] == '201' for r in body['righe']))
         self.assertFalse(any(r['aams'] == '999' for r in body['righe']))
 
@@ -182,7 +194,7 @@ class TabacchiApiTests(TestCase):
         forzata = max(1, int(riga['unita_proposte']) + 2)
         patch = self.client.patch(
             f"/api/tabacchi/preordini/{preordine['id']}/",
-            data=f'{{"giorni_copertura":14,"righe":[{{"aams":"201","unita":{forzata}}}]}}',
+            data=f'{{"giorni_copertura":14,"scorta_pct":80,"righe":[{{"aams":"201","unita":{forzata}}}]}}',
             content_type='application/json',
         )
         self.assertEqual(patch.status_code, 200)
@@ -191,6 +203,7 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(riga2['unita'], forzata)
         self.assertTrue(riga2['corretto_a_mano'])
         self.assertEqual(aggiornato['giorni_copertura'], 14)
+        self.assertEqual(aggiornato['scorta_pct'], 80)
 
         csv_resp = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/csv/")
         self.assertEqual(csv_resp.status_code, 200)

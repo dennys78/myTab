@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react';
 import { apiFetch } from './api';
 import {
+  DEFAULT_SCORTA_PCT,
   GIORNI,
+  SCORTA_PCT_MAX,
+  SCORTA_PCT_MIN,
   altriArticoli,
   elencoCopia,
   fraseCopertura,
@@ -10,6 +13,7 @@ import {
   formattaFinisce,
   gruppiDaOrdinare,
   isoLocale,
+  normalizzaScortaPct,
   prossimoGiornoConsegna,
   ricalcolaRighe,
   totaliOrdine,
@@ -86,6 +90,7 @@ export default function OrdineTabacchi() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           giorni_copertura: next.giorni_copertura,
+          scorta_pct: next.scorta_pct,
           data_consegna: next.data_consegna,
           righe: righePatch || next.righe.map(riga => ({ aams: riga.aams, unita: riga.unita })),
         }),
@@ -101,16 +106,19 @@ export default function OrdineTabacchi() {
       if (!prev?.modificabile) return prev;
       const giorni = patch.giorni_copertura ?? prev.giorni_copertura;
       const consegna = patch.data_consegna ?? prev.data_consegna;
+      const scortaPct = normalizzaScortaPct(patch.scorta_pct ?? prev.scorta_pct ?? DEFAULT_SCORTA_PCT);
       const righe = ricalcolaRighe(prev.righe, {
         giorniCopertura: giorni,
         oggi,
         ultimoChiuso: prev.ultimo_giorno_chiuso,
         dataConsegna: consegna,
+        scortaPct,
       });
       const totali = totaliOrdine(righe);
       const next = {
         ...prev,
         giorni_copertura: giorni,
+        scorta_pct: scortaPct,
         data_consegna: consegna,
         giorni_alla_consegna: righe[0]?.giorni_alla_consegna ?? prev.giorni_alla_consegna,
         righe,
@@ -137,6 +145,7 @@ export default function OrdineTabacchi() {
         oggi,
         ultimoChiuso: prev.ultimo_giorno_chiuso,
         dataConsegna: prev.data_consegna,
+        scortaPct: prev.scorta_pct,
       });
       const totali = totaliOrdine(righe);
       const next = {
@@ -165,6 +174,7 @@ export default function OrdineTabacchi() {
         oggi,
         ultimoChiuso: prev.ultimo_giorno_chiuso,
         dataConsegna: prev.data_consegna,
+        scortaPct: prev.scorta_pct,
       });
       const totali = totaliOrdine(righe);
       const next = {
@@ -204,7 +214,7 @@ export default function OrdineTabacchi() {
         const creato = await apiFetch(`/api/tabacchi/preordini/da-richiesta/${data.id}/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ giorni_copertura: 7, data_consegna: consegna }),
+          body: JSON.stringify({ giorni_copertura: 7, scorta_pct: DEFAULT_SCORTA_PCT, data_consegna: consegna }),
         });
         const ordine = await creato.json();
         setAttesa(false);
@@ -366,9 +376,27 @@ export default function OrdineTabacchi() {
                 onChange={e => aggiornaParametri({ data_consegna: e.target.value })}
               />
             </div>
+            <div className="tab-control tab-control-scorta">
+              <span className="tab-label">Scorta {normalizzaScortaPct(preordine.scorta_pct)}%</span>
+              <input
+                type="range"
+                min={SCORTA_PCT_MIN}
+                max={SCORTA_PCT_MAX}
+                step={5}
+                value={normalizzaScortaPct(preordine.scorta_pct)}
+                disabled={!preordine.modificabile}
+                onChange={e => aggiornaParametri({ scorta_pct: Number(e.target.value) })}
+                aria-label="Percentuale di scorta desiderata"
+              />
+              <div className="tab-scorta-scale">
+                <span>{SCORTA_PCT_MIN}%</span>
+                <span>100%</span>
+                <span>{SCORTA_PCT_MAX}%</span>
+              </div>
+            </div>
           </div>
           <p className="tab-hint">
-            {fraseCopertura(preordine.giorni_alla_consegna, preordine.giorni_copertura)}
+            {fraseCopertura(preordine.giorni_alla_consegna, preordine.giorni_copertura, preordine.scorta_pct)}
           </p>
 
           <section className="tab-card">

@@ -10,6 +10,9 @@ GRAM = Decimal('0.001')
 ZERO = Decimal('0')
 GIORNI_VALIDI = (5, 7, 10, 14)
 DEFAULT_COPERURA = 7
+DEFAULT_SCORTA_PCT = 100
+SCORTA_PCT_MIN = 10
+SCORTA_PCT_MAX = 150
 PESO_RECENTE = 7
 PESO_MEDIO = 14
 DEFAULT_GIORNO_CONSEGNA = 0  # lunedì
@@ -143,14 +146,24 @@ def media_riferimento(vendite, giacenze, giorni_apertura, ultimo, pacchetti_per_
     return media, esclusi
 
 
-def proposta_unita(media, giacenza, pacchetti_per_unita, giorni_copertura, alla_distanza):
+def normalizza_scorta_pct(value, default=DEFAULT_SCORTA_PCT):
+    try:
+        pct = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(SCORTA_PCT_MIN, min(SCORTA_PCT_MAX, pct))
+
+
+def proposta_unita(media, giacenza, pacchetti_per_unita, giorni_copertura, alla_distanza, scorta_pct=DEFAULT_SCORTA_PCT):
     media = _decimal(media)
     giacenza = _decimal(giacenza)
     unita_size = _decimal(pacchetti_per_unita)
     distanza = _decimal(alla_distanza)
     copertura = int(giorni_copertura)
+    fattore = Decimal(normalizza_scorta_pct(scorta_pct)) / Decimal('100')
     alla = max(ZERO, giacenza - media * distanza)
-    mancano = media * copertura - alla
+    target = media * copertura * fattore
+    mancano = target - alla
     soglia = Decimal('0.25') * unita_size
     if unita_size <= 0 or mancano < soglia:
         pezzi = 0
@@ -177,9 +190,10 @@ def urgenza_data_fine(giorni_fine, giorni_alla, giorni_copertura):
     return 'normale'
 
 
-def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_consegna=None):
+def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_consegna=None, scorta_pct=DEFAULT_SCORTA_PCT):
     if int(giorni_copertura) not in GIORNI_VALIDI:
         raise ValueError('I giorni di copertura devono essere 5, 7, 10 o 14.')
+    scorta_pct = normalizza_scorta_pct(scorta_pct)
     ultimo = (dati_agente or {}).get('ultimo_giorno_chiuso')
     if not ultimo:
         return [], []
@@ -207,7 +221,7 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
             unita_size,
         )
         proposta = proposta_unita(
-            media, articolo.get('giacenza'), unita_size, giorni_copertura, distanza,
+            media, articolo.get('giacenza'), unita_size, giorni_copertura, distanza, scorta_pct,
         )
         pezzi = proposta['unita']
         prezzo = _money(articolo.get('prezzo'))
