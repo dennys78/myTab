@@ -16,11 +16,20 @@ export function isValidFiveModeFileCount(count) {
 /** Inserimenti a mano in chiusura, criterio D3 Solution. */
 export const MANUAL_VOCI_D3 = ['LOTTOMATICA', 'MOONEY', 'SISAL', 'GRATTA E VINCI'];
 
+export function isAziendaD3(companyName) {
+  return /d3/i.test(String(companyName || ''));
+}
+
+/** Sull'altra azienda lo scassettato non arriva da TabaUno: parte da 0 e lo scrive l'utente. */
+export function scassettatoManuale(companyName) {
+  const name = String(companyName || '').trim();
+  return name.length > 0 && !isAziendaD3(name);
+}
+
 /** L'altra azienda usa lo stesso elenco e aggiunge LIS, con entrate e uscite. */
 export function manualVociFor(mode, companyName) {
   const name = String(companyName || '');
-  const isD3 = /d3/i.test(name);
-  if (isD3) return [...MANUAL_VOCI_D3];
+  if (isAziendaD3(name)) return [...MANUAL_VOCI_D3];
   if (mode === ACQUISITION_MODE_TWO || name) return [...MANUAL_VOCI_D3, 'LIS'];
   return [...MANUAL_VOCI_D3];
 }

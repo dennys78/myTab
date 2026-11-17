@@ -9,6 +9,7 @@ import {
   isValidTwoModeFileCount,
   manualVociFor,
   manualVociHint,
+  scassettatoManuale,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
 import { ensurePushSubscription, markAcquisitionDraftsSeen, showLocalPushNotification } from './webPush';
@@ -67,7 +68,7 @@ function tabaunoIssues(verifiche) {
   return issues;
 }
 
-function previewFromTabauno(payload, manualVoci) {
+function previewFromTabauno(payload, manualVoci, { cassettoManuale = false } = {}) {
   const incasso = payload.incasso || {};
   const totale = payload.totale || {};
   const pagamenti = payload.pagamenti || null;
@@ -99,6 +100,7 @@ function previewFromTabauno(payload, manualVoci) {
   return {
     date: payload.data,
     from_tabauno: true,
+    scassettato_manuale: cassettoManuale,
     tabauno_verifiche: payload.verifiche || {},
     with_reports: false,
     totale_from_saldi: false,
@@ -111,7 +113,7 @@ function previewFromTabauno(payload, manualVoci) {
       reso_auto: Number(pagamenti?.reso_auto) || 0,
       distrib: Number(pagamenti?.distrib) || 0,
       totale: Number(pagamenti ? pagamenti.totale : totale.saldo) || 0,
-      totale_cassetto: saldoReparti,
+      totale_cassetto: cassettoManuale ? 0 : saldoReparti,
       differenza: 0,
     },
   };
@@ -339,19 +341,19 @@ export default function AcquisisciChiusureAI({ onBack }) {
     return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
   };
 
-  const calcDifferenza = (s, items, withReports, fromTabauno = false) =>
-    (withReports || fromTabauno) ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
+  const calcDifferenza = (s, items, withReports, fromTabauno = false, cassettoManuale = false) =>
+    (withReports || (fromTabauno && !cassettoManuale)) ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
 
   /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
-  const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno }) => {
+  const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno, cassettoManuale }) => {
     const next = { ...summary };
     if (totaleFromSaldi) {
       next.totale = calcSaldoReparti(items);
     }
-    if (fromTabauno) {
+    if (fromTabauno && !cassettoManuale) {
       next.totale_cassetto = calcSaldoReparti(items);
     }
-    next.differenza = calcDifferenza(next, items, withReports, fromTabauno);
+    next.differenza = calcDifferenza(next, items, withReports, fromTabauno, cassettoManuale);
     return next;
   };
 
@@ -369,13 +371,16 @@ export default function AcquisisciChiusureAI({ onBack }) {
       : parsedItems;
     const totaleFromSaldi = !!data?.totale_from_saldi;
     const withReports = !!data?.with_reports;
+    const cassettoManuale = !!data?.from_tabauno && (!!data?.scassettato_manuale || scassettatoManuale(user?.company?.denominazione));
     const enriched = {
       ...data,
+      scassettato_manuale: cassettoManuale,
       totale_from_saldi: totaleFromSaldi,
         summary: syncSummaryFromItems({ ...(data?.summary || {}) }, items, {
           withReports,
           totaleFromSaldi,
           fromTabauno: !!data?.from_tabauno,
+          cassettoManuale,
         }),
       items,
       extract_cached: cached,
@@ -512,6 +517,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           withReports: !!prev.with_reports,
           totaleFromSaldi: !!prev.totale_from_saldi,
           fromTabauno: !!prev.from_tabauno,
+          cassettoManuale: !!prev.scassettato_manuale,
         }),
       };
     });
@@ -521,9 +527,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const { name, value } = e.target;
     setPreviewData(prev => {
       if (name === 'totale' && prev.totale_from_saldi) return prev;
-      if (name === 'totale_cassetto' && prev.from_tabauno) return prev;
+      if (name === 'totale_cassetto' && prev.from_tabauno && !prev.scassettato_manuale) return prev;
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports, prev.from_tabauno);
+      updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports, prev.from_tabauno, prev.scassettato_manuale);
       return { ...prev, summary: updated };
     });
   };
@@ -537,6 +543,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         withReports: !!prev.with_reports,
         totaleFromSaldi: !!prev.totale_from_saldi,
         fromTabauno: !!prev.from_tabauno,
+        cassettoManuale: !!prev.scassettato_manuale,
       }),
     };
   });
@@ -550,6 +557,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         withReports: !!prev.with_reports,
         totaleFromSaldi: !!prev.totale_from_saldi,
         fromTabauno: !!prev.from_tabauno,
+        cassettoManuale: !!prev.scassettato_manuale,
       }),
     };
   });
@@ -579,7 +587,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
               if (typeof status.agent_online === 'boolean') setAgentOnline(status.agent_online);
               if (status.status === 'done') {
                 setTabaunoWait(false);
-                applyPreviewData(previewFromTabauno(status.payload || {}, manualVociFor(acquisitionFileMode, user?.company?.denominazione)));
+                applyPreviewData(previewFromTabauno(
+                  status.payload || {},
+                  manualVociFor(acquisitionFileMode, user?.company?.denominazione),
+                  { cassettoManuale: scassettatoManuale(user?.company?.denominazione) },
+                ));
                 const issues = tabaunoIssues(status.payload?.verifiche);
                 if (issues.length) setError(issues.join(' '));
                 return;
@@ -623,6 +635,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       withReports,
       totaleFromSaldi,
       fromTabauno: !!previewData.from_tabauno,
+      cassettoManuale: !!previewData.scassettato_manuale,
     });
     const summaryPayload = {
       ...summarySynced,
@@ -763,11 +776,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const withReports = !!previewData.with_reports;
     const totaleFromSaldi = !!previewData.totale_from_saldi;
     const saldoTotaleReparti = calcSaldoReparti(previewData.items);
-    const cassettoAutomatico = !!previewData.from_tabauno;
+    const cassettoAutomatico = !!previewData.from_tabauno && !previewData.scassettato_manuale;
     const totaleScassettato = cassettoAutomatico
       ? saldoTotaleReparti
       : (previewData.summary.totale_cassetto ?? 0);
-    const differenza = calcDifferenza(previewData.summary, previewData.items, withReports, previewData.from_tabauno);
+    const differenza = calcDifferenza(previewData.summary, previewData.items, withReports, previewData.from_tabauno, previewData.scassettato_manuale);
     const previewImages = previewData.images?.length
       ? previewData.images
       : previews.map((url, index) => ({ id: `local_${index}`, url }));
@@ -922,6 +935,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
                     Somma algebrica dei reparti
                   </p>
                 )}
+                {previewData.scassettato_manuale && (
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Inseriscilo a mano. All&apos;importazione resta 0.
+                  </p>
+                )}
               </div>
             )}
             <div>
@@ -944,7 +962,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.6rem 0 0' }}>
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
-              : cassettoAutomatico
+              : previewData.scassettato_manuale
+                ? 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Resi).'
+                : cassettoAutomatico
                 ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti.'
                 : totaleFromSaldi
                   ? 'Totale riportato da cassa = somma algebrica saldi reparti (si aggiorna se modifichi Entrate/Uscite). Differenza dallo scassettato.'

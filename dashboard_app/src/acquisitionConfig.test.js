@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACQUISITION_MODE_FIVE, ACQUISITION_MODE_TWO, manualVociFor, manualVociHint } from './acquisitionConfig.js';
+import { ACQUISITION_MODE_FIVE, ACQUISITION_MODE_TWO, manualVociFor, manualVociHint, scassettatoManuale } from './acquisitionConfig.js';
 
 test('D3 Solution tiene i quattro inserimenti manuali', () => {
   assert.deepEqual(manualVociFor(ACQUISITION_MODE_FIVE, 'D3 Solution'), [
@@ -15,4 +15,6 @@ test('l\'altra azienda aggiunge LIS con entrate e uscite', () => {
   ]);
   assert.deepEqual(manualVociFor(ACQUISITION_MODE_TWO, 'Tabaccheria').at(-1), 'LIS');
   assert.equal(manualVociHint(ACQUISITION_MODE_TWO, 'Tabaccheria'), 'Lottomatica, Mooney, Sisal, Gratta e Vinci e LIS');
+  assert.equal(scassettatoManuale('Tabaccheria'), true);
+  assert.equal(scassettatoManuale('D3 Solution'), false);
 });
