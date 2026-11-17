@@ -88,7 +88,7 @@ function previewFromTabauno(payload) {
     from_tabauno: true,
     tabauno_verifiche: payload.verifiche || {},
     with_reports: false,
-    totale_from_saldi: true,
+    totale_from_saldi: false,
     items: voci,
     summary: {
       contanti: Number(pagamenti ? pagamenti.contanti : incasso.contanti) || 0,
@@ -928,7 +928,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : cassettoAutomatico
-                ? 'Totale e totale scassettato seguono la somma algebrica dei reparti mentre modifichi entrate e uscite.'
+                ? 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Reso Auto − Reso Cont.).'
                 : totaleFromSaldi
                   ? 'Totale riportato da cassa = somma algebrica saldi reparti (si aggiorna se modifichi Entrate/Uscite). Differenza dallo scassettato.'
                   : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
