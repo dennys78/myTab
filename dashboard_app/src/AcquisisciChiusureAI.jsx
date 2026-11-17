@@ -346,11 +346,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
 
   const calcDifferenzaSomma = (s, items) => {
     const resi = (Number(s.reso_auto) || 0) + (Number(s.reso_cont) || 0);
-    const value = calcSaldoReparti(items)
+    const value = (Number(s.totale_cassetto) || 0)
+      - calcSaldoReparti(items)
       - (Number(s.pag_pos) || 0)
       - (Number(s.distrib) || 0)
-      - resi
-      - (Number(s.totale_cassetto) || 0);
+      - resi;
     return Math.round(value * 100) / 100;
   };
 
@@ -981,7 +981,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : previewData.scassettato_manuale
-                ? 'Differenza = Somma saldi − Pag.Pos − Distrib. − Resi − Totale scassettato.'
+                ? 'Differenza = Totale scassettato − Somma saldi − Pag.Pos − Distrib. − Resi.'
                 : cassettoAutomatico
                 ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti.'
                 : totaleFromSaldi
