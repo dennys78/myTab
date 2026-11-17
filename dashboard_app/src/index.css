@@ -2826,6 +2826,59 @@ tbody tr:hover {
   font: inherit;
 }
 
+.tab-sezioni {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0.85rem 0 0.35rem;
+}
+
+.tab-sezione {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  border-radius: 10px;
+  padding: 0.65rem 0.7rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.tab-sezione strong {
+  font-family: "IBM Plex Sans Condensed", Inter, sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.tab-sezione span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.tab-sezione.active {
+  border-color: var(--tab-accent);
+  background: var(--tab-accent-soft);
+  color: var(--tab-accent);
+}
+
+.tab-sezione.active span {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.tab-sezione--dispositivi.active,
+.tab-sezione--solidi.active {
+  --tab-accent: #2f6fed;
+  --tab-accent-soft: rgba(47, 111, 237, 0.14);
+}
+
 .tab-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -2834,10 +2887,32 @@ tbody tr:hover {
   margin: 1rem 0;
 }
 
+.tab-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
+
 .tab-card h2 {
-  margin: 0 0 0.7rem;
+  margin: 0;
   font-family: "IBM Plex Sans Condensed", Inter, sans-serif;
   font-size: 1.05rem;
+}
+
+.tab-card-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.tab-empty-warn {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #d97706;
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
 }
 
 .tab-family {
@@ -3064,6 +3139,10 @@ tbody tr:hover {
 }
 
 @media (max-width: 640px) {
+  .tab-sezioni {
+    grid-template-columns: 1fr;
+  }
+
   .tab-table thead { display: none; }
   .tab-desktop-only { display: none; }
   .tab-mobile-meta { display: flex; flex-wrap: wrap; }

@@ -6,7 +6,9 @@ import {
   GIORNI,
   SCORTA_PCT_MAX,
   SCORTA_PCT_MIN,
+  SEZIONI_ORDINE,
   altriArticoli,
+  conteggiSezioni,
   elencoCopia,
   fraseCopertura,
   formattaChiusura,
@@ -16,6 +18,8 @@ import {
   normalizzaScortaPct,
   prossimoGiornoConsegna,
   ricalcolaRighe,
+  righeSezione,
+  sezioneDiRiga,
   totaliOrdine,
 } from './tabacchiCalc';
 
@@ -38,6 +42,7 @@ export default function OrdineTabacchi() {
   const [ricerca, setRicerca] = useState('');
   const [copiato, setCopiato] = useState(false);
   const [ordinamento, setOrdinamento] = useState({ chiave: 'finisce', direzione: 'asc' });
+  const [sezione, setSezione] = useState('tabacchi');
   const pollRef = useRef(null);
   const saveRef = useRef(null);
   const copiaRef = useRef(null);
@@ -287,20 +292,33 @@ export default function OrdineTabacchi() {
     );
   };
 
+  const conteggi = useMemo(
+    () => (preordine ? conteggiSezioni(preordine.righe) : null),
+    [preordine],
+  );
   const gruppi = useMemo(
-    () => (preordine ? gruppiDaOrdinare(preordine.righe, ordinamento) : []),
-    [preordine, ordinamento],
+    () => (preordine ? gruppiDaOrdinare(preordine.righe, { ...ordinamento, sezioneId: sezione }) : []),
+    [preordine, ordinamento, sezione],
   );
   const altri = useMemo(() => {
-    const rows = preordine ? altriArticoli(preordine.righe, ordinamento) : [];
+    const base = preordine ? altriArticoli(preordine.righe, ordinamento) : [];
+    const rows = base.filter(riga => sezioneDiRiga(riga) === sezione);
     const q = ricerca.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter(riga => (
       String(riga.descrizione).toLowerCase().includes(q)
       || String(riga.aams).toLowerCase().includes(q)
     ));
-  }, [preordine, ricerca, ordinamento]);
+  }, [preordine, ricerca, ordinamento, sezione]);
+  const altriTotaliSezione = preordine
+    ? altriArticoli(preordine.righe).filter(riga => sezioneDiRiga(riga) === sezione).length
+    : 0;
   const haCorrezioni = !!preordine?.righe?.some(riga => riga.corretto_a_mano);
+  const unitaLabel = sezione === 'tabacchi' ? 'Stecche' : 'Conf.';
+  const sezioneMeta = conteggi?.[sezione];
+  const senzaLetturaDsp = preordine
+    && righeSezione(preordine.righe, 'dispositivi').length === 0
+    && righeSezione(preordine.righe, 'solidi').length === 0;
 
   const rigaTabella = (riga, { conStepper = true } = {}) => (
     <tr key={riga.aams} className={Number(riga.unita) > 0 ? 'tab-row-order' : undefined}>
@@ -424,10 +442,53 @@ export default function OrdineTabacchi() {
             {fraseCopertura(preordine.giorni_alla_consegna, preordine.giorni_copertura, preordine.scorta_pct)}
           </p>
 
+          <div className="tab-sezioni" role="tablist" aria-label="Tipo merce">
+            {SEZIONI_ORDINE.map(item => {
+              const stats = conteggi?.[item.id];
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={sezione === item.id}
+                  className={`tab-sezione tab-sezione--${item.id}${sezione === item.id ? ' active' : ''}`}
+                  onClick={() => { setSezione(item.id); setAltriAperti(false); setRicerca(''); }}
+                >
+                  <strong>{item.label}</strong>
+                  <span>
+                    {stats ? `${stats.articoli} da ordinare` : '—'}
+                    {stats && stats.totali ? ` · ${stats.totali} in elenco` : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {senzaLetturaDsp && (sezione === 'dispositivi' || sezione === 'solidi') && (
+            <p className="tab-empty tab-empty-warn">
+              In questa lettura non ci sono {sezione}. Aggiorna l’agente sul PC negozio (file tabacchi.py), riavvia TabaUnoAgent e fai «Nuova lettura».
+            </p>
+          )}
+
           <section className="tab-card">
-            <h2>Da ordinare</h2>
+            <div className="tab-card-head">
+              <h2>Da ordinare · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</h2>
+              {sezioneMeta && (
+                <span className="tab-card-meta">
+                  {sezione === 'tabacchi'
+                    ? `${sezioneMeta.kg.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
+                    : `${sezioneMeta.stecche} conf. · ${sezioneMeta.pezzi} pz`}
+                  {' · '}
+                  {euro(sezioneMeta.importo) || '0,00 €'}
+                </span>
+              )}
+            </div>
             {gruppi.length === 0 ? (
-              <p className="tab-empty">Niente da ordinare con questa copertura.</p>
+              <p className="tab-empty">
+                {senzaLetturaDsp && sezione !== 'tabacchi'
+                  ? 'Nessun articolo in questa sezione per la lettura attuale.'
+                  : 'Niente da ordinare con questa copertura.'}
+              </p>
             ) : (
               gruppi.map(group => (
                 <div key={group.famiglia} className="tab-family">
@@ -443,7 +504,7 @@ export default function OrdineTabacchi() {
                           <th>Giac.</th>
                           <th>Vende/gg</th>
                           <th>{etichettaSort('finisce', 'Finisce')}</th>
-                          <th>Conf.</th>
+                          <th>{unitaLabel}</th>
                           <th>{etichettaSort('importo', 'Importo')}</th>
                         </tr>
                       </thead>
@@ -460,15 +521,15 @@ export default function OrdineTabacchi() {
           <section className="tab-card tab-others">
             <button type="button" className="tab-others-toggle" onClick={() => setAltriAperti(v => !v)}>
               {altriAperti ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              <span>Altri articoli</span>
-              <em>{altriArticoli(preordine.righe).length} articoli con scorta sufficiente · i primi finiscono prima</em>
+              <span>Altri articoli · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</span>
+              <em>{altriTotaliSezione} con scorta sufficiente · i primi finiscono prima</em>
             </button>
             {altriAperti && (
               <div className="tab-others-body">
                 <input
                   type="search"
                   className="tab-search"
-                  placeholder="Cerca per nome o codice AAMS"
+                  placeholder="Cerca per nome o codice"
                   value={ricerca}
                   onChange={e => setRicerca(e.target.value)}
                 />
@@ -497,7 +558,11 @@ export default function OrdineTabacchi() {
             <div className="tab-dock-totals">
               <span>Articoli <strong>{preordine.articoli}</strong></span>
               <span>Stecche/conf. <strong>{preordine.stecche}</strong></span>
-              <span>Kg <strong>{Number(preordine.kg || 0).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong></span>
+              {sezione === 'tabacchi' ? (
+                <span>Kg <strong>{Number(preordine.kg || 0).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong></span>
+              ) : (
+                <span>Pz sezione <strong>{sezioneMeta?.pezzi ?? 0}</strong></span>
+              )}
               <span className="tab-dock-total">Totale <strong>{Number(preordine.totale || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</strong></span>
             </div>
             <div className="tab-dock-actions">

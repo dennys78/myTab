@@ -2,15 +2,34 @@ const GIORNI = [5, 7, 10, 14];
 const DEFAULT_SCORTA_PCT = 200;
 const SCORTA_PCT_MIN = 10;
 const SCORTA_PCT_MAX = 250;
-const FAMIGLIE = [
+const FAMIGLIE_TABACCHI = [
   'Sigarette',
   'Tabacco riscaldato',
   'Trinciati',
   'Sigari e sigaretti',
   'Altri tabacchi',
+];
+const FAMIGLIE = [
+  ...FAMIGLIE_TABACCHI,
   'Dispositivi',
   'Solidi',
 ];
+
+export const SEZIONI_ORDINE = [
+  { id: 'tabacchi', label: 'Tabacchi', famiglie: FAMIGLIE_TABACCHI },
+  { id: 'dispositivi', label: 'Dispositivi', famiglie: ['Dispositivi'] },
+  { id: 'solidi', label: 'Solidi', famiglie: ['Solidi'] },
+];
+
+export function sezioneDiRiga(riga) {
+  if (riga?.famiglia === 'Solidi') return 'solidi';
+  if (riga?.famiglia === 'Dispositivi' || riga?.tipo === 'dispositivo') return 'dispositivi';
+  return 'tabacchi';
+}
+
+export function righeSezione(righe, sezioneId) {
+  return (righe || []).filter(riga => sezioneDiRiga(riga) === sezioneId);
+}
 
 export function normalizzaScortaPct(value, fallback = DEFAULT_SCORTA_PCT) {
   const pct = Number.parseInt(value, 10);
@@ -118,7 +137,7 @@ export function fraseCopertura(giorniAlla, giorniCopertura, scortaPct = DEFAULT_
     : giorniAlla === 1
       ? 'Fino alla consegna si vende ancora 1 giorno'
       : `Fino alla consegna si vendono ancora ${giorniAlla} giorni`;
-  return `${vende}; poi la merce deve bastare ${giorniCopertura} giorni al ${pct}% di scorta. Le quantità sono in stecche da 10 pacchetti (o nella confezione minima per trinciati e sigari).`;
+  return `${vende}; poi la merce deve bastare ${giorniCopertura} giorni al ${pct}% di scorta. Tabacchi in stecche/kg; dispositivi e solidi in confezioni (pezzi per conf. come in TabaUno).`;
 }
 
 export function formattaFinisce(iso) {
@@ -139,12 +158,45 @@ export function formattaChiusura(iso) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+export function quantitaElenco(riga) {
+  if (sezioneDiRiga(riga) === 'tabacchi') {
+    return `${Number(riga.kg || 0).toFixed(3)} kg`;
+  }
+  const pezzi = Number(riga.unita || 0) * Number(riga.pacchetti_per_unita || 0);
+  return `${Number(riga.unita || 0)} conf. (${pezzi} pz)`;
+}
+
 export function elencoCopia(righe) {
-  return [...righe]
-    .filter(riga => Number(riga.unita) > 0)
-    .sort((a, b) => String(a.descrizione).localeCompare(String(b.descrizione), 'it'))
-    .map(riga => `${riga.aams}\t${riga.descrizione}\t${Number(riga.kg).toFixed(3)} kg`)
-    .join('\n');
+  const attivi = [...righe].filter(riga => Number(riga.unita) > 0);
+  const blocchi = SEZIONI_ORDINE.map(sezione => {
+    const items = attivi
+      .filter(riga => sezioneDiRiga(riga) === sezione.id)
+      .sort((a, b) => String(a.descrizione).localeCompare(String(b.descrizione), 'it'));
+    if (!items.length) return null;
+    const righeTesto = items.map(riga => `${riga.aams}\t${riga.descrizione}\t${quantitaElenco(riga)}`);
+    return [`## ${sezione.label}`, ...righeTesto].join('\n');
+  }).filter(Boolean);
+  return blocchi.join('\n\n');
+}
+
+export function conteggiSezioni(righe) {
+  const out = {};
+  for (const sezione of SEZIONI_ORDINE) {
+    const items = righeSezione(righe, sezione.id);
+    const attivi = items.filter(riga => Number(riga.unita) > 0);
+    out[sezione.id] = {
+      articoli: attivi.length,
+      totali: items.length,
+      stecche: attivi.reduce((sum, riga) => sum + Number(riga.unita || 0), 0),
+      pezzi: attivi.reduce(
+        (sum, riga) => sum + Number(riga.unita || 0) * Number(riga.pacchetti_per_unita || 0),
+        0,
+      ),
+      kg: roundKg(attivi.reduce((sum, riga) => sum + Number(riga.kg || 0), 0)),
+      importo: roundMoney(attivi.reduce((sum, riga) => sum + Number(riga.importo || 0), 0)),
+    };
+  }
+  return out;
 }
 
 export function isoLocale(date) {
@@ -175,9 +227,12 @@ export function confrontaRighe(a, b, chiave = 'finisce', direzione = 'asc') {
   return cmp * dir;
 }
 
-export function gruppiDaOrdinare(righe, { chiave = 'finisce', direzione = 'asc' } = {}) {
+export function gruppiDaOrdinare(righe, { chiave = 'finisce', direzione = 'asc', sezioneId = null } = {}) {
+  const famiglieSezione = sezioneId
+    ? (SEZIONI_ORDINE.find(sezione => sezione.id === sezioneId)?.famiglie || FAMIGLIE)
+    : FAMIGLIE;
   const attivi = righe.filter(riga => Number(riga.unita) > 0);
-  return FAMIGLIE
+  return famiglieSezione
     .map(famiglia => {
       const items = attivi
         .filter(riga => riga.famiglia === famiglia)

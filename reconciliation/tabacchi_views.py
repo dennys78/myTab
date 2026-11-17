@@ -138,6 +138,7 @@ def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT):
         'aams': riga.aams,
         'descrizione': riga.descrizione,
         'famiglia': riga.famiglia,
+        'tipo': 'dispositivo' if riga.famiglia in ('Dispositivi', 'Solidi') else 'tabacco',
         'prezzo': numero_json(riga.prezzo),
         'pacchetti_per_unita': int(riga.pacchetti_per_unita),
         'kg_per_unita': numero_json(riga.kg_per_unita, 3),
