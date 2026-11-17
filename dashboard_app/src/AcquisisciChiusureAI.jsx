@@ -326,8 +326,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
     return Math.round(((s.totale_cassetto || 0) - atteso) * 100) / 100;
   };
 
-  const calcDifferenza = (s, items, withReports) =>
-    withReports ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
+  const calcDifferenza = (s, items, withReports, fromTabauno = false) =>
+    (withReports || fromTabauno) ? calcDifferenzaReparti(s, items) : calcDifferenzaCassetto(s);
 
   /** Tabaccheria: Totale riportato da cassa = somma algebrica saldi; segue le modifiche ai reparti. */
   const syncSummaryFromItems = (summary, items, { withReports, totaleFromSaldi, fromTabauno }) => {
@@ -338,7 +338,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     if (fromTabauno) {
       next.totale_cassetto = calcSaldoReparti(items);
     }
-    next.differenza = calcDifferenza(next, items, withReports);
+    next.differenza = calcDifferenza(next, items, withReports, fromTabauno);
     return next;
   };
 
@@ -506,7 +506,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
       if (name === 'totale' && prev.totale_from_saldi) return prev;
       if (name === 'totale_cassetto' && prev.from_tabauno) return prev;
       const updated = { ...prev.summary, [name]: parseFloat(value) || 0 };
-      updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports);
+      updated.differenza = calcDifferenza(updated, prev.items, prev.with_reports, prev.from_tabauno);
       return { ...prev, summary: updated };
     });
   };
@@ -750,7 +750,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
     const totaleScassettato = cassettoAutomatico
       ? saldoTotaleReparti
       : (previewData.summary.totale_cassetto ?? 0);
-    const differenza = calcDifferenza(previewData.summary, previewData.items, withReports);
+    const differenza = calcDifferenza(previewData.summary, previewData.items, withReports, previewData.from_tabauno);
     const previewImages = previewData.images?.length
       ? previewData.images
       : previews.map((url, index) => ({ id: `local_${index}`, url }));
@@ -928,7 +928,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             {withReports
               ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti'
               : cassettoAutomatico
-                ? 'Differenza = Totale scassettato − (Totale − Pag.Pos − Distrib. − Reso Auto − Reso Cont.).'
+                ? 'Differenza = Totale riportato da cassa − Somma algebrica saldi reparti.'
                 : totaleFromSaldi
                   ? 'Totale riportato da cassa = somma algebrica saldi reparti (si aggiorna se modifichi Entrate/Uscite). Differenza dallo scassettato.'
                   : 'Modifica i valori del riepilogo e il totale scassettato: la differenza si ricalcola automaticamente.'}
