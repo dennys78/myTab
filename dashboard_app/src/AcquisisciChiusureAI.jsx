@@ -7,7 +7,7 @@ import {
   ACQUISITION_MODE_TWO,
   isValidFiveModeFileCount,
   isValidTwoModeFileCount,
-  manualVociForMode,
+  manualVociFor,
   manualVociHint,
   maxFilesForAcquisitionMode,
 } from './acquisitionConfig';
@@ -356,7 +356,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   };
 
   const applyPreviewData = (data, { cached = false } = {}) => {
-    const manualVoci = manualVociForMode(acquisitionFileMode);
+    const manualVoci = manualVociFor(acquisitionFileMode, user?.company?.denominazione);
     const parsedItems = Array.isArray(data?.items)
       ? data.items.map((item, i) => {
           const row = { ...item, id: item.id || `p${i}_${Date.now()}` };
@@ -364,7 +364,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           return row;
         })
       : [];
-    const items = (data?.from_tabauno || acquisitionFileMode === ACQUISITION_MODE_TWO)
+    const items = (data?.from_tabauno || manualVoci.includes('LIS'))
       ? ensureManualRows(parsedItems, manualVoci)
       : parsedItems;
     const totaleFromSaldi = !!data?.totale_from_saldi;
@@ -579,7 +579,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
               if (typeof status.agent_online === 'boolean') setAgentOnline(status.agent_online);
               if (status.status === 'done') {
                 setTabaunoWait(false);
-                applyPreviewData(previewFromTabauno(status.payload || {}, manualVociForMode(acquisitionFileMode)));
+                applyPreviewData(previewFromTabauno(status.payload || {}, manualVociFor(acquisitionFileMode, user?.company?.denominazione)));
                 const issues = tabaunoIssues(status.payload?.verifiche);
                 if (issues.length) setError(issues.join(' '));
                 return;
@@ -980,11 +980,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
             const importedRest = [];
             const addedItems = [];
             previewData.items.forEach(item => {
-              if (isManualVoce(item.descrizione, manualVociForMode(acquisitionFileMode))) manualItems.push(item);
+              if (isManualVoce(item.descrizione, manualVociFor(acquisitionFileMode, user?.company?.denominazione))) manualItems.push(item);
               else if (previewData.from_tabauno && item.imported) importedRest.push(item);
               else addedItems.push(item);
             });
-            const manualVoci = manualVociForMode(acquisitionFileMode);
+            const manualVoci = manualVociFor(acquisitionFileMode, user?.company?.denominazione);
             manualItems.sort((a, b) => manualVoci.indexOf(voceKey(a.descrizione)) - manualVoci.indexOf(voceKey(b.descrizione)));
             const lockImported = previewData.from_tabauno && !editImported;
             const moneyInput = (item, field, highlight) => (
@@ -1044,7 +1044,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
           {previewData.from_tabauno && (
             <p style={{ color: '#f59e0b', fontSize: '0.8rem', margin: '0 0 0.8rem' }}>
-              Da compilare a mano: entrate e uscite di {manualVociHint(acquisitionFileMode)}.
+              Da compilare a mano: entrate e uscite di {manualVociHint(acquisitionFileMode, user?.company?.denominazione)}.
             </p>
           )}
 

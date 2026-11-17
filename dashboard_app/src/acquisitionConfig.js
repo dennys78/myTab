@@ -16,15 +16,18 @@ export function isValidFiveModeFileCount(count) {
 /** Inserimenti a mano in chiusura, criterio D3 Solution. */
 export const MANUAL_VOCI_D3 = ['LOTTOMATICA', 'MOONEY', 'SISAL', 'GRATTA E VINCI'];
 
-/** L'altra azienda usa lo stesso elenco e aggiunge LIS. */
-export function manualVociForMode(mode) {
-  if (mode === ACQUISITION_MODE_TWO) return [...MANUAL_VOCI_D3, 'LIS'];
+/** L'altra azienda usa lo stesso elenco e aggiunge LIS, con entrate e uscite. */
+export function manualVociFor(mode, companyName) {
+  const name = String(companyName || '');
+  const isD3 = /d3/i.test(name);
+  if (isD3) return [...MANUAL_VOCI_D3];
+  if (mode === ACQUISITION_MODE_TWO || name) return [...MANUAL_VOCI_D3, 'LIS'];
   return [...MANUAL_VOCI_D3];
 }
 
-export function manualVociHint(mode) {
+export function manualVociHint(mode, companyName) {
   const base = 'Lottomatica, Mooney, Sisal e Gratta e Vinci';
-  return mode === ACQUISITION_MODE_TWO
+  return manualVociFor(mode, companyName).includes('LIS')
     ? 'Lottomatica, Mooney, Sisal, Gratta e Vinci e LIS'
     : base;
 }
