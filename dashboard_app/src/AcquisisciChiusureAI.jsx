@@ -1072,6 +1072,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
             </p>
           )}
 
+          <div className="acq-reparti-total" aria-live="polite">
+            <span>Totale</span>
+            <strong style={{ color: saldoTotaleReparti > 0 ? 'var(--success)' : saldoTotaleReparti < 0 ? 'var(--danger)' : 'var(--text-main)' }}>
+              {saldoTotaleReparti.toFixed(2)}
+            </strong>
+          </div>
+
           <div className="table-responsive-wrapper">
             <table className="acq-items-table">
               <thead>

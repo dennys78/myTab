@@ -153,6 +153,20 @@ textarea:focus {
   color: var(--success);
 }
 
+.acq-reparti-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.65rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(8, 17, 31, 0.9);
+  border: 1px solid var(--border-strong);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
 .acq-total-row span.danger {
   color: var(--danger);
 }
@@ -2162,6 +2176,15 @@ tbody tr:hover {
 
   .acq-voci-card {
     padding: 0.65rem 0.4rem !important;
+  }
+
+  .acq-reparti-total {
+    position: sticky;
+    top: calc(3.5rem + env(safe-area-inset-top));
+    z-index: 6;
+    margin-bottom: 0.45rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.95rem;
   }
 
   .acq-items-table {
