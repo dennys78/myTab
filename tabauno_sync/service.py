@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .extract import TabaUnoError, extract_closure
 from .gratta import extract_gratta_data
+from .tabacchi import extract_tabacchi_data
 
 _BACKOFF = (10, 30, 60, 300)
 
@@ -95,6 +96,15 @@ def _extract_request(config, payload):
             config.get('magx_db'),
             day,
         )
+    if tipo == 'preordine_tabacchi':
+        if not config.get('magx_db'):
+            raise TabaUnoError('Config: manca magx_db.')
+        return extract_tabacchi_data(
+            config['tabauno_db'],
+            config.get('storico_db') or None,
+            config.get('magx_db'),
+            day,
+        )
     raise TabaUnoError(f'Tipo richiesta sconosciuto: {tipo}')
 
 
@@ -122,6 +132,11 @@ def poll_once(config, logger) -> None:
         logger.info(
             'lettura id=%s tipo=%s data=%s durata=%.3fs giochi=%s',
             request_id, tipo, day, elapsed, len(extracted.get('giochi') or []),
+        )
+    elif tipo == 'preordine_tabacchi':
+        logger.info(
+            'lettura id=%s tipo=%s data=%s durata=%.3fs articoli=%s',
+            request_id, tipo, day, elapsed, len(extracted.get('articoli') or []),
         )
     else:
         logger.info(

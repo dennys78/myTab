@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   --bg-dark: #08111f;
@@ -2708,4 +2708,375 @@ tbody tr:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+/* Ordine Tabacchi */
+.tab-page {
+  --tab-accent: #8b5a2b;
+  --tab-accent-soft: rgba(139, 90, 43, 0.14);
+  --tab-orange: #c57a2c;
+  --tab-red: #c2410c;
+  max-width: 860px;
+  margin: 0 auto 5.5rem;
+  font-family: "IBM Plex Sans", Inter, sans-serif;
+}
+
+.tab-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.tab-header h1 {
+  margin: 0;
+  font-family: "IBM Plex Sans Condensed", Inter, sans-serif;
+  font-size: 1.7rem;
+  letter-spacing: -0.02em;
+}
+
+.tab-sub,
+.tab-pc,
+.tab-hint,
+.tab-empty {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  margin: 0.35rem 0 0;
+  line-height: 1.4;
+}
+
+.tab-pc.online { color: var(--success); }
+.tab-pc.offline { color: var(--danger); }
+
+.tab-btn {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tab-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tab-btn.primary {
+  background: var(--tab-accent);
+  border-color: var(--tab-accent);
+  color: #fff;
+  font-weight: 700;
+}
+.tab-btn.ghost { background: transparent; }
+
+.tab-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.tab-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: end;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.tab-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.tab-segments {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tab-segments button {
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tab-segments button.active {
+  background: var(--tab-accent-soft);
+  color: var(--tab-accent);
+  font-weight: 700;
+}
+
+.tab-control input[type="date"] {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+}
+
+.tab-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.9rem 0.85rem 0.4rem;
+  margin: 1rem 0;
+}
+
+.tab-card h2 {
+  margin: 0 0 0.7rem;
+  font-family: "IBM Plex Sans Condensed", Inter, sans-serif;
+  font-size: 1.05rem;
+}
+
+.tab-family {
+  margin-bottom: 1rem;
+}
+
+.tab-family-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 0 0 0.45rem;
+  color: var(--tab-accent);
+}
+
+.tab-family-title span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.tab-table-wrap {
+  overflow-x: auto;
+}
+
+.tab-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-table th:nth-child(n+2),
+.tab-table td.tab-num {
+  text-align: right;
+}
+
+.tab-table td {
+  padding: 0.45rem 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  vertical-align: middle;
+  font-size: 0.88rem;
+}
+
+.tab-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tab-col-articolo {
+  min-width: 0;
+  max-width: 18rem;
+}
+
+.tab-aams {
+  display: inline-block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-right: 0.4rem;
+}
+
+.tab-nome {
+  display: inline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14rem;
+}
+
+.tab-mobile-meta {
+  display: none;
+  gap: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.tab-finisce--rossa {
+  color: var(--tab-red);
+  font-weight: 700;
+}
+
+.tab-finisce--arancione {
+  color: var(--tab-orange);
+  font-weight: 600;
+}
+
+.tab-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tab-stepper button,
+.tab-add {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tab-stepper span {
+  min-width: 1.5rem;
+  text-align: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 700;
+}
+
+.tab-step-on { color: var(--tab-accent); }
+.tab-step-manual { color: var(--tab-orange); }
+
+.tab-others-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: transparent;
+  border: 0;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 0.35rem 0.1rem 0.7rem;
+  font: inherit;
+  text-align: left;
+}
+
+.tab-others-toggle em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 0.78rem;
+  margin-left: auto;
+}
+
+.tab-search {
+  width: 100%;
+  margin: 0 0 0.7rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.tab-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: rgba(12, 22, 38, 0.96);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.tab-dock-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.1rem;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.tab-dock-totals strong {
+  color: var(--text-main);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.tab-dock-total strong {
+  color: var(--tab-accent);
+  font-size: 1.05rem;
+}
+
+.tab-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.tab-copy-fallback {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .tab-table thead { display: none; }
+  .tab-desktop-only { display: none; }
+  .tab-mobile-meta { display: flex; flex-wrap: wrap; }
+  .tab-table td {
+    display: block;
+    width: 100%;
+    border: 0;
+    padding: 0.15rem 0;
+  }
+  .tab-table tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.2rem 0.6rem;
+    padding: 0.65rem 0.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-col-articolo { grid-column: 1; grid-row: 1; max-width: none; }
+  .tab-stecche { grid-column: 2; grid-row: 1; justify-self: end; }
+  .tab-importo {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: right !important;
+  }
+  .tab-nome {
+    display: block;
+    white-space: normal;
+    max-width: none;
+  }
+  .tab-dock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tab-dock-actions button { flex: 1; }
 }

@@ -454,9 +454,11 @@ class TabaUnoRequest(models.Model):
     ]
     TIPO_CHIUSURA = 'chiusura'
     TIPO_PREORDINE_GRATTA = 'preordine_gratta'
+    TIPO_PREORDINE_TABACCHI = 'preordine_tabacchi'
     TIPO_CHOICES = [
         (TIPO_CHIUSURA, 'Chiusura'),
         (TIPO_PREORDINE_GRATTA, 'Preordine gratta'),
+        (TIPO_PREORDINE_TABACCHI, 'Preordine tabacchi'),
     ]
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tabauno_requests')
@@ -546,3 +548,58 @@ class GrattaPreordineRiga(models.Model):
 
     def __str__(self):
         return f'{self.codice} x{self.pacchi}'
+
+
+class TabacchiPreordine(models.Model):
+    BOZZA = 'bozza'
+    ESPORTATO = 'esportato'
+    ANNULLATO = 'annullato'
+    STATO_CHOICES = [
+        (BOZZA, 'Bozza'),
+        (ESPORTATO, 'Esportato'),
+        (ANNULLATO, 'Annullato'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tabacchi_preordini')
+    creato_da = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='tabacchi_preordini')
+    creato_il = models.DateTimeField(auto_now_add=True)
+    request = models.ForeignKey(TabaUnoRequest, on_delete=models.PROTECT, related_name='preordini_tabacchi')
+    data_consegna = models.DateField()
+    giorni_copertura = models.PositiveSmallIntegerField(default=7)
+    stato = models.CharField(max_length=32, choices=STATO_CHOICES, default=BOZZA)
+    totale = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    kg = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    aggiornato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Preordine tabacchi'
+        verbose_name_plural = 'Preordini tabacchi'
+        ordering = ['-creato_il', '-id']
+
+    def __str__(self):
+        return f'Preordine tabacchi {self.id} {self.stato}'
+
+
+class TabacchiPreordineRiga(models.Model):
+    preordine = models.ForeignKey(TabacchiPreordine, on_delete=models.CASCADE, related_name='righe')
+    aams = models.CharField(max_length=32)
+    descrizione = models.CharField(max_length=200, blank=True, default='')
+    famiglia = models.CharField(max_length=64, blank=True, default='')
+    prezzo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    pacchetti_per_unita = models.PositiveIntegerField(default=0)
+    kg_per_unita = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    giacenza = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    media = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    data_fine = models.DateField(null=True, blank=True)
+    unita_proposte = models.PositiveIntegerField(default=0)
+    unita = models.PositiveIntegerField(default=0)
+    corretto_a_mano = models.BooleanField(default=False)
+    importo = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        verbose_name = 'Riga preordine tabacchi'
+        verbose_name_plural = 'Righe preordine tabacchi'
+        ordering = ['aams', 'id']
+
+    def __str__(self):
+        return f'{self.aams} x{self.unita}'

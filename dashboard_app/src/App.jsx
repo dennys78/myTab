@@ -13,6 +13,7 @@ import Versamenti from './Versamenti';
 import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import OrdineGratta from './OrdineGratta';
+import OrdineTabacchi from './OrdineTabacchi';
 import InstallPwa from './InstallPwa';
 import WebPushSetup from './WebPushSetup';
 import PushNotifyButton from './PushNotifyButton';
@@ -67,6 +68,7 @@ function AppShell() {
   const [ricevuteOpen, setRicevuteOpen] = useState(false);
   const [ricevuteSection, setRicevuteSection] = useState('clienti');
   const [ordiniOpen, setOrdiniOpen] = useState(false);
+  const [ordiniSection, setOrdiniSection] = useState('gratta');
 
   const settingsSubsections = isAdmin
     ? [
@@ -86,6 +88,7 @@ function AppShell() {
 
   const ordiniSubsections = [
     { id: 'gratta', label: 'Ordine Gratta e Vinci' },
+    { id: 'tabacchi', label: 'Ordine Tabacchi' },
   ];
 
   const fetchClosures = useCallback(() => {
@@ -484,8 +487,12 @@ function AppShell() {
                       {ordiniSubsections.map(sub => (
                         <div
                           key={sub.id}
-                          className={`nav-item nav-subitem ${ordiniActive ? 'active' : ''}`}
-                          onClick={() => { setCurrentView('ordini'); setIsMobileMenuOpen(false); }}
+                          className={`nav-item nav-subitem ${ordiniActive && ordiniSection === sub.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setOrdiniSection(sub.id);
+                            setCurrentView('ordini');
+                            setIsMobileMenuOpen(false);
+                          }}
                         >
                           <span>{sub.label}</span>
                         </div>
@@ -629,7 +636,7 @@ function AppShell() {
         ) : currentView === 'fondo-cassa' ? (
           <FondoCassa />
         ) : currentView === 'ordini' ? (
-          <OrdineGratta />
+          ordiniSection === 'tabacchi' ? <OrdineTabacchi /> : <OrdineGratta />
         ) : (
           <>
             <h1>{currentView === 'chiusure' ? 'Chiusure Cassa' : 'Panoramica'}</h1>
