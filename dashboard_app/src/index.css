@@ -2183,28 +2183,27 @@ tbody tr:hover {
 
   .acq-items-table th:first-child,
   .acq-items-table td:first-child {
-    width: auto;
+    width: 32%;
     white-space: normal;
     overflow-wrap: break-word;
-    padding-right: 0.2rem;
+    padding-right: 0.35rem;
   }
 
   .acq-items-table th:nth-child(2),
   .acq-items-table td:nth-child(2),
   .acq-items-table th:nth-child(3),
   .acq-items-table td:nth-child(3) {
-    width: 4.05rem;
-    text-align: right;
-    padding-left: 0.06rem;
-    padding-right: 0.06rem;
+    width: 25%;
+    text-align: center;
+    padding: 0.16rem 0.38rem;
   }
 
   .acq-items-table th:nth-child(4),
   .acq-items-table td:nth-child(4) {
-    width: 3.55rem;
+    width: 14%;
     text-align: right;
-    padding-left: 0.06rem;
-    padding-right: 0.06rem;
+    padding-left: 0.12rem;
+    padding-right: 0.08rem;
   }
 
   .acq-items-table th:nth-child(5),
@@ -2212,6 +2211,10 @@ tbody tr:hover {
     width: 1.6rem;
     padding: 0;
     text-align: center;
+  }
+
+  .acq-items-table td:nth-child(5) button {
+    padding: 0.1rem;
   }
 
   .acq-items-table input[type="text"],
@@ -2230,9 +2233,22 @@ tbody tr:hover {
   }
 
   .acq-items-table input[type="number"] {
-    text-align: right;
+    width: 4.4rem !important;
+    height: 1.85rem;
+    min-height: 0;
+    margin: 0 auto;
+    display: block;
+    padding: 0 0.12rem !important;
+    line-height: 1.85rem;
+    text-align: center;
+    border-radius: 6px;
     -moz-appearance: textfield;
     appearance: textfield;
+  }
+
+  .acq-items-table input.acq-manual-input {
+    box-shadow: none;
+    border-width: 1px;
   }
 
   .acq-items-table input[type="number"]::-webkit-inner-spin-button,
