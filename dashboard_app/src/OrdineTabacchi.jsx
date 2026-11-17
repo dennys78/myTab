@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react';
 import { apiFetch } from './api';
 import {
   DEFAULT_SCORTA_PCT,
@@ -138,12 +138,12 @@ export default function OrdineTabacchi() {
     });
   };
 
-  const cambiaUnita = (aams, delta) => {
+  const impostaUnita = (aams, unita) => {
     setPreordine(prev => {
       if (!prev?.modificabile) return prev;
       const toccate = prev.righe.map(riga => (
         riga.aams === aams
-          ? { ...riga, unita: Math.max(0, Number(riga.unita) + delta), corretto_a_mano: true }
+          ? { ...riga, unita: Math.max(0, Number(unita)), corretto_a_mano: true }
           : riga
       ));
       const righe = ricalcolaRighe(toccate, {
@@ -165,6 +165,21 @@ export default function OrdineTabacchi() {
       salva(next, [{ aams, unita: righe.find(riga => riga.aams === aams).unita }]);
       return next;
     });
+  };
+
+  const cambiaUnita = (aams, delta) => {
+    const attuale = preordine?.righe?.find(riga => riga.aams === aams);
+    if (!attuale || !preordine?.modificabile) return;
+    impostaUnita(aams, Math.max(0, Number(attuale.unita) + delta));
+  };
+
+  const rimuoviDaOrdine = (riga) => {
+    if (!preordine?.modificabile || Number(riga.unita) <= 0) return;
+    const ok = window.confirm(
+      `Togliere «${riga.descrizione}» dall'ordine?\nLa quantità verrà messa a zero.`,
+    );
+    if (!ok) return;
+    impostaUnita(riga.aams, 0);
   };
 
   const annullaCorrezioni = () => {
@@ -350,6 +365,18 @@ export default function OrdineTabacchi() {
             <button type="button" onClick={() => cambiaUnita(riga.aams, 1)} disabled={!preordine?.modificabile} aria-label="Aumenta">
               <Plus size={14} />
             </button>
+            {Number(riga.unita) > 0 && (
+              <button
+                type="button"
+                className="tab-trash"
+                onClick={() => rimuoviDaOrdine(riga)}
+                disabled={!preordine?.modificabile}
+                aria-label={`Togli ${riga.descrizione} dall'ordine`}
+                title="Togli dall'ordine"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         ) : (
           <button type="button" className="tab-add" onClick={() => cambiaUnita(riga.aams, 1)} disabled={!preordine?.modificabile}>

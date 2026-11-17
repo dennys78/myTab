@@ -3047,6 +3047,17 @@ tbody tr:hover {
   cursor: pointer;
 }
 
+.tab-trash {
+  margin-left: 0.15rem;
+  color: var(--tab-red) !important;
+  border-color: rgba(194, 65, 12, 0.35) !important;
+  background: rgba(194, 65, 12, 0.08) !important;
+}
+
+.tab-trash:hover:not(:disabled) {
+  background: rgba(194, 65, 12, 0.16) !important;
+}
+
 .tab-stepper span {
   min-width: 1.5rem;
   text-align: center;
