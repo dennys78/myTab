@@ -66,6 +66,9 @@ class OrdineLogistaDepositTests(unittest.TestCase):
             target = Path(tmp) / 'Ordine_Logista.xls'
             result = write_ordine_logista(target, b'\xd0\xcf\x11\xe0demo')
             self.assertEqual(result['bytes'], 8)
+            self.assertTrue(result['verificato'])
+            self.assertTrue(result['ok'])
+            self.assertIn('generato correttamente', result['messaggio'])
             self.assertEqual(target.read_bytes(), b'\xd0\xcf\x11\xe0demo')
             self.assertFalse(target.with_suffix('.xls.tmp').exists())
 

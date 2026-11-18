@@ -283,6 +283,32 @@ def api_tabauno_agent_result(request, request_id):
         payload = data.get('payload')
         if not isinstance(payload, dict):
             return JsonResponse({'status': 'error', 'error': 'Payload mancante.'}, status=400)
+        if row.tipo == TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA:
+            path = str(payload.get('path') or '').strip()
+            try:
+                size = int(payload.get('bytes') or 0)
+            except (TypeError, ValueError):
+                size = 0
+            if not path or size <= 0 or not payload.get('verificato', True):
+                row.status = TabaUnoRequest.ERROR
+                row.error = (
+                    str(payload.get('messaggio') or data.get('errore') or '')
+                    or 'Deposito non verificato sul PC negozio.'
+                )[:2000]
+                row.payload = payload
+                row.completed_at = timezone.now()
+                row.save(update_fields=['payload', 'error', 'status', 'completed_at'])
+                return JsonResponse({'status': 'success', 'id': row.id})
+            payload = {
+                **payload,
+                'ok': True,
+                'verificato': True,
+                'path': path,
+                'bytes': size,
+                'messaggio': payload.get('messaggio') or (
+                    f'Ordine_Logista.xls generato correttamente sul PC remoto in {path} ({size} byte)'
+                ),
+            }
         row.payload = payload
         row.error = ''
         row.status = TabaUnoRequest.DONE

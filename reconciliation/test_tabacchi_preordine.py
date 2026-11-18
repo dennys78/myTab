@@ -354,10 +354,37 @@ class TabacchiApiTests(TestCase):
 
         result = self.client.post(
             f'/api/tabauno/agent/result/{request_id}/',
-            data='{"ok":true,"payload":{"path":"C:\\\\TabaUno\\\\DB\\\\Ordine_Logista.xls","bytes":124416}}',
+            data=(
+                '{"ok":true,"payload":{"ok":true,"verificato":true,'
+                '"path":"C:\\\\Users\\\\Public\\\\TabaUno\\\\Ordine_Logista.xls",'
+                '"bytes":124416,"messaggio":"Ordine_Logista.xls generato correttamente"}}'
+            ),
             content_type='application/json',
             HTTP_AUTHORIZATION=f'Bearer {token}',
         )
         self.assertEqual(result.status_code, 200)
+        row = TabaUnoRequest.objects.get(id=request_id)
+        self.assertEqual(row.status, TabaUnoRequest.DONE)
+        self.assertTrue(row.payload.get('verificato'))
+        self.assertIn('generato correttamente', row.payload.get('messaggio', ''))
         preordine = TabacchiPreordine.objects.get(id=preordine_id)
         self.assertEqual(preordine.stato, TabacchiPreordine.ESPORTATO)
+
+        # Payload incompleto → non si considera generato
+        altra = TabaUnoRequest.objects.create(
+            company=self.company,
+            date=timezone.localdate(),
+            tipo=TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA,
+            status=TabaUnoRequest.PROCESSING,
+            parametri={'preordine_id': preordine_id},
+            picked_at=timezone.now(),
+        )
+        bad = self.client.post(
+            f'/api/tabauno/agent/result/{altra.id}/',
+            data='{"ok":true,"payload":{"path":"","bytes":0}}',
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(bad.status_code, 200)
+        altra.refresh_from_db()
+        self.assertEqual(altra.status, TabaUnoRequest.ERROR)

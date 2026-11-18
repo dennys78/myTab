@@ -311,16 +311,22 @@ export default function OrdineTabacchi() {
       setOnline(!!body.agent_online);
       if (body.status === 'done') {
         setDeposito(false);
-        const path = body.payload?.path;
-        setMessaggio(path
-          ? `Ordine_Logista.xls depositato in ${path}`
-          : 'Ordine_Logista.xls depositato sul PC negozio.');
+        const payload = body.payload || {};
+        const path = String(payload.path || '').trim();
+        const size = Number(payload.bytes || 0);
+        if (!path || size <= 0) {
+          setErrore('Il PC remoto non ha confermato la generazione del file Ordine_Logista.xls.');
+          return;
+        }
+        const dettaglio = payload.messaggio
+          || `Ordine_Logista.xls generato correttamente sul PC remoto in ${path} (${size.toLocaleString('it-IT')} byte).`;
+        setMessaggio(dettaglio);
         setPreordine(prev => (prev ? { ...prev, stato: 'esportato' } : prev));
         return;
       }
       if (body.status === 'error' || body.status === 'expired') {
         setDeposito(false);
-        setErrore(body.error || 'Deposito su TabaUno non riuscito.');
+        setErrore(body.error || 'Deposito su TabaUno non riuscito sul PC remoto.');
         return;
       }
       pollRef.current = setTimeout(poll, 2000);

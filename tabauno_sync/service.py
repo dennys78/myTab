@@ -108,10 +108,13 @@ def _request_bytes(config, path) -> bytes:
 
 
 def write_ordine_logista(path: Path, content: bytes) -> dict:
-    """Scrive Ordine_Logista.xls in modo atomico. Errore chiaro se Excel tiene il file aperto."""
+    """Scrive Ordine_Logista.xls in modo atomico e verifica che il file esista con la size attesa."""
+    if not content:
+        raise TabaUnoError('File Ordine_Logista.xls vuoto: generazione non riuscita.')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + '.tmp')
+    expected = len(content)
     try:
         tmp.write_bytes(content)
         os.replace(tmp, path)
@@ -131,9 +134,20 @@ def write_ordine_logista(path: Path, content: bytes) -> dict:
         except OSError:
             pass
         raise TabaUnoError(f'Impossibile scrivere {path}: {exc}') from exc
+
+    if not path.is_file():
+        raise TabaUnoError(f'Deposito fallito: {path} non trovato dopo la scrittura.')
+    actual = path.stat().st_size
+    if actual != expected:
+        raise TabaUnoError(
+            f'Deposito incompleto su {path}: attesi {expected} byte, trovati {actual}.'
+        )
     return {
+        'ok': True,
+        'verificato': True,
         'path': str(path),
-        'bytes': len(content),
+        'bytes': actual,
+        'messaggio': f'Ordine_Logista.xls generato correttamente su {path} ({actual} byte)',
     }
 
 
