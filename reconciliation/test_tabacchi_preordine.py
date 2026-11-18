@@ -20,6 +20,7 @@ from reconciliation.tabacchi_preordine import (
     logista_xls_bytes,
     media_riferimento,
     normalizza_scorta_pct,
+    proiezione_dopo_ordine,
     prossimo_giorno_consegna,
     proposta_unita,
     quantita_logista,
@@ -281,6 +282,21 @@ class TabacchiApiTests(TestCase):
         eliminato = self.client.delete(f"/api/tabacchi/preordini/{preordine['id']}/")
         self.assertEqual(eliminato.status_code, 200)
         self.assertEqual(TabacchiPreordine.objects.filter(id=preordine['id']).count(), 0)
+
+    def test_proiezione_dopo_ordine_residuo(self):
+        # giac 8, media 2.3, 5 gg alla consegna → alla=0; +3 stecche×10=30; dopo 7gg ≈ 13.9
+        out = proiezione_dopo_ordine(
+            Decimal('2.3'), 8, 10, 3, 5, 7, date(2026, 11, 23),
+        )
+        self.assertEqual(out['giacenza_dopo_consegna'], Decimal('30'))
+        self.assertAlmostEqual(float(out['residuo_copertura']), 13.9, places=1)
+        self.assertEqual(out['urgenza_copertura'], 'normale')
+        self.assertEqual(out['data_copre_fino'], date(2026, 12, 6))
+        sotto = proiezione_dopo_ordine(
+            Decimal('2.3'), 8, 10, 0, 5, 7, date(2026, 11, 23),
+        )
+        self.assertLess(sotto['residuo_copertura'], 0)
+        self.assertEqual(sotto['urgenza_copertura'], 'rossa')
 
     def test_export_logista_formato_righe(self):
         self.assertEqual(codice_aams_logista('201'), '0201')

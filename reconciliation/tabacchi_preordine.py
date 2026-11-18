@@ -214,6 +214,48 @@ def urgenza_data_fine(giorni_fine, giorni_alla, giorni_copertura):
     return 'normale'
 
 
+def proiezione_dopo_ordine(
+    media,
+    giacenza,
+    pacchetti_per_unita,
+    unita_ordinate,
+    giorni_alla,
+    giorni_copertura,
+    data_consegna,
+):
+    """Stima scorta dopo consegna e a fine copertura, inclusa la merce ordinata."""
+    media = _decimal(media)
+    giacenza = _decimal(giacenza)
+    unita_size = _decimal(pacchetti_per_unita)
+    distanza = _decimal(giorni_alla)
+    copertura = int(giorni_copertura)
+    pezzi_ordine = max(0, int(unita_ordinate or 0)) * unita_size
+    alla = max(ZERO, giacenza - media * distanza)
+    dopo_consegna = alla + pezzi_ordine
+    residuo = dopo_consegna - media * copertura
+    if media <= 0:
+        giorni_con_ordine = None
+        data_copre_fino = None
+        urgenza = 'normale'
+    else:
+        giorni_con_ordine = int((dopo_consegna / media).to_integral_value(rounding=ROUND_FLOOR))
+        consegna = _day(data_consegna)
+        data_copre_fino = consegna + timedelta(days=giorni_con_ordine) if consegna else None
+        if residuo < 0:
+            urgenza = 'rossa'
+        elif residuo < media * Decimal('3'):
+            urgenza = 'arancione'
+        else:
+            urgenza = 'normale'
+    return {
+        'giacenza_dopo_consegna': dopo_consegna,
+        'residuo_copertura': residuo,
+        'giorni_con_ordine': giorni_con_ordine,
+        'data_copre_fino': data_copre_fino,
+        'urgenza_copertura': urgenza,
+    }
+
+
 def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_consegna=None, scorta_pct=DEFAULT_SCORTA_PCT):
     if int(giorni_copertura) not in GIORNI_VALIDI:
         raise ValueError('I giorni di copertura devono essere 5, 7, 10 o 14.')
@@ -257,6 +299,15 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
         data_fine = None if giorni_fine is None else inizio + timedelta(days=giorni_fine)
         famiglia = famiglia_da_categoria(articolo.get('categoria'))
         urgenza = urgenza_data_fine(giorni_fine, distanza, giorni_copertura)
+        proiezione = proiezione_dopo_ordine(
+            media,
+            articolo.get('giacenza'),
+            unita_size,
+            pezzi,
+            distanza,
+            giorni_copertura,
+            consegna,
+        )
         righe.append({
             'aams': aams,
             'descrizione': ' '.join(str(articolo.get('descrizione') or '').split()),
@@ -277,6 +328,11 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
             'importo': _money(pacchetti * prezzo),
             'alla_consegna': proposta['alla_consegna'],
             'giorni_alla_consegna': distanza,
+            'giacenza_dopo_consegna': proiezione['giacenza_dopo_consegna'],
+            'residuo_copertura': proiezione['residuo_copertura'],
+            'giorni_con_ordine': proiezione['giorni_con_ordine'],
+            'data_copre_fino': _iso(proiezione['data_copre_fino']) if proiezione['data_copre_fino'] else None,
+            'urgenza_copertura': proiezione['urgenza_copertura'],
         })
     return righe, scartati
 

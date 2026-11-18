@@ -19,6 +19,7 @@ from .tabacchi_preordine import (
     GIORNI_VALIDI,
     LogistaXlsError,
     _decimal,
+    _iso,
     _kg,
     _money,
     calcola_righe,
@@ -27,6 +28,7 @@ from .tabacchi_preordine import (
     logista_xls_bytes,
     normalizza_scorta_pct,
     numero_json,
+    proiezione_dopo_ordine,
     proposta_unita,
     prossimo_giorno_consegna,
     totali_ordine,
@@ -122,7 +124,7 @@ def _salva_totali(preordine):
     preordine.save()
 
 
-def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT):
+def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT, data_consegna=None):
     proposta = proposta_unita(
         riga.media, riga.giacenza, riga.pacchetti_per_unita, giorni, distanza, scorta_pct,
     )
@@ -134,6 +136,15 @@ def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT):
     else:
         data_fine = (inizio + timedelta(days=giorni_fine)).isoformat()
     pacchetti = int(riga.unita) * int(riga.pacchetti_per_unita)
+    proiezione = proiezione_dopo_ordine(
+        riga.media,
+        riga.giacenza,
+        riga.pacchetti_per_unita,
+        riga.unita,
+        distanza,
+        giorni,
+        data_consegna or riga.preordine.data_consegna,
+    )
     return {
         'aams': riga.aams,
         'descrizione': riga.descrizione,
@@ -154,6 +165,11 @@ def _riga_json(riga, distanza, giorni, inizio, scorta_pct=DEFAULT_SCORTA_PCT):
         'importo': numero_json(riga.importo),
         'corretto_a_mano': riga.corretto_a_mano,
         'giorni_alla_consegna': distanza,
+        'giacenza_dopo_consegna': numero_json(proiezione['giacenza_dopo_consegna'], 1),
+        'residuo_copertura': numero_json(proiezione['residuo_copertura'], 1),
+        'giorni_con_ordine': proiezione['giorni_con_ordine'],
+        'data_copre_fino': _iso(proiezione['data_copre_fino']) if proiezione['data_copre_fino'] else None,
+        'urgenza_copertura': proiezione['urgenza_copertura'],
     }
 
 
@@ -163,7 +179,14 @@ def _preordine_json(preordine, company):
     inizio = inizio_vendite(timezone.localdate(), ultimo) if ultimo else timezone.localdate()
     scorta_pct = normalizza_scorta_pct(getattr(preordine, 'scorta_pct', DEFAULT_SCORTA_PCT))
     righe = [
-        _riga_json(riga, distanza, preordine.giorni_copertura, inizio, scorta_pct)
+        _riga_json(
+            riga,
+            distanza,
+            preordine.giorni_copertura,
+            inizio,
+            scorta_pct,
+            data_consegna=preordine.data_consegna,
+        )
         for riga in preordine.righe.all()
     ]
     totali = totali_ordine(righe)

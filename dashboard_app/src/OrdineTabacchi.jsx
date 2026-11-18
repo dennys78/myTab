@@ -13,6 +13,7 @@ import {
   fraseCopertura,
   formattaChiusura,
   formattaFinisce,
+  formattaResiduo,
   gruppiDaOrdinare,
   isoLocale,
   normalizzaScortaPct,
@@ -43,7 +44,7 @@ export default function OrdineTabacchi() {
   const [altriAperti, setAltriAperti] = useState(false);
   const [ricerca, setRicerca] = useState('');
   const [copiato, setCopiato] = useState(false);
-  const [ordinamento, setOrdinamento] = useState({ chiave: 'finisce', direzione: 'asc' });
+  const [ordinamento, setOrdinamento] = useState({ chiave: 'residuo', direzione: 'asc' });
   const [sezione, setSezione] = useState('tabacchi');
   const pollRef = useRef(null);
   const saveRef = useRef(null);
@@ -402,6 +403,26 @@ export default function OrdineTabacchi() {
     && righeSezione(preordine.righe, 'dispositivi').length === 0
     && righeSezione(preordine.righe, 'solidi').length === 0;
 
+  const giorniCopertura = preordine?.giorni_copertura || 7;
+  const cellaCopertura = (riga) => {
+    const urgenza = riga.urgenza_copertura || 'normale';
+    const residuo = formattaResiduo(riga.residuo_copertura);
+    const fino = formattaFinisce(riga.data_copre_fino);
+    const title = [
+      `Scorta stimata dopo ${giorniCopertura} giorni di copertura (incluso l'ordine)`,
+      riga.data_copre_fino ? `Con l'ordine attuale copre fino a ${fino}` : null,
+      riga.giacenza_dopo_consegna != null
+        ? `Alla consegna ~${Number(riga.giacenza_dopo_consegna).toLocaleString('it-IT')} pz`
+        : null,
+    ].filter(Boolean).join(' · ');
+    return (
+      <span className={`tab-copertura tab-finisce--${urgenza}`} title={title}>
+        <strong>{residuo}</strong>
+        <em>{fino === '—' ? '—' : `fino ${fino}`}</em>
+      </span>
+    );
+  };
+
   const rigaTabella = (riga, { conStepper = true } = {}) => (
     <tr key={riga.aams} className={Number(riga.unita) > 0 ? 'tab-row-order' : undefined}>
       <td className="tab-col-articolo" title={riga.descrizione}>
@@ -412,13 +433,13 @@ export default function OrdineTabacchi() {
           <span>·</span>
           <span>{mediaTesto(riga.media)}</span>
           <span>·</span>
-          <span className={`tab-finisce tab-finisce--${riga.urgenza}`}>{formattaFinisce(riga.data_fine)}</span>
+          {cellaCopertura(riga)}
         </div>
       </td>
       <td className="tab-num tab-desktop-only">{Number(riga.giacenza).toLocaleString('it-IT')}</td>
       <td className="tab-num tab-desktop-only">{mediaTesto(riga.media)}</td>
-      <td className={`tab-num tab-desktop-only tab-finisce tab-finisce--${riga.urgenza}`}>
-        {formattaFinisce(riga.data_fine)}
+      <td className="tab-num tab-desktop-only">
+        {cellaCopertura(riga)}
       </td>
       <td className="tab-stecche">
         {conStepper ? (
@@ -611,7 +632,9 @@ export default function OrdineTabacchi() {
                           <th>{etichettaSort('descrizione', 'Articolo')}</th>
                           <th>Giac.</th>
                           <th>Vende/gg</th>
-                          <th>{etichettaSort('finisce', 'Finisce')}</th>
+                          <th title="Scorta stimata a fine copertura, incluso l'ordine">
+                            {etichettaSort('residuo', `Tra ${giorniCopertura} gg`)}
+                          </th>
                           <th>{unitaLabel}</th>
                           <th>{etichettaSort('importo', 'Importo')}</th>
                         </tr>
@@ -630,7 +653,7 @@ export default function OrdineTabacchi() {
             <button type="button" className="tab-others-toggle" onClick={() => setAltriAperti(v => !v)}>
               {altriAperti ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               <span>Altri articoli · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</span>
-              <em>{altriTotaliSezione} con scorta sufficiente · i primi finiscono prima</em>
+              <em>{altriTotaliSezione} con scorta sufficiente · prima chi resta con meno a fine copertura</em>
             </button>
             {altriAperti && (
               <div className="tab-others-body">
@@ -648,7 +671,9 @@ export default function OrdineTabacchi() {
                         <th>{etichettaSort('descrizione', 'Articolo')}</th>
                         <th>Giac.</th>
                         <th>Vende/gg</th>
-                        <th>{etichettaSort('finisce', 'Finisce')}</th>
+                        <th title="Scorta stimata a fine copertura, incluso l'ordine">
+                          {etichettaSort('residuo', `Tra ${giorniCopertura} gg`)}
+                        </th>
                         <th></th>
                         <th>{etichettaSort('importo', 'Importo')}</th>
                       </tr>

@@ -3055,6 +3055,32 @@ tbody tr:hover {
   font-weight: 600;
 }
 
+.tab-copertura {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  line-height: 1.15;
+}
+
+.tab-copertura strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-copertura em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.tab-mobile-meta .tab-copertura {
+  flex-direction: row;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
 .tab-stepper {
   display: inline-flex;
   align-items: center;

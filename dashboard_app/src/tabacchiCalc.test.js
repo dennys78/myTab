@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  formattaResiduo,
   giorniAllaConsegna,
+  proiezioneDopoOrdine,
   propostaUnita,
   prossimoGiornoConsegna,
   unitaOrdine,
@@ -33,7 +35,19 @@ const ESEMPI = [
 
 for (const esempio of ESEMPI) {
   test(`proposta ${esempio.media} → ${esempio.atteso} stecche a 7 giorni`, () => {
-    const proposta = propostaUnita(esempio.media, esempio.giacenza, esempio.u, 7, 6);
+    const proposta = propostaUnita(esempio.media, esempio.giacenza, esempio.u, 7, 6, 100);
     assert.equal(proposta.unita, esempio.atteso);
   });
 }
+
+test('proiezione dopo ordine: residuo a fine copertura', () => {
+  const out = proiezioneDopoOrdine(2.3, 8, 10, 3, 5, 7, '2026-11-23');
+  assert.equal(out.giacenzaDopoConsegna, 30);
+  assert.ok(Math.abs(out.residuoCopertura - 13.9) < 0.05);
+  assert.equal(out.urgenzaCopertura, 'normale');
+  assert.equal(out.dataCopreFino, '2026-12-06');
+  assert.equal(formattaResiduo(13.9), '+13,9');
+  const sotto = proiezioneDopoOrdine(2.3, 8, 10, 0, 5, 7, '2026-11-23');
+  assert.ok(sotto.residuoCopertura < 0);
+  assert.equal(sotto.urgenzaCopertura, 'rossa');
+});

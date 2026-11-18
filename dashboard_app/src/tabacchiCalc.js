@@ -90,6 +90,44 @@ export function urgenzaDataFine(giorniFine, giorniAlla, giorniCopertura) {
   return 'normale';
 }
 
+export function proiezioneDopoOrdine(
+  media,
+  giacenza,
+  pacchettiPerUnita,
+  unitaOrdinate,
+  giorniAlla,
+  giorniCopertura,
+  dataConsegna,
+) {
+  const m = Number(media) || 0;
+  const u = Number(pacchettiPerUnita) || 0;
+  const pezziOrdine = Math.max(0, Number(unitaOrdinate) || 0) * u;
+  const alla = Math.max(0, Number(giacenza) - m * Number(giorniAlla));
+  const dopoConsegna = alla + pezziOrdine;
+  const residuo = dopoConsegna - m * Number(giorniCopertura);
+  if (m <= 0) {
+    return {
+      giacenzaDopoConsegna: dopoConsegna,
+      residuoCopertura: residuo,
+      giorniConOrdine: null,
+      dataCopreFino: null,
+      urgenzaCopertura: 'normale',
+    };
+  }
+  const giorniConOrdine = Math.floor(dopoConsegna / m);
+  const dataCopreFino = addDays(dataConsegna, giorniConOrdine);
+  let urgenzaCopertura = 'normale';
+  if (residuo < 0) urgenzaCopertura = 'rossa';
+  else if (residuo < m * 3) urgenzaCopertura = 'arancione';
+  return {
+    giacenzaDopoConsegna: dopoConsegna,
+    residuoCopertura: residuo,
+    giorniConOrdine,
+    dataCopreFino,
+    urgenzaCopertura,
+  };
+}
+
 export function ricalcolaRighe(righe, { giorniCopertura, oggi, ultimoChiuso, dataConsegna, scortaPct = DEFAULT_SCORTA_PCT }) {
   const distanza = giorniAllaConsegna(oggi, ultimoChiuso, dataConsegna);
   const inizio = inizioVendite(oggi, ultimoChiuso);
@@ -104,6 +142,15 @@ export function ricalcolaRighe(righe, { giorniCopertura, oggi, ultimoChiuso, dat
     const dataFine = proposta.giorniFine == null
       ? null
       : addDays(inizio, proposta.giorniFine);
+    const proiezione = proiezioneDopoOrdine(
+      riga.media,
+      riga.giacenza,
+      riga.pacchetti_per_unita,
+      unita,
+      distanza,
+      giorniCopertura,
+      dataConsegna,
+    );
     return {
       ...riga,
       unita_proposte: proposti,
@@ -116,6 +163,11 @@ export function ricalcolaRighe(righe, { giorniCopertura, oggi, ultimoChiuso, dat
       data_fine: dataFine,
       urgenza: urgenzaDataFine(proposta.giorniFine, distanza, giorniCopertura),
       giorni_alla_consegna: distanza,
+      giacenza_dopo_consegna: Number(proiezione.giacenzaDopoConsegna.toFixed(1)),
+      residuo_copertura: Number(proiezione.residuoCopertura.toFixed(1)),
+      giorni_con_ordine: proiezione.giorniConOrdine,
+      data_copre_fino: proiezione.dataCopreFino,
+      urgenza_copertura: proiezione.urgenzaCopertura,
     };
   });
 }
@@ -147,6 +199,18 @@ export function formattaFinisce(iso) {
   const dd = String(day.getDate()).padStart(2, '0');
   const mm = String(day.getMonth() + 1).padStart(2, '0');
   return `${nomi[day.getDay()]} ${dd}/${mm}`;
+}
+
+export function formattaResiduo(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  const n = Number(value);
+  const abs = Math.abs(n);
+  const testo = Number.isInteger(abs) || Math.abs(abs - Math.round(abs)) < 0.05
+    ? String(Math.round(abs))
+    : abs.toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  if (n > 0.05) return `+${testo}`;
+  if (n < -0.05) return `−${testo}`;
+  return '0';
 }
 
 export function formattaChiusura(iso) {
@@ -206,20 +270,23 @@ export function isoLocale(date) {
   return `${y}-${m}-${d}`;
 }
 
-export function confrontaRighe(a, b, chiave = 'finisce', direzione = 'asc') {
+export function confrontaRighe(a, b, chiave = 'residuo', direzione = 'asc') {
   const dir = direzione === 'desc' ? -1 : 1;
   let cmp = 0;
   if (chiave === 'descrizione') {
     cmp = String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it', { sensitivity: 'base' });
   } else if (chiave === 'importo') {
     cmp = Number(a.importo || 0) - Number(b.importo || 0);
-  } else {
+  } else if (chiave === 'finisce') {
     const ga = a.giorni_fine == null ? 1e9 : Number(a.giorni_fine);
     const gb = b.giorni_fine == null ? 1e9 : Number(b.giorni_fine);
     cmp = ga - gb;
-    if (cmp === 0) {
-      cmp = String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it', { sensitivity: 'base' });
-    }
+  } else {
+    // residuo copertura: prima chi resta con meno (o in negativo)
+    cmp = Number(a.residuo_copertura ?? 1e9) - Number(b.residuo_copertura ?? 1e9);
+  }
+  if (cmp === 0) {
+    cmp = String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it', { sensitivity: 'base' });
   }
   if (cmp === 0) {
     cmp = String(a.aams || '').localeCompare(String(b.aams || ''), 'it');
@@ -227,7 +294,7 @@ export function confrontaRighe(a, b, chiave = 'finisce', direzione = 'asc') {
   return cmp * dir;
 }
 
-export function gruppiDaOrdinare(righe, { chiave = 'finisce', direzione = 'asc', sezioneId = null } = {}) {
+export function gruppiDaOrdinare(righe, { chiave = 'residuo', direzione = 'asc', sezioneId = null } = {}) {
   const famiglieSezione = sezioneId
     ? (SEZIONI_ORDINE.find(sezione => sezione.id === sezioneId)?.famiglie || FAMIGLIE)
     : FAMIGLIE;
@@ -243,7 +310,7 @@ export function gruppiDaOrdinare(righe, { chiave = 'finisce', direzione = 'asc',
     .filter(group => group.items.length > 0);
 }
 
-export function altriArticoli(righe, { chiave = 'finisce', direzione = 'asc' } = {}) {
+export function altriArticoli(righe, { chiave = 'residuo', direzione = 'asc' } = {}) {
   return [...righe]
     .filter(riga => Number(riga.unita) <= 0)
     .sort((a, b) => confrontaRighe(a, b, chiave, direzione));
