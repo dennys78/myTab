@@ -253,13 +253,22 @@ export default function OrdineTabacchi() {
     pollRef.current = setTimeout(poll, 2000);
   };
 
-  const elimina = async () => {
+  const elimina = async ({ poiLeggi = false } = {}) => {
     if (!preordine) return;
-    if (!window.confirm('Eliminare questo ordine e ripetere la lettura?')) return;
+    const messaggio = poiLeggi
+      ? 'Eliminare questo ordine e fare una nuova lettura da PC?'
+      : 'Eliminare definitivamente questo ordine?';
+    if (!window.confirm(messaggio)) return;
     const response = await apiFetch(`/api/tabacchi/preordini/${preordine.id}/`, { method: 'DELETE' });
     const data = await response.json();
-    if (data.status === 'success') setPreordine(null);
-    else setErrore(data.error || 'Eliminazione non riuscita.');
+    if (data.status !== 'success') {
+      setErrore(data.error || 'Eliminazione non riuscita.');
+      return;
+    }
+    setPreordine(null);
+    setAltriAperti(false);
+    setRicerca('');
+    if (poiLeggi) await leggi();
   };
 
   const scaricaCsv = () => {
@@ -407,14 +416,27 @@ export default function OrdineTabacchi() {
             PC negozio: {online == null ? '…' : online ? 'online' : 'offline'}
           </p>
         </div>
-        <button
-          type="button"
-          className="tab-btn"
-          onClick={preordine ? elimina : leggi}
-          disabled={attesa || (!preordine && online !== true)}
-        >
-          {attesa ? 'Lettura…' : preordine ? 'Nuova lettura' : 'Leggi da PC'}
-        </button>
+        <div className="tab-header-actions">
+          {preordine && (
+            <button
+              type="button"
+              className="tab-btn tab-btn-danger"
+              onClick={() => elimina()}
+              disabled={attesa}
+            >
+              <Trash2 size={15} />
+              Elimina
+            </button>
+          )}
+          <button
+            type="button"
+            className="tab-btn"
+            onClick={() => (preordine ? elimina({ poiLeggi: true }) : leggi())}
+            disabled={attesa || (!preordine && online !== true)}
+          >
+            {attesa ? 'Lettura…' : preordine ? 'Nuova lettura' : 'Leggi da PC'}
+          </button>
+        </div>
       </header>
 
       {errore && <div className="tab-error">{errore}</div>}
@@ -603,6 +625,10 @@ export default function OrdineTabacchi() {
                   Annulla correzioni
                 </button>
               )}
+              <button type="button" className="tab-btn ghost tab-btn-danger" onClick={() => elimina()} disabled={attesa}>
+                <Trash2 size={14} />
+                Elimina
+              </button>
               <button type="button" className="tab-btn ghost" onClick={scaricaCsv}>CSV</button>
               <button type="button" className="tab-btn ghost" onClick={scaricaLogista}>Scarica Logista</button>
               <button type="button" className="tab-btn primary" onClick={copiaElenco}>

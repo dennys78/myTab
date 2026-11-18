@@ -2769,6 +2769,25 @@ tbody tr:hover {
 }
 .tab-btn.ghost { background: transparent; }
 
+.tab-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.tab-btn-danger {
+  color: var(--tab-red);
+  border-color: rgba(194, 65, 12, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tab-btn-danger:hover:not(:disabled) {
+  background: rgba(194, 65, 12, 0.1);
+}
+
 .tab-error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid var(--danger);
