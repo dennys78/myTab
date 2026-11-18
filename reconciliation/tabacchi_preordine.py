@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
+from pathlib import Path
 
 CENT = Decimal('0.01')
 GRAM = Decimal('0.001')
@@ -356,17 +357,66 @@ def righe_export_logista(righe):
     return out
 
 
+def _logista_template_path():
+    root = Path(__file__).resolve().parent.parent
+    candidates = [
+        root / 'tabauno_sync' / 'Ordine_Logista_template.xls',
+        root / 'tabauno_sync' / 'Ordine_Logista.xls',
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
 def logista_xls_bytes(righe) -> bytes:
-    """File .xls a 2 colonne come il template Logista / TabaUno."""
+    """File .xls nello stesso standard TabaUno (template 1000 righe, Foglio1)."""
+    rows = righe_export_logista(righe)
+    template = _logista_template_path()
+    if template is not None:
+        return _logista_xls_from_template(template, rows)
+    return _logista_xls_fallback(rows)
+
+
+def _logista_xls_from_template(template, rows) -> bytes:
+    import xlrd
+    from xlutils.copy import copy as xl_copy
+
+    rb = xlrd.open_workbook(str(template), formatting_info=True)
+    max_rows = rb.sheet_by_index(0).nrows
+    wb = xl_copy(rb)
+    sheet = wb.get_sheet(0)
+    # Non riscrivere l'header: resta quello del template TabaUno.
+    limit = min(len(rows), max_rows - 1)
+    for index in range(limit):
+        codice, quantita = rows[index]
+        sheet.write(index + 1, 0, codice)
+        sheet.write(index + 1, 1, quantita)
+    for index in range(limit + 1, max_rows):
+        sheet.write(index, 0, '')
+        sheet.write(index, 1, '')
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def _logista_xls_fallback(rows) -> bytes:
+    """Fallback minimo se il template TabaUno non è nel deploy."""
     import xlwt
 
-    book = xlwt.Workbook(encoding='utf-8')
+    book = xlwt.Workbook(encoding='ascii')
     sheet = book.add_sheet('Foglio1')
+    sheet.col(0).width = 3437
+    sheet.col(1).width = 3620
     sheet.write(0, 0, 'Codice AAMS')
     sheet.write(0, 1, 'Quantita')
-    for index, (codice, quantita) in enumerate(righe_export_logista(righe), start=1):
+    for index, (codice, quantita) in enumerate(rows, start=1):
         sheet.write(index, 0, codice)
         sheet.write(index, 1, quantita)
+    # Stessa dimensione griglia usata da TabaUno.
+    for index in range(len(rows) + 1, 1000):
+        sheet.write(index, 0, '')
+        sheet.write(index, 1, '')
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()

@@ -283,8 +283,15 @@ class TabacchiApiTests(TestCase):
         raw = logista_xls_bytes(payload)
         self.assertTrue(raw.startswith(b'\xd0\xcf\x11\xe0'))
         import xlrd
-        sheet = xlrd.open_workbook(file_contents=raw).sheet_by_index(0)
-        self.assertEqual([(sheet.cell_value(r, 0), sheet.cell_value(r, 1)) for r in range(1, sheet.nrows)], [
-            ('0201', '1,4'),
-            ('V0PYU', '2'),
-        ])
+        book = xlrd.open_workbook(file_contents=raw, formatting_info=True)
+        sheet = book.sheet_by_index(0)
+        self.assertEqual(sheet.name, 'Foglio1')
+        self.assertEqual(sheet.nrows, 1000)
+        self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
+        self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
+        self.assertEqual(sheet.cell_value(1, 0), '0201')
+        self.assertEqual(sheet.cell_value(1, 1), '1,4')
+        self.assertEqual(sheet.cell_value(2, 0), 'V0PYU')
+        self.assertEqual(sheet.cell_value(2, 1), '2')
+        self.assertEqual(sheet.cell_value(3, 0), '')
+        self.assertGreaterEqual(sheet.colinfo_map[0].width, 3000)
