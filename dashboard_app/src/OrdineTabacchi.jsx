@@ -321,7 +321,7 @@ export default function OrdineTabacchi() {
         const dettaglio = payload.messaggio
           || `Ordine_Logista.xls generato correttamente sul PC remoto in ${path} (${size.toLocaleString('it-IT')} byte).`;
         setMessaggio(dettaglio);
-        setPreordine(prev => (prev ? { ...prev, stato: 'esportato' } : prev));
+        setPreordine(prev => (prev ? { ...prev, stato: 'esportato', modificabile: true } : prev));
         return;
       }
       if (body.status === 'error' || body.status === 'expired') {

@@ -39,6 +39,7 @@ from .views import require_auth
 
 STATI_MODIFICABILI = {
     TabacchiPreordine.BOZZA,
+    TabacchiPreordine.ESPORTATO,
     TabacchiPreordine.ANNULLATO,
 }
 
@@ -385,7 +386,8 @@ def api_tabacchi_preordine_detail(request, preordine_id):
         if not consegna:
             return JsonResponse({'status': 'error', 'error': 'Data di consegna non valida.'}, status=400)
         preordine.data_consegna = consegna
-    if preordine.stato == TabacchiPreordine.ANNULLATO:
+    if preordine.stato in (TabacchiPreordine.ANNULLATO, TabacchiPreordine.ESPORTATO):
+        # Modifica dopo export: torna bozza, così va ri-scaricato/depositato.
         preordine.stato = TabacchiPreordine.BOZZA
     preordine.save()
     ultimo = _ultimo(preordine)
