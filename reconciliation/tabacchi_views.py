@@ -25,6 +25,7 @@ from .tabacchi_preordine import (
     calcola_righe,
     giorni_alla_consegna,
     inizio_vendite,
+    logista_xls_bytes,
     normalizza_scorta_pct,
     numero_json,
     proposta_unita,
@@ -400,6 +401,12 @@ def api_tabacchi_preordine_detail(request, preordine_id):
     return JsonResponse({'status': 'success', 'preordine': _preordine_json(preordine, company)})
 
 
+def _segna_esportato(preordine):
+    if preordine.stato == TabacchiPreordine.BOZZA:
+        preordine.stato = TabacchiPreordine.ESPORTATO
+        preordine.save(update_fields=['stato', 'aggiornato_il'])
+
+
 @require_auth
 def api_tabacchi_preordine_csv(request, preordine_id):
     if request.method != 'GET':
@@ -413,7 +420,22 @@ def api_tabacchi_preordine_csv(request, preordine_id):
     content = _csv_content(preordine)
     response = HttpResponse(content, content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="ordine-tabacchi-{preordine.id}.csv"'
-    if preordine.stato == TabacchiPreordine.BOZZA:
-        preordine.stato = TabacchiPreordine.ESPORTATO
-        preordine.save(update_fields=['stato', 'aggiornato_il'])
+    _segna_esportato(preordine)
+    return response
+
+
+@require_auth
+def api_tabacchi_preordine_logista(request, preordine_id):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    response = HttpResponse(content, content_type='application/vnd.ms-excel')
+    response['Content-Disposition'] = f'attachment; filename="Ordine_Logista-{preordine.id}.xls"'
+    _segna_esportato(preordine)
     return response

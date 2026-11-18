@@ -10,12 +10,16 @@ from django.utils import timezone
 from reconciliation.models import Company, TabacchiPreordine, TabaUnoRequest
 from reconciliation.tabacchi_preordine import (
     calcola_righe,
+    codice_aams_logista,
     famiglia_da_categoria,
     giorni_alla_consegna,
+    logista_xls_bytes,
     media_riferimento,
     normalizza_scorta_pct,
     prossimo_giorno_consegna,
     proposta_unita,
+    quantita_logista,
+    righe_export_logista,
     unita_ordine,
     unita_ordine_dispositivo,
 )
@@ -260,6 +264,40 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(row[0], '201')
         self.assertIn(',', row[5])
         self.assertIn(',', row[6])
+
+        logista = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/logista/")
+        self.assertEqual(logista.status_code, 200)
+        self.assertEqual(logista['Content-Type'], 'application/vnd.ms-excel')
+        self.assertTrue(logista.content.startswith(b'\xd0\xcf\x11\xe0'))
+        import xlrd
+        book = xlrd.open_workbook(file_contents=logista.content)
+        sheet = book.sheet_by_index(0)
+        self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
+        self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
+        codes = [sheet.cell_value(row, 0) for row in range(1, sheet.nrows)]
+        self.assertIn('0201', codes)
+
         eliminato = self.client.delete(f"/api/tabacchi/preordini/{preordine['id']}/")
         self.assertEqual(eliminato.status_code, 200)
         self.assertEqual(TabacchiPreordine.objects.filter(id=preordine['id']).count(), 0)
+
+    def test_export_logista_formato(self):
+        self.assertEqual(codice_aams_logista('201'), '0201')
+        self.assertEqual(codice_aams_logista('21108'), '21108')
+        self.assertEqual(codice_aams_logista('V0PYU'), 'V0PYU')
+        self.assertEqual(quantita_logista(7, '0.200', 'Sigarette'), '1,4')
+        self.assertEqual(quantita_logista(2, '0', 'Dispositivi', 'dispositivo'), '2')
+        payload = [
+            {'aams': '201', 'unita': 7, 'kg_per_unita': '0.200', 'famiglia': 'Sigarette'},
+            {'aams': 'V0PYU', 'unita': 2, 'kg_per_unita': 0, 'famiglia': 'Dispositivi', 'tipo': 'dispositivo'},
+            {'aams': '999', 'unita': 0, 'kg_per_unita': '0.200', 'famiglia': 'Sigarette'},
+        ]
+        self.assertEqual(righe_export_logista(payload), [('0201', '1,4'), ('V0PYU', '2')])
+        raw = logista_xls_bytes(payload)
+        self.assertTrue(raw.startswith(b'\xd0\xcf\x11\xe0'))
+        import xlrd
+        sheet = xlrd.open_workbook(file_contents=raw).sheet_by_index(0)
+        self.assertEqual([(sheet.cell_value(r, 0), sheet.cell_value(r, 1)) for r in range(1, sheet.nrows)], [
+            ('0201', '1,4'),
+            ('V0PYU', '2'),
+        ])

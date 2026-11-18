@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 
@@ -310,3 +311,62 @@ def totali_ordine(righe):
         'kg': _kg(kg),
         'importo': _money(importo),
     }
+
+
+def codice_aams_logista(aams) -> str:
+    """Codice come nel file Ordine Logista (AAMS numerici corti con zeri a sinistra)."""
+    text = _text_code(aams)
+    if text.isdigit() and len(text) < 4:
+        return text.zfill(4)
+    return text
+
+
+def quantita_logista(unita, kg_per_unita, famiglia='', tipo='') -> str:
+    """Quantità Logista: kg con virgola per tabacchi, confezioni intere per dispositivi/solidi."""
+    pezzi = int(unita or 0)
+    kg_u = _decimal(kg_per_unita)
+    is_dsp = (
+        famiglia in ('Dispositivi', 'Solidi')
+        or tipo == 'dispositivo'
+        or kg_u <= 0
+    )
+    if is_dsp:
+        return str(pezzi)
+    kg = _kg(pezzi * kg_u)
+    testo = f'{kg:.3f}'.rstrip('0').rstrip('.')
+    return testo.replace('.', ',')
+
+
+def righe_export_logista(righe):
+    """Lista (Codice AAMS, Quantita) solo per righe con quantità > 0."""
+    out = []
+    for riga in righe:
+        unita = int(_valore_riga(riga, 'unita') or 0)
+        if unita <= 0:
+            continue
+        out.append((
+            codice_aams_logista(_valore_riga(riga, 'aams')),
+            quantita_logista(
+                unita,
+                _valore_riga(riga, 'kg_per_unita'),
+                _valore_riga(riga, 'famiglia', ''),
+                _valore_riga(riga, 'tipo', ''),
+            ),
+        ))
+    return out
+
+
+def logista_xls_bytes(righe) -> bytes:
+    """File .xls a 2 colonne come il template Logista / TabaUno."""
+    import xlwt
+
+    book = xlwt.Workbook(encoding='utf-8')
+    sheet = book.add_sheet('Foglio1')
+    sheet.write(0, 0, 'Codice AAMS')
+    sheet.write(0, 1, 'Quantita')
+    for index, (codice, quantita) in enumerate(righe_export_logista(righe), start=1):
+        sheet.write(index, 0, codice)
+        sheet.write(index, 1, quantita)
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()

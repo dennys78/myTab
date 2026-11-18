@@ -37,6 +37,7 @@ urlpatterns = [
     path('api/tabacchi/preordini/da-richiesta/<int:request_id>/', tabacchi_views.api_tabacchi_preordine_da_richiesta),
     path('api/tabacchi/preordini/<int:preordine_id>/', tabacchi_views.api_tabacchi_preordine_detail),
     path('api/tabacchi/preordini/<int:preordine_id>/csv/', tabacchi_views.api_tabacchi_preordine_csv),
+    path('api/tabacchi/preordini/<int:preordine_id>/logista/', tabacchi_views.api_tabacchi_preordine_logista),
     path('api/closures/extract/',                   views.api_extract_closure),
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),

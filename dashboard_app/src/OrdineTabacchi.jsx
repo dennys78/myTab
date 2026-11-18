@@ -267,6 +267,11 @@ export default function OrdineTabacchi() {
     window.location.assign(`/api/tabacchi/preordini/${preordine.id}/csv/`);
   };
 
+  const scaricaLogista = () => {
+    if (!preordine) return;
+    window.location.assign(`/api/tabacchi/preordini/${preordine.id}/logista/`);
+  };
+
   const copiaElenco = async () => {
     if (!preordine) return;
     const testo = elencoCopia(preordine.righe);
@@ -598,7 +603,8 @@ export default function OrdineTabacchi() {
                   Annulla correzioni
                 </button>
               )}
-              <button type="button" className="tab-btn ghost" onClick={scaricaCsv}>Scarica CSV</button>
+              <button type="button" className="tab-btn ghost" onClick={scaricaCsv}>CSV</button>
+              <button type="button" className="tab-btn ghost" onClick={scaricaLogista}>Scarica Logista</button>
               <button type="button" className="tab-btn primary" onClick={copiaElenco}>
                 {copiato ? 'Copiato' : 'Copia elenco'}
               </button>
