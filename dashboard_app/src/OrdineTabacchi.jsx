@@ -271,11 +271,6 @@ export default function OrdineTabacchi() {
     if (poiLeggi) await leggi();
   };
 
-  const scaricaCsv = () => {
-    if (!preordine) return;
-    window.location.assign(`/api/tabacchi/preordini/${preordine.id}/csv/`);
-  };
-
   const scaricaLogista = () => {
     if (!preordine) return;
     window.location.assign(`/api/tabacchi/preordini/${preordine.id}/logista/`);
@@ -629,8 +624,9 @@ export default function OrdineTabacchi() {
                 <Trash2 size={14} />
                 Elimina
               </button>
-              <button type="button" className="tab-btn ghost" onClick={scaricaCsv}>CSV</button>
-              <button type="button" className="tab-btn ghost" onClick={scaricaLogista}>Scarica Logista</button>
+              <button type="button" className="tab-btn ghost" onClick={scaricaLogista}>
+                Scarica Ordine_Logista.xls
+              </button>
               <button type="button" className="tab-btn primary" onClick={copiaElenco}>
                 {copiato ? 'Copiato' : 'Copia elenco'}
               </button>

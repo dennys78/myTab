@@ -1,9 +1,7 @@
-"""Preordine tabacchi: il portale chiede la lettura, myTaba calcola, CSV/copia restano in pagina."""
+"""Preordine tabacchi: il portale chiede la lettura, myTaba calcola, export Logista XLS in pagina."""
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 from datetime import timedelta
 from decimal import Decimal
@@ -219,25 +217,19 @@ def _crea_righe(preordine, dati):
     _salva_totali(preordine)
 
 
-def _csv_content(preordine):
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=';', lineterminator='\r\n')
-    writer.writerow([
-        'codice_aams', 'descrizione', 'famiglia', 'stecche_o_confezioni', 'pacchetti', 'kg', 'importo',
-    ])
-    for riga in preordine.righe.filter(unita__gt=0).order_by('aams'):
-        pacchetti = int(riga.unita) * int(riga.pacchetti_per_unita)
-        kg = _kg(int(riga.unita) * _decimal(riga.kg_per_unita))
-        writer.writerow([
-            riga.aams,
-            riga.descrizione,
-            riga.famiglia,
-            int(riga.unita),
-            pacchetti,
-            f'{kg:.3f}'.replace('.', ','),
-            f'{_money(riga.importo):.2f}'.replace('.', ','),
-        ])
-    return '\ufeff' + buffer.getvalue()
+def _segna_esportato(preordine):
+    if preordine.stato == TabacchiPreordine.BOZZA:
+        preordine.stato = TabacchiPreordine.ESPORTATO
+        preordine.save(update_fields=['stato', 'aggiornato_il'])
+
+
+def _logista_attachment(preordine):
+    """Stesso formato di tabauno_sync/Ordine_Logista.xls (Codice AAMS + Quantita)."""
+    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    response = HttpResponse(content, content_type='application/vnd.ms-excel')
+    response['Content-Disposition'] = 'attachment; filename="Ordine_Logista.xls"'
+    _segna_esportato(preordine)
+    return response
 
 
 @require_auth
@@ -401,14 +393,9 @@ def api_tabacchi_preordine_detail(request, preordine_id):
     return JsonResponse({'status': 'success', 'preordine': _preordine_json(preordine, company)})
 
 
-def _segna_esportato(preordine):
-    if preordine.stato == TabacchiPreordine.BOZZA:
-        preordine.stato = TabacchiPreordine.ESPORTATO
-        preordine.save(update_fields=['stato', 'aggiornato_il'])
-
-
 @require_auth
 def api_tabacchi_preordine_csv(request, preordine_id):
+    """Compat: stesso XLS Logista (non più CSV dettagliato)."""
     if request.method != 'GET':
         return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
     company, err = _company(request)
@@ -417,11 +404,7 @@ def api_tabacchi_preordine_csv(request, preordine_id):
     preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
     if not preordine:
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
-    content = _csv_content(preordine)
-    response = HttpResponse(content, content_type='text/csv; charset=utf-8')
-    response['Content-Disposition'] = f'attachment; filename="ordine-tabacchi-{preordine.id}.csv"'
-    _segna_esportato(preordine)
-    return response
+    return _logista_attachment(preordine)
 
 
 @require_auth
@@ -434,8 +417,4 @@ def api_tabacchi_preordine_logista(request, preordine_id):
     preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
     if not preordine:
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
-    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
-    response = HttpResponse(content, content_type='application/vnd.ms-excel')
-    response['Content-Disposition'] = f'attachment; filename="Ordine_Logista-{preordine.id}.xls"'
-    _segna_esportato(preordine)
-    return response
+    return _logista_attachment(preordine)

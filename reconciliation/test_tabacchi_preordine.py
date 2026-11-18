@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -229,7 +227,7 @@ class TabacchiApiTests(TestCase):
         self.assertTrue(any(r['aams'] == '201' for r in body['righe']))
         self.assertFalse(any(r['aams'] == '999' for r in body['righe']))
 
-    def test_patch_conserva_correzioni_e_csv(self):
+    def test_patch_conserva_correzioni_e_xls_logista(self):
         lettura = self._lettura_pronta()
         creato = self.client.post(
             f'/api/tabacchi/preordini/da-richiesta/{lettura.id}/',
@@ -252,30 +250,19 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(aggiornato['giorni_copertura'], 14)
         self.assertEqual(aggiornato['scorta_pct'], 80)
 
-        csv_resp = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/csv/")
-        self.assertEqual(csv_resp.status_code, 200)
-        text = csv_resp.content.decode('utf-8-sig')
-        reader = csv.reader(io.StringIO(text), delimiter=';')
-        header = next(reader)
-        self.assertEqual(header, [
-            'codice_aams', 'descrizione', 'famiglia', 'stecche_o_confezioni', 'pacchetti', 'kg', 'importo',
-        ])
-        row = next(reader)
-        self.assertEqual(row[0], '201')
-        self.assertIn(',', row[5])
-        self.assertIn(',', row[6])
-
-        logista = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/logista/")
-        self.assertEqual(logista.status_code, 200)
-        self.assertEqual(logista['Content-Type'], 'application/vnd.ms-excel')
-        self.assertTrue(logista.content.startswith(b'\xd0\xcf\x11\xe0'))
         import xlrd
-        book = xlrd.open_workbook(file_contents=logista.content)
-        sheet = book.sheet_by_index(0)
-        self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
-        self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
-        codes = [sheet.cell_value(row, 0) for row in range(1, sheet.nrows)]
-        self.assertIn('0201', codes)
+        for path in ('csv', 'logista'):
+            resp = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/{path}/")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp['Content-Type'], 'application/vnd.ms-excel')
+            self.assertIn('Ordine_Logista.xls', resp['Content-Disposition'])
+            self.assertTrue(resp.content.startswith(b'\xd0\xcf\x11\xe0'))
+            sheet = xlrd.open_workbook(file_contents=resp.content).sheet_by_index(0)
+            self.assertEqual(sheet.name, 'Foglio1')
+            self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
+            self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
+            codes = [sheet.cell_value(row, 0) for row in range(1, sheet.nrows)]
+            self.assertIn('0201', codes)
 
         eliminato = self.client.delete(f"/api/tabacchi/preordini/{preordine['id']}/")
         self.assertEqual(eliminato.status_code, 200)
