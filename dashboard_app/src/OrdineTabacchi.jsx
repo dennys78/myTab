@@ -424,9 +424,11 @@ export default function OrdineTabacchi() {
 
   const rigaTabella = (riga, { conStepper = true } = {}) => (
     <tr key={riga.aams} className={Number(riga.unita) > 0 ? 'tab-row-order' : undefined}>
-      <td className="tab-col-articolo" title={riga.descrizione}>
-        <span className="tab-aams">{riga.aams}</span>
-        <span className="tab-nome">{riga.descrizione}</span>
+      <td className="tab-col-articolo" title={`${riga.aams} · ${riga.descrizione}`}>
+        <div className="tab-articolo">
+          <span className="tab-aams">{riga.aams}</span>
+          <span className="tab-nome">{riga.descrizione}</span>
+        </div>
         <div className="tab-mobile-meta">
           <span>{Number(riga.giacenza).toLocaleString('it-IT')}</span>
           <span>·</span>
