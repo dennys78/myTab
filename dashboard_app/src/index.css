@@ -2806,6 +2806,66 @@ tbody tr:hover {
   margin-bottom: 1rem;
 }
 
+.tab-logista {
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.tab-logista p { margin: 0 0 0.5rem; }
+.tab-logista.warn { background: rgba(245, 158, 11, 0.12); border-color: #f59e0b; }
+.tab-logista.error { background: rgba(239, 68, 68, 0.1); border-color: var(--danger); color: var(--danger); }
+.tab-logista.ok { background: rgba(22, 163, 74, 0.08); border-color: #16a34a; }
+
+.tab-logista-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.tab-logista-conteggi {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-top: 0.2rem;
+}
+
+.tab-logista-foto img {
+  width: 120px;
+  max-height: 90px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border, #d1d5db);
+}
+
+.tab-logista ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+
+.tab-logista-rifiutate {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.tab-logista-avvisi {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.tab-logista-nota { margin-top: 0.6rem !important; font-weight: 600; }
+
+.tab-logista-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .tab-controls {
   display: flex;
   flex-wrap: wrap;

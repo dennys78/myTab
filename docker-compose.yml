@@ -24,6 +24,8 @@ services:
       - TABAUNO_IMPORT_TOKEN=${TABAUNO_IMPORT_TOKEN:-}
       - N8N_GRATTA_WEBHOOK_URL=${N8N_GRATTA_WEBHOOK_URL:-}
       - N8N_GRATTA_TOKEN=${N8N_GRATTA_TOKEN:-}
+      - LOGISTA_SERVICE_URL=${LOGISTA_SERVICE_URL:-http://host.docker.internal:3501}
+      - LOGISTA_SERVICE_KEY=${LOGISTA_SERVICE_KEY:-}
       - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
@@ -33,6 +35,8 @@ services:
     # but usually it's better to store it in a subfolder like /app/db_data.
     # To keep it simple without changing Django settings, we just map the whole app dir,
     # but it's cleaner to just map the DB. So we'll run a script to ensure DB is created.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     expose:
       - "8000"
     command: >

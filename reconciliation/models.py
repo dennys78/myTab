@@ -606,3 +606,40 @@ class TabacchiPreordineRiga(models.Model):
 
     def __str__(self):
         return f'{self.aams} x{self.unita}'
+
+
+class LogistaInvioJob(models.Model):
+    """Caricamento dell'ordine nella proposta WebT tramite il servizio locale «logista»."""
+    IN_CORSO = 'in_corso'
+    ATTESA_CONFERMA = 'attesa_conferma'
+    COMPLETATO = 'completato'
+    ERRORE = 'errore'
+    STATO_CHOICES = [
+        (IN_CORSO, 'In corso'),
+        (ATTESA_CONFERMA, 'Attesa conferma'),
+        (COMPLETATO, 'Completato'),
+        (ERRORE, 'Errore'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='logista_jobs')
+    preordine = models.ForeignKey(
+        TabacchiPreordine, null=True, blank=True, on_delete=models.SET_NULL, related_name='logista_jobs',
+    )
+    creato_da = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='logista_jobs')
+    stato = models.CharField(max_length=20, choices=STATO_CHOICES, default=IN_CORSO)
+    svuota = models.BooleanField(default=False)
+    creato_il = models.DateTimeField(auto_now_add=True)
+    aggiornato_il = models.DateTimeField(auto_now=True)
+    righe_inviate = models.PositiveIntegerField(default=0)
+    righe_presenti = models.PositiveIntegerField(null=True, blank=True)
+    risultato = models.JSONField(null=True, blank=True)
+    foto_path = models.CharField(max_length=255, blank=True, default='')
+    errore = models.TextField(blank=True, default='')
+
+    class Meta:
+        verbose_name = 'Invio proposta Logista'
+        verbose_name_plural = 'Invii proposta Logista'
+        ordering = ['-creato_il', '-id']
+
+    def __str__(self):
+        return f'Logista job {self.id} {self.stato}'

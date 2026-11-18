@@ -45,13 +45,19 @@ export default function OrdineTabacchi() {
   const [copiato, setCopiato] = useState(false);
   const [ordinamento, setOrdinamento] = useState({ chiave: 'residuo', direzione: 'asc' });
   const [sezione, setSezione] = useState('tabacchi');
+  const [logistaJob, setLogistaJob] = useState(null);
+  const [logistaAvvio, setLogistaAvvio] = useState(false);
   const pollRef = useRef(null);
   const saveRef = useRef(null);
+  const salvaPendenteRef = useRef(null);
+  const logistaPollRef = useRef(null);
+  const seguiJobLogistaRef = useRef(null);
   const copiaRef = useRef(null);
 
   const ferma = () => {
     if (pollRef.current) clearTimeout(pollRef.current);
     if (saveRef.current) clearTimeout(saveRef.current);
+    if (logistaPollRef.current) clearTimeout(logistaPollRef.current);
   };
 
   useEffect(() => () => ferma(), []);
@@ -75,6 +81,11 @@ export default function OrdineTabacchi() {
     if (data.status === 'success') {
       setPreordine(data.preordine);
       setOnline(data.preordine.agent_online);
+      const job = data.preordine.logista_job;
+      if (job && (job.stato === 'in_corso' || job.stato === 'attesa_conferma')) {
+        setLogistaJob(job);
+        if (job.stato === 'in_corso') seguiJobLogistaRef.current?.(job.id);
+      }
     }
   }, []);
 
@@ -92,7 +103,9 @@ export default function OrdineTabacchi() {
 
   const salva = useCallback((next, righePatch) => {
     if (saveRef.current) clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(async () => {
+    const esegui = async () => {
+      saveRef.current = null;
+      salvaPendenteRef.current = null;
       const response = await apiFetch(`/api/tabacchi/preordini/${next.id}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -106,8 +119,17 @@ export default function OrdineTabacchi() {
       const data = await response.json();
       if (data.status === 'success') setPreordine(data.preordine);
       else setErrore(data.error || 'Salvataggio non riuscito.');
-    }, 350);
+    };
+    salvaPendenteRef.current = esegui;
+    saveRef.current = setTimeout(esegui, 350);
   }, []);
+
+  const salvaSubito = async () => {
+    const pendente = salvaPendenteRef.current;
+    if (!pendente) return;
+    if (saveRef.current) clearTimeout(saveRef.current);
+    await pendente();
+  };
 
   const aggiornaParametri = (patch) => {
     setPreordine(prev => {
@@ -334,6 +356,167 @@ export default function OrdineTabacchi() {
     pollRef.current = setTimeout(poll, 2000);
   };
 
+  const seguiJobLogista = (jobId) => {
+    if (logistaPollRef.current) clearTimeout(logistaPollRef.current);
+    const poll = async () => {
+      try {
+        const response = await apiFetch(`/api/tabacchi/logista/job/${jobId}/`);
+        const data = await response.json();
+        if (data.status === 'success') {
+          setLogistaJob(data.job);
+          if (data.job.stato !== 'in_corso') return;
+        }
+      } catch {
+        // rete instabile: si riprova al giro successivo
+      }
+      logistaPollRef.current = setTimeout(poll, 3000);
+    };
+    logistaPollRef.current = setTimeout(poll, 3000);
+  };
+  seguiJobLogistaRef.current = seguiJobLogista;
+
+  const avviaLogista = async (svuota) => {
+    if (!preordine || logistaAvvio) return;
+    setErrore('');
+    setMessaggio('');
+    setLogistaAvvio(true);
+    try {
+      await salvaSubito();
+      const response = await apiFetch('/api/tabacchi/logista/invia/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preordine_id: preordine.id, svuota }),
+      });
+      const data = await response.json();
+      if (data.status !== 'success') {
+        if (data.job_id) {
+          setLogistaJob({ id: data.job_id, stato: 'in_corso', righe_inviate: 0, minuti_stimati: 1 });
+          seguiJobLogista(data.job_id);
+        } else {
+          setLogistaJob({ stato: 'errore', errore: data.error || 'Invio a Logista non riuscito.' });
+        }
+        return;
+      }
+      setLogistaJob(data.job);
+      seguiJobLogista(data.job_id);
+    } catch {
+      setLogistaJob({ stato: 'errore', errore: 'Impossibile contattare il server myTaba.' });
+    } finally {
+      setLogistaAvvio(false);
+    }
+  };
+
+  const inviaALogista = () => {
+    if (!preordine) return;
+    if (!preordine.logista_configurato) {
+      setLogistaJob({ stato: 'errore', errore: 'Servizio Logista non configurato.' });
+      return;
+    }
+    const righe = (preordine.righe || []).filter(riga => Number(riga.unita) > 0).length;
+    if (!righe) {
+      setErrore('Nessuna riga con quantità da caricare.');
+      return;
+    }
+    const kg = Number(preordine.kg || 0).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    if (!window.confirm(`Inserire ${righe} righe (${kg} kg) nella proposta Logista? L'ordine NON verrà inviato.`)) return;
+    avviaLogista(false);
+  };
+
+  const logistaInCorso = logistaAvvio || logistaJob?.stato === 'in_corso';
+
+  const pannelloLogista = () => {
+    if (!logistaJob) return null;
+    const job = logistaJob;
+    if (job.stato === 'in_corso') {
+      return (
+        <div className="tab-logista">
+          Caricamento in corso su Logista… (~{job.minuti_stimati || 1} {Number(job.minuti_stimati) === 1 ? 'minuto' : 'minuti'})
+        </div>
+      );
+    }
+    if (job.stato === 'attesa_conferma') {
+      return (
+        <div className="tab-logista warn">
+          <p>Su WebT c&apos;è già una proposta con {job.righe_presenti ?? 0} righe. Svuotarla e caricare questo ordine?</p>
+          <div className="tab-logista-actions">
+            <button type="button" className="tab-btn primary" onClick={() => avviaLogista(true)} disabled={logistaInCorso}>
+              Svuota e carica
+            </button>
+            <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>
+              Annulla
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if (job.stato === 'errore') {
+      return (
+        <div className="tab-logista error">
+          <p>{job.errore || 'Caricamento su Logista non riuscito.'}</p>
+          <div className="tab-logista-actions">
+            {preordine?.logista_configurato && (
+              <button type="button" className="tab-btn ghost" onClick={() => avviaLogista(false)} disabled={logistaInCorso}>
+                Riprova
+              </button>
+            )}
+            <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>
+              Chiudi
+            </button>
+          </div>
+        </div>
+      );
+    }
+    const rifiutate = job.rifiutate || [];
+    const avvisi = job.avvisi || [];
+    return (
+      <div className="tab-logista ok">
+        <div className="tab-logista-head">
+          <div>
+            <strong>Inserite {job.inserite ?? 0}/{job.righe_inviate}</strong>
+            {(job.proposta?.tabacchi != null || job.proposta?.altri != null) && (
+              <span className="tab-logista-conteggi">
+                Proposta WebT: {job.proposta?.tabacchi ?? 0} tabacchi · {job.proposta?.altri ?? 0} altri
+              </span>
+            )}
+          </div>
+          {job.foto_url && (
+            <a href={job.foto_url} target="_blank" rel="noreferrer" className="tab-logista-foto">
+              <img src={job.foto_url} alt="Proposta su WebT" />
+            </a>
+          )}
+        </div>
+        {rifiutate.length > 0 && (
+          <div className="tab-logista-rifiutate">
+            <strong>Rifiutate ({rifiutate.length})</strong>
+            <ul>
+              {rifiutate.map((riga, i) => (
+                <li key={`${riga.codice}-${i}`}>
+                  <span className="tab-aams">{riga.codice}</span> {riga.qta} — {riga.errore}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {avvisi.length > 0 && (
+          <div className="tab-logista-avvisi">
+            <strong>Avvisi</strong>
+            <ul>
+              {avvisi.map((riga, i) => (
+                <li key={`${riga.codice}-${i}`}>
+                  <span className="tab-aams">{riga.codice}</span> {(riga.avvisi || []).join(' · ')}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="tab-logista-nota">Ordine NON inviato: controlla su WebT e premi «Invia ordine».</p>
+        <div className="tab-logista-actions">
+          <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>Chiudi</button>
+        </div>
+      </div>
+    );
+  };
+
   const copiaElenco = async () => {
     if (!preordine) return;
     const testo = elencoCopia(preordine.righe);
@@ -516,6 +699,7 @@ export default function OrdineTabacchi() {
 
       {errore && <div className="tab-error">{errore}</div>}
       {messaggio && !errore && <div className="tab-ok">{messaggio}</div>}
+      {preordine && pannelloLogista()}
 
       {!preordine && !attesa && (
         <p className="tab-empty">Premi «Leggi da PC» quando il servizio TabaUnoAgent è online.</p>
@@ -716,6 +900,15 @@ export default function OrdineTabacchi() {
                 title="Da caricare sul portale Logista (non in TabaUno)"
               >
                 Scarica Ordine_Logista.xls
+              </button>
+              <button
+                type="button"
+                className="tab-btn ghost"
+                onClick={inviaALogista}
+                disabled={logistaInCorso || attesa}
+                title="Inserisce le righe nella proposta d'ordine WebT. Non invia l'ordine."
+              >
+                {logistaInCorso ? 'Caricamento…' : 'Invia a Logista'}
               </button>
               <button
                 type="button"

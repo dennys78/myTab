@@ -6,12 +6,28 @@ import json
 from datetime import timedelta
 from decimal import Decimal
 
-from django.http import HttpResponse, JsonResponse
+from pathlib import Path
+
+from django.conf import settings
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .company_scope import bind_company
-from .models import AppSetting, TabacchiPreordine, TabacchiPreordineRiga, TabaUnoRequest
+from .logista_service import (
+    avvia_job,
+    job_json,
+    logista_configurato,
+    righe_logista_payload,
+    scadi_job_bloccati,
+)
+from .models import (
+    AppSetting,
+    LogistaInvioJob,
+    TabacchiPreordine,
+    TabacchiPreordineRiga,
+    TabaUnoRequest,
+)
 from .tabacchi_preordine import (
     DEFAULT_GIORNO_CONSEGNA,
     DEFAULT_SCORTA_PCT,
@@ -42,6 +58,12 @@ STATI_MODIFICABILI = {
     TabacchiPreordine.ESPORTATO,
     TabacchiPreordine.ANNULLATO,
 }
+
+
+def _ultimo_job_logista(preordine):
+    scadi_job_bloccati(preordine.company)
+    job = preordine.logista_jobs.order_by('-creato_il', '-id').first()
+    return job_json(job) if job else None
 
 
 def _body(request):
@@ -207,6 +229,8 @@ def _preordine_json(preordine, company):
         'famiglie': list(FAMIGLIE),
         'modificabile': preordine.stato in STATI_MODIFICABILI,
         'agent_online': agent_is_online(company),
+        'logista_configurato': logista_configurato(),
+        'logista_job': _ultimo_job_logista(preordine),
         'request_id': preordine.request_id,
         'righe': righe,
         'aggiornato_il': timezone.localtime(preordine.aggiornato_il).isoformat(timespec='seconds'),
@@ -500,3 +524,80 @@ def api_tabacchi_preordine_deposita_tabauno(request, preordine_id):
         'request_status': row.status,
         'agent_online': True,
     }, status=201)
+
+
+def _preordine_per_logista(company, preordine_id):
+    if preordine_id:
+        return TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
+    return TabacchiPreordine.objects.filter(
+        company=company,
+        stato__in=(TabacchiPreordine.BOZZA, TabacchiPreordine.ESPORTATO),
+    ).order_by('-creato_il', '-id').first()
+
+
+@require_auth
+def api_tabacchi_logista_invia(request):
+    """Carica l'ordine nella proposta WebT (non lo invia): job in background sul servizio locale."""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    data = _body(request)
+    if data is None:
+        return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+    if not logista_configurato():
+        return JsonResponse({'status': 'error', 'error': 'Servizio Logista non configurato.'}, status=503)
+    preordine = _preordine_per_logista(company, data.get('preordine_id'))
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    righe = righe_logista_payload(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    if not righe:
+        return JsonResponse({'status': 'error', 'error': 'Nessuna riga con quantità da caricare.'}, status=409)
+    scadi_job_bloccati(company)
+    attivo = LogistaInvioJob.objects.filter(company=company, stato=LogistaInvioJob.IN_CORSO).first()
+    if attivo:
+        return JsonResponse({
+            'status': 'error',
+            'error': 'C’è già un caricamento in corso su Logista.',
+            'job_id': attivo.id,
+        }, status=409)
+    job = LogistaInvioJob.objects.create(
+        company=company,
+        preordine=preordine,
+        creato_da=request.user,
+        svuota=bool(data.get('svuota')),
+        righe_inviate=len(righe),
+    )
+    avvia_job(job, righe)
+    return JsonResponse({'status': 'success', 'job_id': job.id, 'job': job_json(job)}, status=202)
+
+
+@require_auth
+def api_tabacchi_logista_job(request, job_id):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    scadi_job_bloccati(company)
+    job = LogistaInvioJob.objects.filter(id=job_id, company=company).first()
+    if not job:
+        return JsonResponse({'status': 'error', 'error': 'Job non trovato.'}, status=404)
+    return JsonResponse({'status': 'success', 'job': job_json(job)})
+
+
+@require_auth
+def api_tabacchi_logista_job_foto(request, job_id):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    job = LogistaInvioJob.objects.filter(id=job_id, company=company).first()
+    if not job or not job.foto_path:
+        return JsonResponse({'status': 'error', 'error': 'Foto non disponibile.'}, status=404)
+    path = Path(settings.MEDIA_ROOT) / job.foto_path
+    if not path.is_file():
+        return JsonResponse({'status': 'error', 'error': 'Foto non disponibile.'}, status=404)
+    return FileResponse(path.open('rb'), content_type='image/jpeg')
