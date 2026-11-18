@@ -357,139 +357,135 @@ def righe_export_logista(righe):
     return out
 
 
-def _logista_template_path():
-    root = Path(__file__).resolve().parent.parent
-    candidates = [
-        root / 'tabauno_sync' / 'Ordine_Logista_template.xls',
-        root / 'tabauno_sync' / 'Ordine_Logista.xls',
-    ]
-    for path in candidates:
-        if path.is_file():
-            return path
+class LogistaXlsError(RuntimeError):
+    """Generazione Ordine_Logista.xls fallita (LibreOffice assente o conversione ko)."""
+
+
+def find_soffice() -> str | None:
+    """Percorso di soffice/LibreOffice, se disponibile."""
+    import shutil
+
+    for name in ('soffice', 'libreoffice'):
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in (
+        '/usr/bin/soffice',
+        '/usr/lib/libreoffice/program/soffice',
+        '/Applications/LibreOffice.app/Contents/MacOS/soffice',
+    ):
+        if Path(candidate).is_file():
+            return candidate
     return None
 
 
 def logista_xls_bytes(righe) -> bytes:
-    """Ordine_Logista.xls compatibile TabaUno/Logista (OLE Excel reale + Foglio1)."""
+    """Ordine_Logista.xls Excel 97-2003 via openpyxl + LibreOffice (compatibile TabaUno)."""
     rows = righe_export_logista(righe)
-    template = _logista_template_path()
-    if template is not None:
-        return _logista_xls_from_template(template, rows)
-    return _logista_xls_fallback(rows)
+    return _logista_xls_via_libreoffice(rows)
 
 
-def _logista_xls_from_template(template, rows) -> bytes:
-    """Riempie il template e reinietta il Workbook nel contenitore OLE Excel originale.
-
-    xlutils/xlwt da soli producono un .xls senza SummaryInformation: Excel/Logista
-    lo aprono a video ma TabaUno/portale spesso lo rifiutano. Teniamo il guscio OLE
-    del file generato da Excel (Aptos, property streams) e sostituiamo solo Workbook.
-    """
-    import xlrd
-    from xlutils.copy import copy as xl_copy
-
-    template_bytes = Path(template).read_bytes()
-    rb = xlrd.open_workbook(file_contents=template_bytes, formatting_info=True)
-    sheet_r = rb.sheet_by_index(0)
-    max_rows = sheet_r.nrows
-    last_old = 0
-    for row_idx in range(1, max_rows):
-        if str(sheet_r.cell_value(row_idx, 0)).strip() or str(sheet_r.cell_value(row_idx, 1)).strip():
-            last_old = row_idx
-
-    wb = xl_copy(rb)
-    sheet = wb.get_sheet(0)
-    # Non riscrivere l'header: resta quello del template TabaUno.
-    limit = min(len(rows), max_rows - 1)
-    clear_until = max(limit, last_old)
-    for index in range(1, clear_until + 1):
-        if index <= limit:
-            codice, quantita = rows[index - 1]
-            sheet.write(index, 0, codice)
-            sheet.write(index, 1, quantita)
-        else:
-            sheet.write(index, 0, '')
-            sheet.write(index, 1, '')
-
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    rebuilt = buffer.getvalue()
-    return _logista_wrap_excel_ole(template_bytes, rebuilt)
+def _write_text_cell(sheet, row: int, column: int, value: str) -> None:
+    cell = sheet.cell(row=row, column=column, value=str(value))
+    cell.data_type = 's'
+    cell.number_format = '@'
 
 
-def _logista_wrap_excel_ole(template_bytes: bytes, rebuilt_xls: bytes) -> bytes:
-    """Se il template è un Excel vero, conserva i property streams OLE."""
+def _logista_xlsx_path(rows, work_dir: Path) -> Path:
+    from openpyxl import Workbook
+
+    xlsx_path = work_dir / 'ordine.xlsx'
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Foglio1'
+    _write_text_cell(sheet, 1, 1, 'Codice AAMS')
+    _write_text_cell(sheet, 1, 2, 'Quantita')
+    for index, (codice, quantita) in enumerate(rows, start=2):
+        _write_text_cell(sheet, index, 1, codice)
+        _write_text_cell(sheet, index, 2, quantita)
+    book.save(xlsx_path)
+    return xlsx_path
+
+
+def _logista_xls_via_libreoffice(rows) -> bytes:
+    """xlsx temporaneo → conversione headless «MS Excel 97» → byte .xls."""
+    import shutil
+    import subprocess
+    import tempfile
+    import uuid
+
+    soffice = find_soffice()
+    if not soffice:
+        raise LogistaXlsError(
+            'LibreOffice (soffice) non installato: impossibile generare Ordine_Logista.xls.'
+        )
+
+    work_dir = Path(tempfile.mkdtemp(prefix='ordine_logista_'))
+    user_install = Path(tempfile.gettempdir()) / f'lo-{uuid.uuid4().hex}'
+    try:
+        xlsx_path = _logista_xlsx_path(rows, work_dir)
+        user_install.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            soffice,
+            '--headless',
+            '--norestore',
+            f'-env:UserInstallation={user_install.resolve().as_uri()}',
+            '--convert-to', 'xls:MS Excel 97',
+            '--outdir', str(work_dir),
+            str(xlsx_path),
+        ]
+        try:
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise LogistaXlsError(
+                'Conversione LibreOffice di Ordine_Logista.xls scaduta (60s).'
+            ) from exc
+
+        xls_path = work_dir / 'ordine.xls'
+        if completed.returncode != 0 or not xls_path.is_file():
+            detail = (completed.stderr or completed.stdout or '').strip()
+            raise LogistaXlsError(
+                'Conversione LibreOffice di Ordine_Logista.xls fallita'
+                + (f': {detail}' if detail else '.')
+            )
+        content = xls_path.read_bytes()
+        if not content.startswith(b'\xd0\xcf\x11\xe0'):
+            raise LogistaXlsError('File convertito non è un .xls OLE valido.')
+        return content
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        shutil.rmtree(user_install, ignore_errors=True)
+
+
+def workbook_stream_ends_at_eof(xls_bytes: bytes) -> bool:
+    """True se lo stream Workbook termina esattamente sull'ultimo record EOF (niente zeri in coda)."""
+    import struct
+
     import olefile
 
+    ole = olefile.OleFileIO(io.BytesIO(xls_bytes))
     try:
-        ole_tpl = olefile.OleFileIO(io.BytesIO(template_bytes))
-    except Exception:
-        return rebuilt_xls
-
-    has_summary = ole_tpl.exists('\x05SummaryInformation')
-    if not has_summary:
-        ole_tpl.close()
-        return rebuilt_xls
-
-    try:
-        ole_new = olefile.OleFileIO(io.BytesIO(rebuilt_xls))
-        new_wb = ole_new.openstream('Workbook').read()
-        ole_new.close()
-        old_len = ole_tpl.get_size('Workbook')
-        ole_tpl.close()
-    except Exception:
-        try:
-            ole_tpl.close()
-        except Exception:
-            pass
-        return rebuilt_xls
-
-    if len(new_wb) > old_len:
-        # Ordine troppo grosso per il guscio: meglio un xls leggibile che un file corrotto.
-        return rebuilt_xls
-
-    if len(new_wb) < old_len:
-        new_wb = new_wb + (b'\x00' * (old_len - len(new_wb)))
-
-    import tempfile
-    from pathlib import Path as _Path
-
-    with tempfile.NamedTemporaryFile(suffix='.xls', delete=False) as tmp:
-        tmp.write(template_bytes)
-        tmp_path = tmp.name
-    try:
-        ole = olefile.OleFileIO(tmp_path, write_mode=True)
-        ole.write_stream('Workbook', new_wb)
-        ole.close()
-        return _Path(tmp_path).read_bytes()
+        if not ole.exists('Workbook'):
+            return False
+        data = ole.openstream('Workbook').read()
     finally:
-        try:
-            _Path(tmp_path).unlink(missing_ok=True)
-        except TypeError:
-            # Python < 3.8 compat: missing_ok non c'è
-            try:
-                _Path(tmp_path).unlink()
-            except FileNotFoundError:
-                pass
+        ole.close()
 
-
-def _logista_xls_fallback(rows) -> bytes:
-    """Fallback minimo se il template TabaUno non è nel deploy."""
-    import xlwt
-
-    book = xlwt.Workbook(encoding='ascii')
-    sheet = book.add_sheet('Foglio1')
-    sheet.col(0).width = 3437
-    sheet.col(1).width = 3620
-    sheet.write(0, 0, 'Codice AAMS')
-    sheet.write(0, 1, 'Quantita')
-    for index, (codice, quantita) in enumerate(rows, start=1):
-        sheet.write(index, 0, codice)
-        sheet.write(index, 1, quantita)
-    # Stessa dimensione griglia usata da TabaUno.
-    for index in range(len(rows) + 1, 1000):
-        sheet.write(index, 0, '')
-        sheet.write(index, 1, '')
-    buffer = io.BytesIO()
-    book.save(buffer)
-    return buffer.getvalue()
+    pos = 0
+    last_eof_end = None
+    while pos + 4 <= len(data):
+        code, length = struct.unpack_from('<HH', data, pos)
+        pos += 4 + length
+        if code == 0x000A:  # EOF
+            last_eof_end = pos
+        if length > 0x8220:  # record BIFF sospetto: interrompi
+            break
+    if last_eof_end is None:
+        return False
+    return last_eof_end == len(data)

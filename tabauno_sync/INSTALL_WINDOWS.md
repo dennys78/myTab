@@ -43,7 +43,7 @@ Per toglierlo: `disinstalla_servizio.bat` come amministratore.
 
 ### Deposito Ordine_Logista.xls
 
-Da Ordine Tabacchi, con PC online, premi **Deposita in TabaUno**: l'agente scarica il file e lo scrive in `ordine_logista_path`. Nel log compare `deposito id=... path=...`. Chiudi Excel se il file è aperto, altrimenti la scrittura fallisce.
+Da Ordine Tabacchi, con PC online, premi **Deposita in TabaUno**: l'agente scarica i byte già convertiti dal server (LibreOffice) e li scrive così come sono in `ordine_logista_path` (tmp + rename). Nel log compare `deposito id=... path=...`. Se TabaUno/Excel tiene il file aperto, errore chiaro senza retry silenziosi. Aggiorna `service.py` e riavvia TabaUnoAgent dopo ogni release.
 
 Una lettura senza il portale, per controllare solo i database:
 

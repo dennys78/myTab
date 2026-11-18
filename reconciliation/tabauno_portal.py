@@ -241,8 +241,11 @@ def api_tabauno_agent_ordine_logista(request, request_id):
     preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=agent.company).first()
     if not preordine:
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
-    from .tabacchi_preordine import logista_xls_bytes
-    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    from .tabacchi_preordine import LogistaXlsError, logista_xls_bytes
+    try:
+        content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    except LogistaXlsError as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=500)
     if not content:
         return JsonResponse({'status': 'error', 'error': 'Nessuna riga da depositare.'}, status=409)
     response = HttpResponse(content, content_type='application/vnd.ms-excel')

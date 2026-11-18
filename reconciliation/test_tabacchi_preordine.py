@@ -7,10 +7,15 @@ from django.test import TestCase
 from django.utils import timezone
 
 from reconciliation.models import Company, TabacchiPreordine, TabaUnoRequest
+from pathlib import Path
+from unittest import skipUnless
+from unittest.mock import patch
+
 from reconciliation.tabacchi_preordine import (
     calcola_righe,
     codice_aams_logista,
     famiglia_da_categoria,
+    find_soffice,
     giorni_alla_consegna,
     logista_xls_bytes,
     media_riferimento,
@@ -21,7 +26,14 @@ from reconciliation.tabacchi_preordine import (
     righe_export_logista,
     unita_ordine,
     unita_ordine_dispositivo,
+    workbook_stream_ends_at_eof,
 )
+
+FIXTURE_ORDINE = (
+    Path(__file__).resolve().parent / 'fixtures' / 'Ordine_Logista01-04-2026-09-37-16.xls'
+)
+HAS_SOFFICE = find_soffice() is not None
+SKIP_NO_SOFFICE = 'LibreOffice (soffice) non installato: test conversione Ordine_Logista.xls saltato.'
 
 
 ESEMPI = [
@@ -238,38 +250,39 @@ class TabacchiApiTests(TestCase):
         preordine = creato.json()['preordine']
         riga = next(r for r in preordine['righe'] if r['aams'] == '201')
         forzata = max(1, int(riga['unita_proposte']) + 2)
-        patch = self.client.patch(
+        aggiorna = self.client.patch(
             f"/api/tabacchi/preordini/{preordine['id']}/",
             data=f'{{"giorni_copertura":14,"scorta_pct":80,"righe":[{{"aams":"201","unita":{forzata}}}]}}',
             content_type='application/json',
         )
-        self.assertEqual(patch.status_code, 200)
-        aggiornato = patch.json()['preordine']
+        self.assertEqual(aggiorna.status_code, 200)
+        aggiornato = aggiorna.json()['preordine']
         riga2 = next(r for r in aggiornato['righe'] if r['aams'] == '201')
         self.assertEqual(riga2['unita'], forzata)
         self.assertTrue(riga2['corretto_a_mano'])
         self.assertEqual(aggiornato['giorni_copertura'], 14)
         self.assertEqual(aggiornato['scorta_pct'], 80)
 
-        import xlrd
-        for path in ('csv', 'logista'):
-            resp = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/{path}/")
-            self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp['Content-Type'], 'application/vnd.ms-excel')
-            self.assertIn('Ordine_Logista.xls', resp['Content-Disposition'])
-            self.assertTrue(resp.content.startswith(b'\xd0\xcf\x11\xe0'))
-            sheet = xlrd.open_workbook(file_contents=resp.content).sheet_by_index(0)
-            self.assertEqual(sheet.name, 'Foglio1')
-            self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
-            self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
-            codes = [sheet.cell_value(row, 0) for row in range(1, sheet.nrows)]
-            self.assertIn('0201', codes)
+        fake_xls = FIXTURE_ORDINE.read_bytes() if FIXTURE_ORDINE.is_file() else b'\xd0\xcf\x11\xe0fake'
+        with patch('reconciliation.tabacchi_views.logista_xls_bytes', return_value=fake_xls):
+            import xlrd
+            for path in ('csv', 'logista'):
+                resp = self.client.get(f"/api/tabacchi/preordini/{preordine['id']}/{path}/")
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp['Content-Type'], 'application/vnd.ms-excel')
+                self.assertIn('Ordine_Logista.xls', resp['Content-Disposition'])
+                self.assertTrue(resp.content.startswith(b'\xd0\xcf\x11\xe0'))
+                if FIXTURE_ORDINE.is_file():
+                    sheet = xlrd.open_workbook(file_contents=resp.content).sheet_by_index(0)
+                    self.assertEqual(sheet.name, 'Foglio1')
+                    self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
+                    self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
 
         eliminato = self.client.delete(f"/api/tabacchi/preordini/{preordine['id']}/")
         self.assertEqual(eliminato.status_code, 200)
         self.assertEqual(TabacchiPreordine.objects.filter(id=preordine['id']).count(), 0)
 
-    def test_export_logista_formato(self):
+    def test_export_logista_formato_righe(self):
         self.assertEqual(codice_aams_logista('201'), '0201')
         self.assertEqual(codice_aams_logista('21108'), '21108')
         self.assertEqual(codice_aams_logista('V0PYU'), 'V0PYU')
@@ -281,29 +294,66 @@ class TabacchiApiTests(TestCase):
             {'aams': '999', 'unita': 0, 'kg_per_unita': '0.200', 'famiglia': 'Sigarette'},
         ]
         self.assertEqual(righe_export_logista(payload), [('0201', '1,4'), ('V0PYU', '2')])
-        raw = logista_xls_bytes(payload)
-        self.assertTrue(raw.startswith(b'\xd0\xcf\x11\xe0'))
+
+    @skipUnless(HAS_SOFFICE, SKIP_NO_SOFFICE)
+    def test_export_logista_libreoffice_struttura(self):
         import olefile
         import xlrd
+
+        self.assertTrue(FIXTURE_ORDINE.is_file(), 'Manca fixture Ordine_Logista originale TabaUno')
+        fixture = FIXTURE_ORDINE.read_bytes()
+        ole_fix = olefile.OleFileIO(io.BytesIO(fixture))
+        self.assertIn(('\x05SummaryInformation',), {tuple(s) for s in ole_fix.listdir()})
+        ole_fix.close()
+        self.assertTrue(workbook_stream_ends_at_eof(fixture))
+
+        payload = [
+            {'aams': '201', 'unita': 7, 'kg_per_unita': '0.200', 'famiglia': 'Sigarette'},
+            {'aams': '176', 'unita': 2, 'kg_per_unita': '0.200', 'famiglia': 'Sigarette'},
+            {'aams': 'K0011', 'unita': 1, 'kg_per_unita': 0, 'famiglia': 'Dispositivi', 'tipo': 'dispositivo'},
+            {'aams': 'VA0QP', 'unita': 2, 'kg_per_unita': 0, 'famiglia': 'Dispositivi', 'tipo': 'dispositivo'},
+        ]
+        # 100+ righe con zeri iniziali / decimali misti
+        for index in range(100):
+            payload.append({
+                'aams': str(index + 1),
+                'unita': (index % 5) + 1,
+                'kg_per_unita': '0.200',
+                'famiglia': 'Sigarette',
+            })
+        expected = dict(righe_export_logista(payload))
+        raw = logista_xls_bytes(payload)
+        self.assertTrue(raw.startswith(b'\xd0\xcf\x11\xe0'))
+
         ole = olefile.OleFileIO(io.BytesIO(raw))
         streams = {tuple(s) for s in ole.listdir()}
         ole.close()
-        self.assertIn(('\x05SummaryInformation',), streams)
-        self.assertIn(('\x05DocumentSummaryInformation',), streams)
         self.assertIn(('Workbook',), streams)
-        self.assertGreater(len(raw), 100000)
-        book = xlrd.open_workbook(file_contents=raw, formatting_info=True)
+        self.assertIn(('\x05SummaryInformation',), streams)
+        self.assertTrue(
+            workbook_stream_ends_at_eof(raw),
+            'Workbook ha byte in coda dopo EOF (come i file xlwt)',
+        )
+
+        book = xlrd.open_workbook(file_contents=raw)
+        self.assertEqual(book.biff_version, 80)
+        self.assertEqual(book.nsheets, 1)
         sheet = book.sheet_by_index(0)
         self.assertEqual(sheet.name, 'Foglio1')
-        self.assertEqual(sheet.nrows, 1000)
         self.assertEqual(sheet.cell_value(0, 0), 'Codice AAMS')
         self.assertEqual(sheet.cell_value(0, 1), 'Quantita')
+        self.assertEqual(sheet.cell(0, 0).ctype, 1)
+        self.assertEqual(sheet.cell(0, 1).ctype, 1)
+        self.assertGreaterEqual(sheet.nrows, 105)
+        for row in range(1, sheet.nrows):
+            codice = sheet.cell_value(row, 0)
+            quantita = sheet.cell_value(row, 1)
+            self.assertEqual(sheet.cell(row, 0).ctype, 1, msg=repr(codice))
+            self.assertEqual(sheet.cell(row, 1).ctype, 1, msg=repr(quantita))
+            self.assertIn(codice, expected)
+            self.assertEqual(quantita, expected[codice])
         self.assertEqual(sheet.cell_value(1, 0), '0201')
         self.assertEqual(sheet.cell_value(1, 1), '1,4')
-        self.assertEqual(sheet.cell_value(2, 0), 'V0PYU')
-        self.assertEqual(sheet.cell_value(2, 1), '2')
-        self.assertEqual(sheet.cell_value(3, 0), '')
-        self.assertGreaterEqual(sheet.colinfo_map[0].width, 3000)
 
     def test_deposita_tabauno_accoda_e_agente_scarica(self):
         import hashlib
@@ -345,10 +395,12 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(claimed.id, request_id)
         self.assertEqual(claimed.tipo, TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA)
 
-        file_resp = self.client.get(
-            f'/api/tabauno/agent/ordine-logista/{request_id}/',
-            HTTP_AUTHORIZATION=f'Bearer {token}',
-        )
+        fake_xls = FIXTURE_ORDINE.read_bytes() if FIXTURE_ORDINE.is_file() else b'\xd0\xcf\x11\xe0fake'
+        with patch('reconciliation.tabacchi_preordine.logista_xls_bytes', return_value=fake_xls):
+            file_resp = self.client.get(
+                f'/api/tabauno/agent/ordine-logista/{request_id}/',
+                HTTP_AUTHORIZATION=f'Bearer {token}',
+            )
         self.assertEqual(file_resp.status_code, 200)
         self.assertTrue(file_resp.content.startswith(b'\xd0\xcf\x11\xe0'))
 

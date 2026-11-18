@@ -5,10 +5,11 @@ ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# Installa Tesseract OCR con il pacchetto lingua italiana
+# Tesseract OCR (ITA) + LibreOffice Calc headless per Ordine_Logista.xls (Excel 97)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-ita \
+    libreoffice-calc-nogui \
     libgl1 \
     libglib2.0-0 \
     libpango-1.0-0 \

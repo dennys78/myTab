@@ -70,7 +70,7 @@ class OrdineLogistaDepositTests(unittest.TestCase):
             self.assertTrue(result['ok'])
             self.assertIn('generato correttamente', result['messaggio'])
             self.assertEqual(target.read_bytes(), b'\xd0\xcf\x11\xe0demo')
-            self.assertFalse(target.with_suffix('.xls.tmp').exists())
+            self.assertFalse((target.parent / f'{target.name}.tmp').exists())
 
     def test_load_config_sets_ordine_default(self):
         with tempfile.TemporaryDirectory() as tmp:

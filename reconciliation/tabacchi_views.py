@@ -17,6 +17,7 @@ from .tabacchi_preordine import (
     DEFAULT_SCORTA_PCT,
     FAMIGLIE,
     GIORNI_VALIDI,
+    LogistaXlsError,
     _decimal,
     _kg,
     _money,
@@ -224,8 +225,11 @@ def _segna_esportato(preordine):
 
 
 def _logista_attachment(preordine):
-    """Stesso formato di tabauno_sync/Ordine_Logista.xls (Codice AAMS + Quantita)."""
-    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    """Ordine_Logista.xls Excel 97 (LibreOffice), colonne Codice AAMS | Quantita."""
+    try:
+        content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    except LogistaXlsError as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=500)
     response = HttpResponse(content, content_type='application/vnd.ms-excel')
     response['Content-Disposition'] = 'attachment; filename="Ordine_Logista.xls"'
     _segna_esportato(preordine)

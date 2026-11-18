@@ -108,16 +108,19 @@ def _request_bytes(config, path) -> bytes:
 
 
 def write_ordine_logista(path: Path, content: bytes) -> dict:
-    """Scrive Ordine_Logista.xls in modo atomico e verifica che il file esista con la size attesa."""
+    """Scrive i byte ricevuti dal server così come sono (niente rielaborazione locale).
+
+    Prima scrive un temporaneo nella stessa cartella, poi rinomina in Ordine_Logista.xls.
+    """
     if not content:
         raise TabaUnoError('File Ordine_Logista.xls vuoto: generazione non riuscita.')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + '.tmp')
+    tmp = path.parent / f'{path.name}.tmp'
     expected = len(content)
     try:
         tmp.write_bytes(content)
-        os.replace(tmp, path)
+        os.replace(str(tmp), str(path))
     except PermissionError as exc:
         try:
             if tmp.exists():
