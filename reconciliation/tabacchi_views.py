@@ -418,3 +418,56 @@ def api_tabacchi_preordine_logista(request, preordine_id):
     if not preordine:
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
     return _logista_attachment(preordine)
+
+
+@require_auth
+def api_tabacchi_preordine_deposita_tabauno(request, preordine_id):
+    """Accoda deposito Ordine_Logista.xls sul PC negozio via agente TabaUno."""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    if not preordine.righe.filter(unita__gt=0).exists():
+        return JsonResponse({'status': 'error', 'error': 'Nessuna riga con quantità da depositare.'}, status=409)
+    if not agent_is_online(company):
+        return JsonResponse({
+            'status': 'error',
+            'error': 'PC negozio offline. Avvia TabaUnoAgent e riprova.',
+            'agent_online': False,
+        }, status=409)
+    expire_requests()
+    existing = None
+    for row in TabaUnoRequest.objects.filter(
+        company=company,
+        tipo=TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA,
+        status__in=(TabaUnoRequest.PENDING, TabaUnoRequest.PROCESSING),
+    ).order_by('created_at', 'id'):
+        if (row.parametri or {}).get('preordine_id') == preordine.id:
+            existing = row
+            break
+    if existing:
+        return JsonResponse({
+            'status': 'success',
+            'created': False,
+            'id': existing.id,
+            'request_status': existing.status,
+            'agent_online': True,
+        })
+    row = TabaUnoRequest.objects.create(
+        company=company,
+        date=timezone.localdate(),
+        tipo=TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA,
+        parametri={'preordine_id': preordine.id},
+        requested_by=request.user,
+    )
+    return JsonResponse({
+        'status': 'success',
+        'created': True,
+        'id': row.id,
+        'request_status': row.status,
+        'agent_online': True,
+    }, status=201)

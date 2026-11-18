@@ -37,7 +37,9 @@ export default function OrdineTabacchi() {
   const [online, setOnline] = useState(null);
   const [preordine, setPreordine] = useState(null);
   const [attesa, setAttesa] = useState(false);
+  const [deposito, setDeposito] = useState(false);
   const [errore, setErrore] = useState('');
+  const [messaggio, setMessaggio] = useState('');
   const [altriAperti, setAltriAperti] = useState(false);
   const [ricerca, setRicerca] = useState('');
   const [copiato, setCopiato] = useState(false);
@@ -276,6 +278,56 @@ export default function OrdineTabacchi() {
     window.location.assign(`/api/tabacchi/preordini/${preordine.id}/logista/`);
   };
 
+  const depositaInTabauno = async () => {
+    if (!preordine || deposito) return;
+    setErrore('');
+    setMessaggio('');
+    if (online !== true) {
+      setErrore('PC negozio offline. Avvia TabaUnoAgent e riprova.');
+      return;
+    }
+    const conQuantita = (preordine.righe || []).some(riga => Number(riga.unita) > 0);
+    if (!conQuantita) {
+      setErrore('Nessuna riga con quantità da depositare.');
+      return;
+    }
+    setDeposito(true);
+    const response = await apiFetch(`/api/tabacchi/preordini/${preordine.id}/deposita-tabauno/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await response.json();
+    if (data.status !== 'success') {
+      setDeposito(false);
+      setOnline(data.agent_online === undefined ? online : !!data.agent_online);
+      setErrore(data.error || 'Deposito non accodato.');
+      return;
+    }
+    setOnline(!!data.agent_online);
+    const poll = async () => {
+      const stato = await apiFetch(`/api/tabauno/requests/${data.id}/`);
+      const body = await stato.json();
+      setOnline(!!body.agent_online);
+      if (body.status === 'done') {
+        setDeposito(false);
+        const path = body.payload?.path;
+        setMessaggio(path
+          ? `Ordine_Logista.xls depositato in ${path}`
+          : 'Ordine_Logista.xls depositato sul PC negozio.');
+        setPreordine(prev => (prev ? { ...prev, stato: 'esportato' } : prev));
+        return;
+      }
+      if (body.status === 'error' || body.status === 'expired') {
+        setDeposito(false);
+        setErrore(body.error || 'Deposito su TabaUno non riuscito.');
+        return;
+      }
+      pollRef.current = setTimeout(poll, 2000);
+    };
+    pollRef.current = setTimeout(poll, 2000);
+  };
+
   const copiaElenco = async () => {
     if (!preordine) return;
     const testo = elencoCopia(preordine.righe);
@@ -435,6 +487,7 @@ export default function OrdineTabacchi() {
       </header>
 
       {errore && <div className="tab-error">{errore}</div>}
+      {messaggio && !errore && <div className="tab-ok">{messaggio}</div>}
 
       {!preordine && !attesa && (
         <p className="tab-empty">Premi «Leggi da PC» quando il servizio TabaUnoAgent è online.</p>
@@ -631,6 +684,15 @@ export default function OrdineTabacchi() {
                 title="Da caricare sul portale Logista (non in TabaUno)"
               >
                 Scarica Ordine_Logista.xls
+              </button>
+              <button
+                type="button"
+                className="tab-btn ghost"
+                onClick={depositaInTabauno}
+                disabled={deposito || attesa || online !== true}
+                title="Scrive Ordine_Logista.xls nella cartella TabaUno del PC negozio. Non popola la griglia ordine di TabaUno."
+              >
+                {deposito ? 'Deposito…' : 'Deposita in TabaUno'}
               </button>
               <button type="button" className="tab-btn primary" onClick={copiaElenco}>
                 {copiato ? 'Copiato' : 'Copia elenco'}

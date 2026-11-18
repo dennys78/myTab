@@ -20,6 +20,7 @@ Serve Python 3, da python.org, con "Add python.exe to PATH". Non servono libreri
 2. Copia `config.example.json` in `config.json`.
 3. Compila `config.json`:
    - `tabauno_db`, `storico_db` e `magx_db`: percorsi veri, con due barre nel JSON (`C:\\TabaUno\\DB\\TabaUno.db`, `Db_MagX.db` nella stessa cartella)
+   - `ordine_logista_path`: dove scrivere `Ordine_Logista.xls` (di solito `C:\\TabaUno\\DB\\Ordine_Logista.xls`). Se omesso, usa la stessa cartella di `tabauno_db`
    - `mytab_url`: `https://www.my-tab.uk`
    - `agent_token`: il token appena generato
    - `gratta`: `B`
@@ -39,6 +40,10 @@ Per toglierlo: `disinstalla_servizio.bat` come amministratore.
 1. Nel portale, Acquisisci chiusure: accanto al pulsante deve comparire "PC negozio online".
 2. Scegli la data e premi Importa da TabaUno.
 3. Se nel log compare `lettura ... totale=...` e l'anteprima si riempie, è a posto.
+
+### Deposito Ordine_Logista.xls
+
+Da Ordine Tabacchi, con PC online, premi **Deposita in TabaUno**: l'agente scarica il file e lo scrive in `ordine_logista_path`. Nel log compare `deposito id=... path=...`. Chiudi Excel se il file è aperto, altrimenti la scrittura fallisce.
 
 Una lettura senza il portale, per controllare solo i database:
 

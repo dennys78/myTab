@@ -304,3 +304,60 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(sheet.cell_value(2, 1), '2')
         self.assertEqual(sheet.cell_value(3, 0), '')
         self.assertGreaterEqual(sheet.colinfo_map[0].width, 3000)
+
+    def test_deposita_tabauno_accoda_e_agente_scarica(self):
+        import hashlib
+
+        from reconciliation.models import TabaUnoAgent
+        from reconciliation.tabauno_portal import claim_next_request
+
+        lettura = self._lettura_pronta()
+        creato = self.client.post(
+            f'/api/tabacchi/preordini/da-richiesta/{lettura.id}/',
+            data='{"giorni_copertura":7,"data_consegna":"2026-11-23"}',
+            content_type='application/json',
+        )
+        preordine_id = creato.json()['preordine']['id']
+        # Forza almeno una quantità > 0
+        self.client.patch(
+            f'/api/tabacchi/preordini/{preordine_id}/',
+            data='{"righe":[{"aams":"201","unita":3}]}',
+            content_type='application/json',
+        )
+
+        offline = self.client.post(f'/api/tabacchi/preordini/{preordine_id}/deposita-tabauno/')
+        self.assertEqual(offline.status_code, 409)
+
+        token = 'agent-deposit-test'
+        TabaUnoAgent.objects.create(
+            company=self.company,
+            token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            last_seen=timezone.now(),
+        )
+        accodata = self.client.post(f'/api/tabacchi/preordini/{preordine_id}/deposita-tabauno/')
+        self.assertEqual(accodata.status_code, 201)
+        request_id = accodata.json()['id']
+        di_nuovo = self.client.post(f'/api/tabacchi/preordini/{preordine_id}/deposita-tabauno/')
+        self.assertEqual(di_nuovo.status_code, 200)
+        self.assertEqual(di_nuovo.json()['id'], request_id)
+
+        claimed = claim_next_request(self.company)
+        self.assertEqual(claimed.id, request_id)
+        self.assertEqual(claimed.tipo, TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA)
+
+        file_resp = self.client.get(
+            f'/api/tabauno/agent/ordine-logista/{request_id}/',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(file_resp.status_code, 200)
+        self.assertTrue(file_resp.content.startswith(b'\xd0\xcf\x11\xe0'))
+
+        result = self.client.post(
+            f'/api/tabauno/agent/result/{request_id}/',
+            data='{"ok":true,"payload":{"path":"C:\\\\TabaUno\\\\DB\\\\Ordine_Logista.xls","bytes":124416}}',
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(result.status_code, 200)
+        preordine = TabacchiPreordine.objects.get(id=preordine_id)
+        self.assertEqual(preordine.stato, TabacchiPreordine.ESPORTATO)

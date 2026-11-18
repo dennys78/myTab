@@ -2797,6 +2797,15 @@ tbody tr:hover {
   margin-bottom: 1rem;
 }
 
+.tab-ok {
+  background: rgba(22, 163, 74, 0.1);
+  border: 1px solid #16a34a;
+  color: #15803d;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
 .tab-controls {
   display: flex;
   flex-wrap: wrap;

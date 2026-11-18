@@ -15,7 +15,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 
 from .company_scope import bind_company
-from .models import Company, TabaUnoAgent, TabaUnoRequest
+from .models import Company, TabacchiPreordine, TabaUnoAgent, TabaUnoRequest
 from .views import require_admin, require_auth
 
 import json
@@ -222,6 +222,49 @@ def api_tabauno_agent_next(request):
 
 
 @csrf_exempt
+def api_tabauno_agent_ordine_logista(request, request_id):
+    """Scarica Ordine_Logista.xls per una richiesta deposita in processing."""
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
+    agent = agent_for_token(_bearer(request))
+    if not agent:
+        return JsonResponse({'status': 'error', 'error': 'Non autenticato'}, status=401)
+    touch_agent(agent)
+    row = TabaUnoRequest.objects.filter(
+        id=request_id,
+        company=agent.company,
+        tipo=TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA,
+    ).first()
+    if not row or row.status != TabaUnoRequest.PROCESSING:
+        return JsonResponse({'status': 'error', 'error': 'Richiesta non in deposito.'}, status=409)
+    preordine_id = (row.parametri or {}).get('preordine_id')
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=agent.company).first()
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    from .tabacchi_preordine import logista_xls_bytes
+    content = logista_xls_bytes(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    if not content:
+        return JsonResponse({'status': 'error', 'error': 'Nessuna riga da depositare.'}, status=409)
+    response = HttpResponse(content, content_type='application/vnd.ms-excel')
+    response['Content-Disposition'] = 'attachment; filename="Ordine_Logista.xls"'
+    return response
+
+
+def _segna_preordine_esportato_da_deposito(row):
+    if row.tipo != TabaUnoRequest.TIPO_DEPOSITA_ORDINE_LOGISTA:
+        return
+    preordine_id = (row.parametri or {}).get('preordine_id')
+    if not preordine_id:
+        return
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company_id=row.company_id).first()
+    if not preordine:
+        return
+    if preordine.stato == TabacchiPreordine.BOZZA:
+        preordine.stato = TabacchiPreordine.ESPORTATO
+        preordine.save(update_fields=['stato', 'aggiornato_il'])
+
+
+@csrf_exempt
 def api_tabauno_agent_result(request, request_id):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
@@ -243,6 +286,7 @@ def api_tabauno_agent_result(request, request_id):
         row.payload = payload
         row.error = ''
         row.status = TabaUnoRequest.DONE
+        _segna_preordine_esportato_da_deposito(row)
     else:
         row.status = TabaUnoRequest.ERROR
         row.error = str(data.get('errore') or 'Errore lettura TabaUno')[:2000]

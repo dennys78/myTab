@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import os
 import time
 import urllib.error
 import urllib.request
@@ -30,7 +31,15 @@ def load_config(path) -> dict:
     config.setdefault('gratta', 'B')
     config.setdefault('poll_seconds', 10)
     config.setdefault('log_dir', 'logs')
+    config.setdefault('ordine_logista_path', '')
     return config
+
+
+def ordine_logista_path(config) -> Path:
+    configured = str(config.get('ordine_logista_path') or '').strip()
+    if configured:
+        return Path(configured)
+    return Path(config['tabauno_db']).resolve().parent / 'Ordine_Logista.xls'
 
 
 def _logger(config) -> logging.Logger:
@@ -76,6 +85,63 @@ def _request(config, method, path, body=None):
         raise TabaUnoError(f'{method} {path} -> {exc.code}: {detail}') from exc
 
 
+def _request_bytes(config, path) -> bytes:
+    base = str(config['mytab_url']).rstrip('/')
+    request = urllib.request.Request(
+        f'{base}{path}',
+        headers={
+            'Authorization': f"Bearer {config['agent_token']}",
+            'Accept': 'application/vnd.ms-excel, application/octet-stream',
+            'User-Agent': 'myTaba-TabaUnoAgent/1.0',
+        },
+        method='GET',
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read()
+            if not raw:
+                raise TabaUnoError(f'GET {path} -> file vuoto')
+            return raw
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode('utf-8', errors='replace')
+        raise TabaUnoError(f'GET {path} -> {exc.code}: {detail}') from exc
+
+
+def write_ordine_logista(path: Path, content: bytes) -> dict:
+    """Scrive Ordine_Logista.xls in modo atomico. Errore chiaro se Excel tiene il file aperto."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + '.tmp')
+    try:
+        tmp.write_bytes(content)
+        os.replace(tmp, path)
+    except PermissionError as exc:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise TabaUnoError(
+            f'Impossibile scrivere {path}: file bloccato (chiudi Excel/Ordine_Logista.xls).'
+        ) from exc
+    except OSError as exc:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise TabaUnoError(f'Impossibile scrivere {path}: {exc}') from exc
+    return {
+        'path': str(path),
+        'bytes': len(content),
+    }
+
+
+def _deposita_ordine_logista(config, request_id) -> dict:
+    content = _request_bytes(config, f'/api/tabauno/agent/ordine-logista/{request_id}/')
+    return write_ordine_logista(ordine_logista_path(config), content)
+
+
 def _extract_request(config, payload):
     tipo = str(payload.get('tipo') or 'chiusura')
     day = payload.get('data')
@@ -105,6 +171,8 @@ def _extract_request(config, payload):
             config.get('magx_db'),
             day,
         )
+    if tipo == 'deposita_ordine_logista':
+        return _deposita_ordine_logista(config, payload.get('id'))
     raise TabaUnoError(f'Tipo richiesta sconosciuto: {tipo}')
 
 
@@ -138,6 +206,11 @@ def poll_once(config, logger) -> None:
             'lettura id=%s tipo=%s data=%s durata=%.3fs articoli=%s',
             request_id, tipo, day, elapsed, len(extracted.get('articoli') or []),
         )
+    elif tipo == 'deposita_ordine_logista':
+        logger.info(
+            'deposito id=%s durata=%.3fs path=%s bytes=%s',
+            request_id, elapsed, extracted.get('path'), extracted.get('bytes'),
+        )
     else:
         logger.info(
             'lettura id=%s data=%s durata=%.3fs totale=%s pagamenti=%s',
@@ -158,7 +231,7 @@ def run_agent(config_path) -> None:
     logger = _logger(config)
     interval = max(5, int(config.get('poll_seconds') or 10))
     failures = 0
-    logger.info('agente avviato, poll=%ss', interval)
+    logger.info('agente avviato, poll=%ss path_ordine=%s', interval, ordine_logista_path(config))
     while True:
         try:
             poll_once(config, logger)

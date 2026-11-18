@@ -455,10 +455,12 @@ class TabaUnoRequest(models.Model):
     TIPO_CHIUSURA = 'chiusura'
     TIPO_PREORDINE_GRATTA = 'preordine_gratta'
     TIPO_PREORDINE_TABACCHI = 'preordine_tabacchi'
+    TIPO_DEPOSITA_ORDINE_LOGISTA = 'deposita_ordine_logista'
     TIPO_CHOICES = [
         (TIPO_CHIUSURA, 'Chiusura'),
         (TIPO_PREORDINE_GRATTA, 'Preordine gratta'),
         (TIPO_PREORDINE_TABACCHI, 'Preordine tabacchi'),
+        (TIPO_DEPOSITA_ORDINE_LOGISTA, 'Deposita Ordine Logista'),
     ]
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tabauno_requests')
