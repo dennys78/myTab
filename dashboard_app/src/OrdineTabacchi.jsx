@@ -12,7 +12,6 @@ import {
   elencoCopia,
   fraseCopertura,
   formattaChiusura,
-  formattaFinisce,
   formattaResiduo,
   gruppiDaOrdinare,
   isoLocale,
@@ -404,21 +403,21 @@ export default function OrdineTabacchi() {
     && righeSezione(preordine.righe, 'solidi').length === 0;
 
   const giorniCopertura = preordine?.giorni_copertura || 7;
-  const cellaCopertura = (riga) => {
+  const cellaResiduo = (riga) => {
     const urgenza = riga.urgenza_copertura || 'normale';
-    const residuo = formattaResiduo(riga.residuo_copertura);
-    const fino = formattaFinisce(riga.data_copre_fino);
+    const testo = formattaResiduo(riga.residuo_copertura);
     const title = [
-      `Scorta stimata dopo ${giorniCopertura} giorni di copertura (incluso l'ordine)`,
-      riga.data_copre_fino ? `Con l'ordine attuale copre fino a ${fino}` : null,
+      `Pacchetti stimati al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`,
       riga.giacenza_dopo_consegna != null
         ? `Alla consegna ~${Number(riga.giacenza_dopo_consegna).toLocaleString('it-IT')} pz`
         : null,
+      Number(riga.residuo_copertura) < 0
+        ? 'Negativo = non bastano fino al prossimo ordine'
+        : null,
     ].filter(Boolean).join(' · ');
     return (
-      <span className={`tab-copertura tab-finisce--${urgenza}`} title={title}>
-        <strong>{residuo}</strong>
-        <em>{fino === '—' ? '—' : `fino ${fino}`}</em>
+      <span className={`tab-residuo tab-finisce--${urgenza}`} title={title}>
+        {testo}
       </span>
     );
   };
@@ -433,13 +432,13 @@ export default function OrdineTabacchi() {
           <span>·</span>
           <span>{mediaTesto(riga.media)}</span>
           <span>·</span>
-          {cellaCopertura(riga)}
+          {cellaResiduo(riga)}
         </div>
       </td>
       <td className="tab-num tab-desktop-only">{Number(riga.giacenza).toLocaleString('it-IT')}</td>
       <td className="tab-num tab-desktop-only">{mediaTesto(riga.media)}</td>
       <td className="tab-num tab-desktop-only">
-        {cellaCopertura(riga)}
+        {cellaResiduo(riga)}
       </td>
       <td className="tab-stecche">
         {conStepper ? (
@@ -632,8 +631,8 @@ export default function OrdineTabacchi() {
                           <th>{etichettaSort('descrizione', 'Articolo')}</th>
                           <th>Giac.</th>
                           <th>Vende/gg</th>
-                          <th title="Scorta stimata a fine copertura, incluso l'ordine">
-                            {etichettaSort('residuo', `Tra ${giorniCopertura} gg`)}
+                          <th title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
+                            {etichettaSort('residuo', 'Al prox. ordine')}
                           </th>
                           <th>{unitaLabel}</th>
                           <th>{etichettaSort('importo', 'Importo')}</th>
@@ -653,7 +652,7 @@ export default function OrdineTabacchi() {
             <button type="button" className="tab-others-toggle" onClick={() => setAltriAperti(v => !v)}>
               {altriAperti ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               <span>Altri articoli · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</span>
-              <em>{altriTotaliSezione} con scorta sufficiente · prima chi resta con meno a fine copertura</em>
+              <em>{altriTotaliSezione} con scorta sufficiente · prima chi arriva al prossimo ordine con meno pz</em>
             </button>
             {altriAperti && (
               <div className="tab-others-body">
@@ -671,8 +670,8 @@ export default function OrdineTabacchi() {
                         <th>{etichettaSort('descrizione', 'Articolo')}</th>
                         <th>Giac.</th>
                         <th>Vende/gg</th>
-                        <th title="Scorta stimata a fine copertura, incluso l'ordine">
-                          {etichettaSort('residuo', `Tra ${giorniCopertura} gg`)}
+                        <th title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
+                          {etichettaSort('residuo', 'Al prox. ordine')}
                         </th>
                         <th></th>
                         <th>{etichettaSort('importo', 'Importo')}</th>

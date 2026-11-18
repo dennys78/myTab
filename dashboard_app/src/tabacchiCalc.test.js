@@ -46,7 +46,8 @@ test('proiezione dopo ordine: residuo a fine copertura', () => {
   assert.ok(Math.abs(out.residuoCopertura - 13.9) < 0.05);
   assert.equal(out.urgenzaCopertura, 'normale');
   assert.equal(out.dataCopreFino, '2026-12-06');
-  assert.equal(formattaResiduo(13.9), '+13,9');
+  assert.equal(formattaResiduo(13.9), '13,9 pz');
+  assert.equal(formattaResiduo(-2), '−2 pz');
   const sotto = proiezioneDopoOrdine(2.3, 8, 10, 0, 5, 7, '2026-11-23');
   assert.ok(sotto.residuoCopertura < 0);
   assert.equal(sotto.urgenzaCopertura, 'rossa');

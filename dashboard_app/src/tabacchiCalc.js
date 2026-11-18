@@ -208,9 +208,9 @@ export function formattaResiduo(value) {
   const testo = Number.isInteger(abs) || Math.abs(abs - Math.round(abs)) < 0.05
     ? String(Math.round(abs))
     : abs.toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  if (n > 0.05) return `+${testo}`;
-  if (n < -0.05) return `−${testo}`;
-  return '0';
+  if (n > 0.05) return `${testo} pz`;
+  if (n < -0.05) return `−${testo} pz`;
+  return '0 pz';
 }
 
 export function formattaChiusura(iso) {
