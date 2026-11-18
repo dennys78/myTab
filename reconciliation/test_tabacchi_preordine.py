@@ -1,3 +1,4 @@
+import io
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -282,7 +283,15 @@ class TabacchiApiTests(TestCase):
         self.assertEqual(righe_export_logista(payload), [('0201', '1,4'), ('V0PYU', '2')])
         raw = logista_xls_bytes(payload)
         self.assertTrue(raw.startswith(b'\xd0\xcf\x11\xe0'))
+        import olefile
         import xlrd
+        ole = olefile.OleFileIO(io.BytesIO(raw))
+        streams = {tuple(s) for s in ole.listdir()}
+        ole.close()
+        self.assertIn(('\x05SummaryInformation',), streams)
+        self.assertIn(('\x05DocumentSummaryInformation',), streams)
+        self.assertIn(('Workbook',), streams)
+        self.assertGreater(len(raw), 100000)
         book = xlrd.open_workbook(file_contents=raw, formatting_info=True)
         sheet = book.sheet_by_index(0)
         self.assertEqual(sheet.name, 'Foglio1')

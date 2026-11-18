@@ -624,7 +624,12 @@ export default function OrdineTabacchi() {
                 <Trash2 size={14} />
                 Elimina
               </button>
-              <button type="button" className="tab-btn ghost" onClick={scaricaLogista}>
+              <button
+                type="button"
+                className="tab-btn ghost"
+                onClick={scaricaLogista}
+                title="Da caricare sul portale Logista (non in TabaUno)"
+              >
                 Scarica Ordine_Logista.xls
               </button>
               <button type="button" className="tab-btn primary" onClick={copiaElenco}>

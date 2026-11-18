@@ -370,7 +370,7 @@ def _logista_template_path():
 
 
 def logista_xls_bytes(righe) -> bytes:
-    """File .xls nello stesso standard TabaUno (template 1000 righe, Foglio1)."""
+    """Ordine_Logista.xls compatibile TabaUno/Logista (OLE Excel reale + Foglio1)."""
     rows = righe_export_logista(righe)
     template = _logista_template_path()
     if template is not None:
@@ -379,25 +379,98 @@ def logista_xls_bytes(righe) -> bytes:
 
 
 def _logista_xls_from_template(template, rows) -> bytes:
+    """Riempie il template e reinietta il Workbook nel contenitore OLE Excel originale.
+
+    xlutils/xlwt da soli producono un .xls senza SummaryInformation: Excel/Logista
+    lo aprono a video ma TabaUno/portale spesso lo rifiutano. Teniamo il guscio OLE
+    del file generato da Excel (Aptos, property streams) e sostituiamo solo Workbook.
+    """
     import xlrd
     from xlutils.copy import copy as xl_copy
 
-    rb = xlrd.open_workbook(str(template), formatting_info=True)
-    max_rows = rb.sheet_by_index(0).nrows
+    template_bytes = Path(template).read_bytes()
+    rb = xlrd.open_workbook(file_contents=template_bytes, formatting_info=True)
+    sheet_r = rb.sheet_by_index(0)
+    max_rows = sheet_r.nrows
+    last_old = 0
+    for row_idx in range(1, max_rows):
+        if str(sheet_r.cell_value(row_idx, 0)).strip() or str(sheet_r.cell_value(row_idx, 1)).strip():
+            last_old = row_idx
+
     wb = xl_copy(rb)
     sheet = wb.get_sheet(0)
     # Non riscrivere l'header: resta quello del template TabaUno.
     limit = min(len(rows), max_rows - 1)
-    for index in range(limit):
-        codice, quantita = rows[index]
-        sheet.write(index + 1, 0, codice)
-        sheet.write(index + 1, 1, quantita)
-    for index in range(limit + 1, max_rows):
-        sheet.write(index, 0, '')
-        sheet.write(index, 1, '')
+    clear_until = max(limit, last_old)
+    for index in range(1, clear_until + 1):
+        if index <= limit:
+            codice, quantita = rows[index - 1]
+            sheet.write(index, 0, codice)
+            sheet.write(index, 1, quantita)
+        else:
+            sheet.write(index, 0, '')
+            sheet.write(index, 1, '')
+
     buffer = io.BytesIO()
     wb.save(buffer)
-    return buffer.getvalue()
+    rebuilt = buffer.getvalue()
+    return _logista_wrap_excel_ole(template_bytes, rebuilt)
+
+
+def _logista_wrap_excel_ole(template_bytes: bytes, rebuilt_xls: bytes) -> bytes:
+    """Se il template è un Excel vero, conserva i property streams OLE."""
+    import olefile
+
+    try:
+        ole_tpl = olefile.OleFileIO(io.BytesIO(template_bytes))
+    except Exception:
+        return rebuilt_xls
+
+    has_summary = ole_tpl.exists('\x05SummaryInformation')
+    if not has_summary:
+        ole_tpl.close()
+        return rebuilt_xls
+
+    try:
+        ole_new = olefile.OleFileIO(io.BytesIO(rebuilt_xls))
+        new_wb = ole_new.openstream('Workbook').read()
+        ole_new.close()
+        old_len = ole_tpl.get_size('Workbook')
+        ole_tpl.close()
+    except Exception:
+        try:
+            ole_tpl.close()
+        except Exception:
+            pass
+        return rebuilt_xls
+
+    if len(new_wb) > old_len:
+        # Ordine troppo grosso per il guscio: meglio un xls leggibile che un file corrotto.
+        return rebuilt_xls
+
+    if len(new_wb) < old_len:
+        new_wb = new_wb + (b'\x00' * (old_len - len(new_wb)))
+
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.NamedTemporaryFile(suffix='.xls', delete=False) as tmp:
+        tmp.write(template_bytes)
+        tmp_path = tmp.name
+    try:
+        ole = olefile.OleFileIO(tmp_path, write_mode=True)
+        ole.write_stream('Workbook', new_wb)
+        ole.close()
+        return _Path(tmp_path).read_bytes()
+    finally:
+        try:
+            _Path(tmp_path).unlink(missing_ok=True)
+        except TypeError:
+            # Python < 3.8 compat: missing_ok non c'è
+            try:
+                _Path(tmp_path).unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _logista_xls_fallback(rows) -> bytes:
