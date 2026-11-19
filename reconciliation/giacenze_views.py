@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -13,6 +15,11 @@ from .tabacchi_preordine import DEFAULT_GIORNO_CONSEGNA, prossimo_giorno_consegn
 from .tabacchi_views import accoda_lettura
 from .tabauno_portal import agent_is_online, expire_requests
 from .views import require_auth
+
+
+def _sabato_settimana(oggi):
+    """Sabato della settimana in corso (lunedì–domenica)."""
+    return oggi + timedelta(days=(5 - oggi.weekday()))
 
 
 def _company(request):
@@ -109,7 +116,7 @@ def api_giacenze_analisi(request):
     giorno = _giorno_consegna_setting(company)
     consegna_default = prossimo_giorno_consegna(oggi, giorno)
     data_raw = request.GET.get('data') or ''
-    data_proiezione = parse_date(str(data_raw)) if data_raw else consegna_default
+    data_proiezione = parse_date(str(data_raw)) if data_raw else _sabato_settimana(oggi)
     if data_raw and not data_proiezione:
         return JsonResponse({'status': 'error', 'error': 'Data non valida.'}, status=400)
 

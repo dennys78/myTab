@@ -22,6 +22,18 @@ function formattaChiusura(iso) {
   return `${d}/${m}/${y}`;
 }
 
+/** Sabato della settimana in corso (lunedì–domenica). */
+function sabatoSettimanaCorrente(oggi = new Date()) {
+  const d = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate(), 12);
+  const giorno = d.getDay(); // 0=dom … 6=sab
+  const versoLunedi = giorno === 0 ? -6 : 1 - giorno;
+  d.setDate(d.getDate() + versoLunedi + 5);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function formattaNumero(value, digits = 1) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
@@ -45,7 +57,7 @@ export default function StatisticheGiacenze() {
   const [requestId, setRequestId] = useState(null);
   const [attesa, setAttesa] = useState(false);
   const [errore, setErrore] = useState('');
-  const [dataProiezione, setDataProiezione] = useState('');
+  const [dataProiezione, setDataProiezione] = useState(() => sabatoSettimanaCorrente());
   const [filtroStato, setFiltroStato] = useState('tutti');
   const [sogliaMinima, setSogliaMinima] = useState(SOGLIA_DEFAULT);
   const [ricerca, setRicerca] = useState('');
@@ -85,14 +97,14 @@ export default function StatisticheGiacenze() {
     if (body.pronta && body.analisi) {
       setAnalisi(body.analisi);
       setRequestId(body.request_id);
-      if (!data) setDataProiezione(body.analisi.data_proiezione);
+      if (data) setDataProiezione(data);
       setErrore('');
     }
     return body;
   }, []);
 
   useEffect(() => {
-    caricaAnalisi(null, '').catch(() => {});
+    caricaAnalisi(null, sabatoSettimanaCorrente()).catch(() => {});
   }, [caricaAnalisi]);
 
   const leggi = async () => {
@@ -118,7 +130,7 @@ export default function StatisticheGiacenze() {
       const body = await stato.json();
       setOnline(!!body.agent_online);
       if (body.status === 'done') {
-        await caricaAnalisi(data.id, dataProiezione);
+        await caricaAnalisi(data.id, dataProiezione || sabatoSettimanaCorrente());
         setAttesa(false);
         return;
       }
@@ -242,7 +254,7 @@ export default function StatisticheGiacenze() {
 
       {analisi && (
         <>
-          <div className="tab-controls">
+          <div className="tab-controls gia-controls">
             <div className="tab-control">
               <span className="tab-label">Giacenza stimata al</span>
               <input
@@ -264,12 +276,7 @@ export default function StatisticheGiacenze() {
                 ))}
               </select>
             </div>
-            <div className="tab-control">
-              <span className="tab-label">Prossimo ordine</span>
-              <strong>{formattaChiusura(analisi.consegna)}</strong>
-              <span className="tab-hint-inline">tra {analisi.giorni_alla_consegna} gg</span>
-            </div>
-            <div className="tab-control tab-control-grow">
+            <div className="tab-control gia-control-cerca">
               <span className="tab-label">Cerca</span>
               <input
                 type="search"
@@ -279,10 +286,6 @@ export default function StatisticheGiacenze() {
               />
             </div>
           </div>
-          <p className="tab-hint">
-            Solo articoli con giacenza stimata ≤ {sogliaMinima} pz al {formattaChiusura(analisi.data_proiezione)}.
-            Il resto non è in elenco. Stato riferito al prossimo ordine ({formattaChiusura(analisi.consegna)}).
-          </p>
 
           <div className="gia-filtri" role="group" aria-label="Filtra per stato">
             <button
@@ -316,9 +319,9 @@ export default function StatisticheGiacenze() {
                   {intestazione('giacenza', 'Giacenza', 'oggi')}
                   {intestazione('media', 'Media', 'pz/giorno')}
                   {intestazione('venduto_4_settimane', 'Venduto', '4 settimane')}
-                  {intestazione('data_fine', 'Finisce', 'stimata')}
+                  {intestazione('data_fine', 'Fine stimata per il')}
                   {intestazione('alla_data', 'Stimati', formattaChiusura(analisi.data_proiezione))}
-                  {intestazione('stato', 'Stato', 'vs ordine')}
+                  {intestazione('stato', 'Stato')}
                 </tr>
               </thead>
               <tbody>
