@@ -3363,11 +3363,78 @@ tbody tr:hover {
 .gia-chip.gia-rischio.active { border-color: #d97706; background: rgba(217, 119, 6, 0.1); }
 .gia-chip.gia-ok.active { border-color: #16a34a; background: rgba(22, 163, 74, 0.08); }
 
+.gia-table-wrap { overflow-x: auto; }
+
+.gia-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.gia-table th {
+  vertical-align: bottom;
+  padding: 0.45rem 0.55rem;
+  white-space: normal;
+}
+
+.gia-sort {
+  display: flex;
+  flex-direction: column;
+  align-items: inherit;
+  gap: 0.1rem;
+  width: 100%;
+  text-align: inherit;
+  line-height: 1.15;
+}
+
+.gia-th-main {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.gia-th-sub {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.gia-col-articolo {
+  width: 38%;
+  min-width: 12rem;
+  text-align: left;
+}
+
+.gia-col-num {
+  width: 9%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gia-col-stato {
+  width: 14%;
+  text-align: center;
+}
+
+.gia-table th.gia-col-num .gia-sort,
+.gia-table th.gia-col-stato .gia-sort {
+  align-items: flex-end;
+}
+
+.gia-table th.gia-col-stato .gia-sort { align-items: center; }
+.gia-table th.gia-col-articolo .gia-sort { align-items: flex-start; }
+
+.gia-table td {
+  padding: 0.55rem 0.55rem;
+  vertical-align: middle;
+}
+
 .gia-badge {
   display: inline-block;
   border-radius: 999px;
   padding: 0.15rem 0.55rem;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -3384,6 +3451,13 @@ tbody tr:hover {
 
 .gia-neg { color: #b91c1c; font-weight: 600; }
 .gia-manca { color: #b91c1c; font-size: 0.78rem; }
-.gia-trend { display: block; font-size: 0.72rem; }
+.gia-trend { display: block; font-size: 0.72rem; margin-top: 0.1rem; }
 .gia-trend.up { color: #15803d; }
 .gia-trend.down { color: #b91c1c; }
+
+@media (max-width: 900px) {
+  .gia-table { table-layout: auto; }
+  .gia-col-articolo { width: auto; min-width: 10rem; }
+  .gia-col-num,
+  .gia-col-stato { width: auto; }
+}

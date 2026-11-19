@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from './api';
 
 const STATI_ORDINE = ['esaurito', 'prima_consegna', 'rischio', 'ok', 'fermo'];
+const SOGLIE_MINIME = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const SOGLIA_DEFAULT = 5;
+
+function sottoSoglia(riga, soglia) {
+  return Number(riga.alla_data) <= soglia;
+}
 
 function formattaChiusura(iso) {
   if (!iso) return '';
@@ -34,8 +40,9 @@ export default function StatisticheGiacenze() {
   const [errore, setErrore] = useState('');
   const [dataProiezione, setDataProiezione] = useState('');
   const [filtroStato, setFiltroStato] = useState('tutti');
+  const [sogliaMinima, setSogliaMinima] = useState(SOGLIA_DEFAULT);
   const [ricerca, setRicerca] = useState('');
-  const [ordinamento, setOrdinamento] = useState({ chiave: 'stato', direzione: 'asc' });
+  const [ordinamento, setOrdinamento] = useState({ chiave: 'alla_data', direzione: 'asc' });
   const pollRef = useRef(null);
 
   const ferma = () => {
@@ -133,8 +140,19 @@ export default function StatisticheGiacenze() {
     fermo: 'Fermo',
   };
 
+  const rilevanti = useMemo(
+    () => (analisi?.righe || []).filter(r => sottoSoglia(r, sogliaMinima)),
+    [analisi, sogliaMinima],
+  );
+
+  const riepilogo = useMemo(() => {
+    const conteggi = Object.fromEntries(STATI_ORDINE.map(s => [s, 0]));
+    for (const riga of rilevanti) conteggi[riga.stato] = (conteggi[riga.stato] || 0) + 1;
+    return conteggi;
+  }, [rilevanti]);
+
   const righe = useMemo(() => {
-    let lista = [...(analisi?.righe || [])];
+    let lista = [...rilevanti];
     if (filtroStato !== 'tutti') lista = lista.filter(r => r.stato === filtroStato);
     const q = ricerca.trim().toLowerCase();
     if (q) {
@@ -149,19 +167,19 @@ export default function StatisticheGiacenze() {
         const ia = STATI_ORDINE.indexOf(a.stato);
         const ib = STATI_ORDINE.indexOf(b.stato);
         const base = (ia - ib) * (direzione === 'asc' ? 1 : -1);
-        return base || confronta(a, b, 'giorni_fine', 'asc');
+        return base || confronta(a, b, 'alla_data', 'asc');
       });
     } else {
       lista.sort((a, b) => confronta(a, b, chiave, direzione));
     }
     return lista;
-  }, [analisi, filtroStato, ricerca, ordinamento]);
+  }, [rilevanti, filtroStato, ricerca, ordinamento]);
 
   const ordina = (chiave) => {
     setOrdinamento(prev => (
       prev.chiave === chiave
         ? { chiave, direzione: prev.direzione === 'asc' ? 'desc' : 'asc' }
-        : { chiave, direzione: chiave === 'descrizione' ? 'asc' : 'asc' }
+        : { chiave, direzione: 'asc' }
     ));
   };
 
@@ -170,7 +188,18 @@ export default function StatisticheGiacenze() {
     return ordinamento.direzione === 'asc' ? ' ↑' : ' ↓';
   };
 
-  const riepilogo = analisi?.riepilogo || {};
+  const intestazione = (chiave, titolo, sotto = '') => (
+    <th className={chiave === 'descrizione' ? 'gia-col-articolo' : 'gia-col-num'}>
+      <button
+        type="button"
+        className={`tab-sort gia-sort ${ordinamento.chiave === chiave ? 'active' : ''}`}
+        onClick={() => ordina(chiave)}
+      >
+        <span className="gia-th-main">{titolo}{freccia(chiave)}</span>
+        {sotto ? <span className="gia-th-sub">{sotto}</span> : null}
+      </button>
+    </th>
+  );
 
   return (
     <div className="tab-page">
@@ -217,6 +246,18 @@ export default function StatisticheGiacenze() {
               />
             </div>
             <div className="tab-control">
+              <span className="tab-label">Mostra se ≤</span>
+              <select
+                value={sogliaMinima}
+                onChange={e => setSogliaMinima(Number(e.target.value))}
+                aria-label="Giacenza minima da mostrare"
+              >
+                {SOGLIE_MINIME.map(n => (
+                  <option key={n} value={n}>{n} pz</option>
+                ))}
+              </select>
+            </div>
+            <div className="tab-control">
               <span className="tab-label">Prossimo ordine</span>
               <strong>{formattaChiusura(analisi.consegna)}</strong>
               <span className="tab-hint-inline">tra {analisi.giorni_alla_consegna} gg</span>
@@ -232,9 +273,8 @@ export default function StatisticheGiacenze() {
             </div>
           </div>
           <p className="tab-hint">
-            La colonna «Al {formattaChiusura(analisi.data_proiezione)}» stima i pezzi rimanenti a quella data
-            con il ritmo medio delle ultime 4 settimane. Lo stato segnala chi finisce prima del prossimo ordine
-            ({formattaChiusura(analisi.consegna)}).
+            Solo articoli con giacenza stimata ≤ {sogliaMinima} pz al {formattaChiusura(analisi.data_proiezione)}.
+            Il resto non è in elenco. Stato riferito al prossimo ordine ({formattaChiusura(analisi.consegna)}).
           </p>
 
           <div className="gia-riepilogo" role="group" aria-label="Riepilogo stati">
@@ -243,7 +283,7 @@ export default function StatisticheGiacenze() {
               className={`gia-chip ${filtroStato === 'tutti' ? 'active' : ''}`}
               onClick={() => setFiltroStato('tutti')}
             >
-              Tutti <strong>{analisi.righe.length}</strong>
+              In elenco <strong>{rilevanti.length}</strong>
             </button>
             {STATI_ORDINE.map(stato => (
               <button
@@ -257,81 +297,56 @@ export default function StatisticheGiacenze() {
             ))}
           </div>
 
-          <div className="tab-table-wrap">
-            <table className="tab-table">
+          <div className="tab-table-wrap gia-table-wrap">
+            <table className="tab-table gia-table">
               <thead>
                 <tr>
-                  <th className="tab-col-articolo">
-                    <button type="button" className="tab-sort" onClick={() => ordina('descrizione')}>
-                      Articolo{freccia('descrizione')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('giacenza')}>
-                      Giacenza{freccia('giacenza')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('media')}>
-                      Media/gg{freccia('media')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('venduto_4_settimane')}>
-                      4 sett.{freccia('venduto_4_settimane')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('data_fine')}>
-                      Finisce{freccia('data_fine')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('alla_data')}>
-                      Al {formattaChiusura(analisi.data_proiezione)}{freccia('alla_data')}
-                    </button>
-                  </th>
-                  <th>
-                    <button type="button" className="tab-sort" onClick={() => ordina('stato')}>
-                      Stato{freccia('stato')}
-                    </button>
-                  </th>
+                  {intestazione('descrizione', 'Articolo')}
+                  {intestazione('giacenza', 'Giacenza', 'oggi')}
+                  {intestazione('media', 'Media', 'pz/giorno')}
+                  {intestazione('venduto_4_settimane', 'Venduto', '4 settimane')}
+                  {intestazione('data_fine', 'Finisce', 'stimata')}
+                  {intestazione('alla_data', 'Stimati', formattaChiusura(analisi.data_proiezione))}
+                  {intestazione('stato', 'Stato', 'vs ordine')}
                 </tr>
               </thead>
               <tbody>
                 {righe.map(riga => (
                   <tr key={riga.aams} className={`gia-row gia-${riga.stato}`}>
-                    <td className="tab-col-articolo">
+                    <td className="gia-col-articolo">
                       <div className="tab-articolo">
                         <span className="tab-aams">{riga.aams}</span>
                         <span className="tab-nome">{riga.descrizione}</span>
                       </div>
                     </td>
-                    <td>{formattaNumero(riga.giacenza)}</td>
-                    <td>{formattaNumero(riga.media, 2)}</td>
-                    <td>
-                      {formattaNumero(riga.venduto_4_settimane)}
+                    <td className="gia-col-num">{formattaNumero(riga.giacenza, 0)}</td>
+                    <td className="gia-col-num">{formattaNumero(riga.media, 1)}</td>
+                    <td className="gia-col-num">
+                      {formattaNumero(riga.venduto_4_settimane, 0)}
                       {riga.trend_pct != null && (
                         <span className={`gia-trend ${riga.trend_pct >= 0 ? 'up' : 'down'}`}>
                           {riga.trend_pct > 0 ? '+' : ''}{riga.trend_pct}%
                         </span>
                       )}
                     </td>
-                    <td>{riga.data_fine ? formattaChiusura(riga.data_fine) : '—'}</td>
-                    <td className={Number(riga.alla_data) < 0 ? 'gia-neg' : ''}>
-                      {formattaNumero(riga.alla_data)}
+                    <td className="gia-col-num">{riga.data_fine ? formattaChiusura(riga.data_fine) : '—'}</td>
+                    <td className={`gia-col-num ${Number(riga.alla_data) < 0 ? 'gia-neg' : ''}`}>
+                      {formattaNumero(riga.alla_data, 0)}
                       {riga.mancanti_alla_data > 0 && (
-                        <span className="gia-manca"> −{riga.mancanti_alla_data}</span>
+                        <span className="gia-manca"> (−{riga.mancanti_alla_data})</span>
                       )}
                     </td>
-                    <td>
+                    <td className="gia-col-stato">
                       <span className={`gia-badge gia-${riga.stato}`}>{etichette[riga.stato]}</span>
                     </td>
                   </tr>
                 ))}
                 {!righe.length && (
                   <tr>
-                    <td colSpan={7} className="tab-empty-cell">Nessun articolo con questo filtro.</td>
+                    <td colSpan={7} className="tab-empty-cell">
+                      Nessun articolo con giacenza stimata ≤ {sogliaMinima} pz
+                      {filtroStato !== 'tutti' ? ' per questo stato' : ''}.
+                    </td>
                   </tr>
                 )}
               </tbody>
