@@ -2535,11 +2535,6 @@ tbody tr:hover {
 .gratta-page .gia-btn-leggi {
   background: var(--tab-accent);
   border-color: var(--tab-accent);
-  border-radius: 999px;
-}
-
-.grt-controls-tools {
-  margin-top: 0.55rem;
 }
 
 .grt-days {
@@ -2573,18 +2568,6 @@ tbody tr:hover {
 .grt-day-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.gratta-page .gia-filtri {
-  gap: 0.55rem;
-}
-
-.gratta-page .gia-filtro-btn {
-  border-radius: 999px;
-  padding: 0 0.85rem;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(148, 163, 184, 0.28);
-  color: var(--text-main);
 }
 
 .gratta-page .gia-filtro-btn.grt-filtro-tutti { color: #5eead4; }
@@ -3371,8 +3354,9 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0 0.75rem;
+  padding: 0 0.95rem;
   font-size: 0.78rem;
+  border-radius: 999px;
   box-shadow: 0 1px 2px rgba(31, 106, 90, 0.18);
 }
 
@@ -3389,10 +3373,11 @@ tbody tr:hover {
   height: 0;
   margin: 0.85rem 0 0.95rem;
   border: 0;
-  border-top: 1px solid rgba(31, 106, 90, 0.18);
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
 }
 
-.gia-page .gia-controls {
+.gia-page .gia-controls,
+.gratta-page .gia-controls {
   display: flex;
   flex-wrap: nowrap;
   align-items: flex-end;
@@ -3402,23 +3387,28 @@ tbody tr:hover {
   gap: 0.75rem 1rem;
 }
 
+.gia-controls-tools {
+  margin-top: 0.55rem;
+}
+
 .gia-page .tab-control select,
 .gia-page .tab-control input[type="date"],
 .gia-page .tab-control input[type="search"] {
   box-sizing: border-box;
   height: var(--gia-control-h);
   min-height: var(--gia-control-h);
-  border: 1px solid rgba(31, 106, 90, 0.28);
-  border-radius: 8px;
-  padding: 0 0.55rem;
-  background: var(--gia-tutti-bg);
-  color: var(--text-main, #1e293b);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 0 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
   line-height: 1.2;
+  color-scheme: dark;
 }
 
 .gia-page .tab-control select:focus,
 .gia-page .tab-control input:focus {
-  outline: 2px solid rgba(31, 106, 90, 0.28);
+  outline: 2px solid rgba(94, 234, 212, 0.35);
   outline-offset: 1px;
 }
 
@@ -3454,7 +3444,7 @@ tbody tr:hover {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.55rem;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -3472,11 +3462,11 @@ tbody tr:hover {
   box-sizing: border-box;
   height: var(--gia-control-h);
   min-height: var(--gia-control-h);
-  border: 1px solid rgba(31, 106, 90, 0.28);
-  border-radius: 8px;
-  padding: 0 0.55rem;
-  background: #fff;
-  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  padding: 0 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
   font: inherit;
   font-size: 0.75rem;
   font-weight: 650;
@@ -3512,19 +3502,19 @@ tbody tr:hover {
   font-size: 0.65rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  background: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.12);
   color: inherit;
 }
 
-.gia-filtro-btn.gia-tutti { color: var(--gia-tutti); }
-.gia-filtro-btn.gia-immancabile { color: var(--gia-immancabile); }
-.gia-filtro-btn.gia-esaurito { color: var(--gia-esaurito); }
-.gia-filtro-btn.gia-prima_consegna { color: var(--gia-prima); }
-.gia-filtro-btn.gia-rischio { color: var(--gia-rischio); }
+.gia-filtro-btn.gia-tutti { color: #5eead4; }
+.gia-filtro-btn.gia-immancabile { color: #c4b5fd; }
+.gia-filtro-btn.gia-esaurito { color: #fca5a5; }
+.gia-filtro-btn.gia-prima_consegna { color: #fdba74; }
+.gia-filtro-btn.gia-rischio { color: #fcd34d; }
 
 .gia-filtro-btn:hover:not(.active) {
-  background: rgba(15, 23, 42, 0.04);
-  border-color: rgba(15, 23, 42, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(148, 163, 184, 0.45);
 }
 
 .gia-filtro-btn.active {

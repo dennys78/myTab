@@ -255,37 +255,56 @@ export default function StatisticheGiacenze() {
                 ))}
               </select>
             </div>
-            <div className="tab-control gia-control-filtri">
-              <div className="gia-filtri" role="group" aria-label="Filtra per stato">
-                {FILTRI.map(filtro => (
-                  <button
-                    key={filtro.id}
-                    type="button"
-                    className={`gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
-                    onClick={() => setFiltroStato(filtro.id)}
-                  >
-                    <span className="gia-filtro-dot" aria-hidden="true" />
-                    <span className="gia-filtro-label">{filtro.label}</span>
-                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </>
         )}
-        <div className="tab-control gia-control-leggi">
-          <button
-            type="button"
-            className="tab-btn primary gia-btn-leggi"
-            onClick={leggi}
-            disabled={attesa || online !== true}
-            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
-          >
-            <Wifi size={16} aria-hidden="true" />
-            {attesa ? 'Lettura…' : analisi ? 'Aggiorna da PC' : 'Leggi da PC'}
-          </button>
-        </div>
+        {!analisi && (
+          <div className="tab-control gia-control-leggi">
+            <button
+              type="button"
+              className="tab-btn primary gia-btn-leggi"
+              onClick={leggi}
+              disabled={attesa || online !== true}
+              title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+            >
+              <Wifi size={16} aria-hidden="true" />
+              {attesa ? 'Lettura…' : 'Leggi da PC'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {analisi && (
+        <div className="tab-controls gia-controls gia-controls-tools">
+          <div className="tab-control gia-control-filtri">
+            <div className="gia-filtri" role="group" aria-label="Filtra per stato">
+              {FILTRI.map(filtro => (
+                <button
+                  key={filtro.id}
+                  type="button"
+                  className={`gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
+                  onClick={() => setFiltroStato(filtro.id)}
+                >
+                  <span className="gia-filtro-dot" aria-hidden="true" />
+                  <span className="gia-filtro-label">{filtro.label}</span>
+                  <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="tab-control gia-control-leggi">
+            <button
+              type="button"
+              className="tab-btn primary gia-btn-leggi"
+              onClick={leggi}
+              disabled={attesa || online !== true}
+              title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+            >
+              <Wifi size={16} aria-hidden="true" />
+              {attesa ? 'Lettura…' : 'Aggiorna da PC'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {!analisi && !attesa && (
         <p className="tab-empty">

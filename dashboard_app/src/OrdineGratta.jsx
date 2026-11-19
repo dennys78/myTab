@@ -389,7 +389,7 @@ export default function OrdineGratta() {
       </div>
 
       {preordine && (
-        <div className="tab-controls gia-controls grt-controls grt-controls-tools">
+        <div className="tab-controls gia-controls grt-controls gia-controls-tools">
           <div className="tab-control gia-control-filtri">
             <div className="gia-filtri" role="group" aria-label="Filtra per gruppo">
               {FILTRI.map(filtro => (

@@ -1,0 +1,36 @@
+---
+description: Layout standard dashboard (liste/ordini/statistiche) come Ordine Gratta e Giacenze
+globs: dashboard_app/src/**/*.{jsx,js,css}
+alwaysApply: true
+---
+
+# Layout standard myTaba (liste)
+
+Riferimento UI: **Ordine Gratta** (`OrdineGratta.jsx`) e **Statistiche Giacenze** (`StatisticheGiacenze.jsx`).  
+Usalo per ogni nuova pagina lista/ordine/statistiche della dashboard.
+
+## Struttura pagina
+
+1. Wrapper: `tab-page` + classe pagina (`gratta-page` / `gia-page` / nuova `*-page`).
+2. Header: `tab-header` → `h1` + `tab-sub` (niente azioni nel header).
+3. **Riga 1 controlli** (`tab-controls gia-controls`): solo parametri (date, select, segmenti numerici).
+4. **Riga 2 tool** (`tab-controls gia-controls gia-controls-tools`): filtri pill + azione primaria a destra (`gia-control-leggi`, es. Aggiorna da PC con icona Wifi).
+5. Separatore: `gia-sep`.
+6. Tabella: `tab-table-wrap` + `tab-table gia-table` con intestazioni ordinabili (`tab-sort gia-sort`, `gia-th-main` / `gia-th-sub`).
+7. Colonna articolo: solo nome (`gia-nome`), codice/meta sotto in `grt-meta` se serve — non mostrare codice come colonna principale.
+8. Eventuale dock fisso in basso per totali/azioni distruttive (stile `gratta-dock`).
+
+## Stile controlli (tema scuro)
+
+- Altezza unica: `--gia-control-h` (≈ 2.35rem).
+- Input/select/date e pill: `border-radius: 999px`, fondo `rgba(255,255,255,0.06)`, bordo tenue.
+- Filtri: `gia-filtri` / `gia-filtro-btn` con pallino + label + count; attivo = fill colorato, testo bianco.
+- Pulsanti tool spaziati (`gap` ≥ 0.55rem), non accalcati.
+- Stepper quantità: testo `−` / `+` (non icone lucide sottili), bottoni tondi contrastati sul tema scuro.
+
+## Cosa evitare
+
+- Card list al posto della tabella per elenchi prodotti/giochi.
+- Filtri e parametri ammassati sulla stessa riga se la pagina ha entrambi.
+- Hint/frasi lunghe sotto i controlli se non essenziali.
+- Pulsanti con angoli poco arrotondati o icone +/− poco visibili sul dark theme.
