@@ -14,6 +14,7 @@ import Movimenti from './Movimenti';
 import FondoCassa from './FondoCassa';
 import OrdineGratta from './OrdineGratta';
 import OrdineTabacchi from './OrdineTabacchi';
+import StatisticheGiacenze from './StatisticheGiacenze';
 import InstallPwa from './InstallPwa';
 import WebPushSetup from './WebPushSetup';
 import PushNotifyButton from './PushNotifyButton';
@@ -69,6 +70,8 @@ function AppShell() {
   const [ricevuteSection, setRicevuteSection] = useState('clienti');
   const [ordiniOpen, setOrdiniOpen] = useState(false);
   const [ordiniSection, setOrdiniSection] = useState('gratta');
+  const [statisticheOpen, setStatisticheOpen] = useState(false);
+  const [statisticheSection, setStatisticheSection] = useState('giacenze');
 
   const settingsSubsections = isAdmin
     ? [
@@ -89,6 +92,10 @@ function AppShell() {
   const ordiniSubsections = [
     { id: 'gratta', label: 'Ordine Gratta e Vinci' },
     { id: 'tabacchi', label: 'Ordine Tabacchi' },
+  ];
+
+  const statisticheSubsections = [
+    { id: 'giacenze', label: 'Giacenze' },
   ];
 
   const fetchClosures = useCallback(() => {
@@ -502,6 +509,39 @@ function AppShell() {
                 </div>
               );
             }
+            if (item.id === 'statistiche') {
+              const statisticheActive = currentView === 'statistiche';
+              return (
+                <div key={item.id}>
+                  <div
+                    className={`nav-item ${statisticheActive ? 'active' : ''}`}
+                    onClick={() => setStatisticheOpen(o => !o)}
+                  >
+                    <Icon size={20} /><span>{item.label}</span>
+                    {statisticheOpen
+                      ? <ChevronDown size={16} style={{ marginLeft: 'auto' }} />
+                      : <ChevronRight size={16} style={{ marginLeft: 'auto' }} />}
+                  </div>
+                  {statisticheOpen && (
+                    <div className="nav-subitems">
+                      {statisticheSubsections.map(sub => (
+                        <div
+                          key={sub.id}
+                          className={`nav-item nav-subitem ${statisticheActive && statisticheSection === sub.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setStatisticheSection(sub.id);
+                            setCurrentView('statistiche');
+                            setIsMobileMenuOpen(false);
+                          }}
+                        >
+                          <span>{sub.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             if (item.id === 'ricevute') {
               const ricevuteActive = currentView === 'ricevute';
               return (
@@ -637,6 +677,8 @@ function AppShell() {
           <FondoCassa />
         ) : currentView === 'ordini' ? (
           ordiniSection === 'tabacchi' ? <OrdineTabacchi /> : <OrdineGratta />
+        ) : currentView === 'statistiche' ? (
+          <StatisticheGiacenze />
         ) : (
           <>
             <h1>{currentView === 'chiusure' ? 'Chiusure Cassa' : 'Panoramica'}</h1>

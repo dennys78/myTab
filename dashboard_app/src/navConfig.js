@@ -8,6 +8,7 @@ import {
   Settings,
   ScrollText,
   ClipboardList,
+  ChartColumn,
 } from 'lucide-react';
 
 export const SIDEBAR_ITEMS = [
@@ -19,6 +20,7 @@ export const SIDEBAR_ITEMS = [
   { id: 'fondo-cassa', label: 'Fondo Cassa', icon: PiggyBank, adminOnly: false },
   { id: 'ricevute', label: 'Ricevute', icon: ScrollText, adminOnly: false },
   { id: 'ordini', label: 'Ordini', icon: ClipboardList, adminOnly: false },
+  { id: 'statistiche', label: 'Statistiche', icon: ChartColumn, adminOnly: false },
   { id: 'impostazioni', label: 'Impostazioni', icon: Settings, adminOnly: false, pushToBottom: true },
 ];
 
@@ -33,6 +35,12 @@ export function normalizeSidebarMenu(role, menuIds) {
   const allIds = new Set(SIDEBAR_ITEMS.map(item => item.id));
   const selected = (menuIds || []).filter(id => allIds.has(id));
   if (!selected.length) return getDefaultSidebarMenu(role);
+  // Menu salvati prima di Statistiche: aggiunge la voce dopo Ordini.
+  if (!selected.includes('statistiche')) {
+    const idx = selected.indexOf('ordini');
+    if (idx >= 0) selected.splice(idx + 1, 0, 'statistiche');
+    else selected.push('statistiche');
+  }
   return SIDEBAR_ITEMS.map(item => item.id).filter(id => selected.includes(id));
 }
 

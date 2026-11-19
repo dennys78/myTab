@@ -7,6 +7,7 @@ SIDEBAR_ITEMS = [
     {'id': 'fondo-cassa', 'label': 'Fondo Cassa', 'admin_only': False},
     {'id': 'ricevute', 'label': 'Ricevute', 'admin_only': False},
     {'id': 'ordini', 'label': 'Ordini', 'admin_only': False},
+    {'id': 'statistiche', 'label': 'Statistiche', 'admin_only': False},
     {'id': 'impostazioni', 'label': 'Impostazioni', 'admin_only': False},
 ]
 
@@ -23,4 +24,10 @@ def normalize_sidebar_menu(menu_ids, is_admin):
     selected = [item_id for item_id in (menu_ids or []) if item_id in ALL_MENU_IDS]
     if not selected:
         return default_sidebar_menu(is_admin)
+    # Menu salvati prima di Statistiche: aggiunge la voce dopo Ordini.
+    if 'statistiche' not in selected:
+        if 'ordini' in selected:
+            selected.insert(selected.index('ordini') + 1, 'statistiche')
+        else:
+            selected.append('statistiche')
     return [item['id'] for item in SIDEBAR_ITEMS if item['id'] in selected]

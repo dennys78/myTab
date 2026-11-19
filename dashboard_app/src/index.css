@@ -3319,3 +3319,71 @@ tbody tr:hover {
   color: var(--text-muted);
   margin-top: 0.15rem;
 }
+
+/* Statistiche → Giacenze */
+.tab-hint-inline {
+  margin-left: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.tab-control-grow {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.tab-empty-cell {
+  text-align: center;
+  padding: 1.4rem !important;
+  color: var(--text-muted);
+}
+
+.gia-riepilogo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+}
+
+.gia-chip {
+  border: 1px solid var(--border, #d1d5db);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.gia-chip strong { margin-left: 0.25rem; }
+.gia-chip.active { border-color: var(--tab-accent, #2563eb); background: rgba(37, 99, 235, 0.08); }
+.gia-chip.gia-esaurito.active,
+.gia-chip.gia-prima_consegna.active { border-color: #dc2626; background: rgba(220, 38, 38, 0.08); }
+.gia-chip.gia-rischio.active { border-color: #d97706; background: rgba(217, 119, 6, 0.1); }
+.gia-chip.gia-ok.active { border-color: #16a34a; background: rgba(22, 163, 74, 0.08); }
+
+.gia-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gia-badge.gia-esaurito,
+.gia-badge.gia-prima_consegna { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
+.gia-badge.gia-rischio { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+.gia-badge.gia-ok { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+.gia-badge.gia-fermo { background: rgba(107, 114, 128, 0.12); color: #4b5563; }
+
+.gia-row.gia-esaurito,
+.gia-row.gia-prima_consegna { background: rgba(220, 38, 38, 0.04); }
+.gia-row.gia-rischio { background: rgba(217, 119, 6, 0.05); }
+
+.gia-neg { color: #b91c1c; font-weight: 600; }
+.gia-manca { color: #b91c1c; font-size: 0.78rem; }
+.gia-trend { display: block; font-size: 0.72rem; }
+.gia-trend.up { color: #15803d; }
+.gia-trend.down { color: #b91c1c; }
