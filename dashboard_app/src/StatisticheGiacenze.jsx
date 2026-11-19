@@ -4,6 +4,13 @@ import { apiFetch } from './api';
 const STATI_ORDINE = ['esaurito', 'prima_consegna', 'rischio', 'ok', 'fermo'];
 const SOGLIE_MINIME = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const SOGLIA_DEFAULT = 5;
+const CHIP_LABEL = {
+  esaurito: 'Esaurito',
+  prima_consegna: 'Prima dell’ordine',
+  rischio: 'Rischio',
+  ok: 'Copre',
+  fermo: 'Fermo',
+};
 
 function sottoSoglia(riga, soglia) {
   return Number(riga.alla_data) <= soglia;
@@ -202,7 +209,7 @@ export default function StatisticheGiacenze() {
   );
 
   return (
-    <div className="tab-page">
+    <div className="tab-page gia-page">
       <header className="tab-header">
         <div>
           <h1>Giacenze</h1>
@@ -218,7 +225,7 @@ export default function StatisticheGiacenze() {
         <div className="tab-header-actions">
           <button
             type="button"
-            className="tab-btn"
+            className="tab-btn primary gia-btn-leggi"
             onClick={leggi}
             disabled={attesa || online !== true}
           >
@@ -277,13 +284,15 @@ export default function StatisticheGiacenze() {
             Il resto non è in elenco. Stato riferito al prossimo ordine ({formattaChiusura(analisi.consegna)}).
           </p>
 
-          <div className="gia-riepilogo" role="group" aria-label="Riepilogo stati">
+          <div className="gia-filtri" role="group" aria-label="Filtra per stato">
             <button
               type="button"
-              className={`gia-chip ${filtroStato === 'tutti' ? 'active' : ''}`}
+              className={`gia-chip gia-tutti ${filtroStato === 'tutti' ? 'active' : ''}`}
               onClick={() => setFiltroStato('tutti')}
             >
-              In elenco <strong>{rilevanti.length}</strong>
+              <span className="gia-chip-dot" aria-hidden="true" />
+              <span className="gia-chip-label">In elenco</span>
+              <span className="gia-chip-count">{rilevanti.length}</span>
             </button>
             {STATI_ORDINE.map(stato => (
               <button
@@ -292,7 +301,9 @@ export default function StatisticheGiacenze() {
                 className={`gia-chip gia-${stato} ${filtroStato === stato ? 'active' : ''}`}
                 onClick={() => setFiltroStato(stato)}
               >
-                {etichette[stato]} <strong>{riepilogo[stato] || 0}</strong>
+                <span className="gia-chip-dot" aria-hidden="true" />
+                <span className="gia-chip-label">{CHIP_LABEL[stato] || etichette[stato]}</span>
+                <span className="gia-chip-count">{riepilogo[stato] || 0}</span>
               </button>
             ))}
           </div>

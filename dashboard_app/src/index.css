@@ -3321,6 +3321,57 @@ tbody tr:hover {
 }
 
 /* Statistiche → Giacenze */
+.gia-page {
+  --tab-accent: #1f6a5a;
+  --tab-accent-soft: rgba(31, 106, 90, 0.12);
+  --gia-esaurito: #c62828;
+  --gia-esaurito-bg: #fdecea;
+  --gia-prima: #d84315;
+  --gia-prima-bg: #fbe9e7;
+  --gia-rischio: #ef6c00;
+  --gia-rischio-bg: #fff3e0;
+  --gia-ok: #2e7d32;
+  --gia-ok-bg: #e8f5e9;
+  --gia-fermo: #546e7a;
+  --gia-fermo-bg: #eceff1;
+  --gia-tutti: #1f6a5a;
+  --gia-tutti-bg: rgba(31, 106, 90, 0.1);
+  max-width: 980px;
+}
+
+.gia-btn-leggi {
+  min-width: 9.5rem;
+  box-shadow: 0 1px 2px rgba(31, 106, 90, 0.18);
+}
+
+.gia-btn-leggi:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.gia-page .tab-controls {
+  background: linear-gradient(180deg, rgba(31, 106, 90, 0.06), transparent);
+  border: 1px solid rgba(31, 106, 90, 0.14);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  gap: 0.85rem 1.1rem;
+}
+
+.gia-page .tab-control select,
+.gia-page .tab-control input[type="date"],
+.gia-page .tab-control input[type="search"] {
+  border: 1px solid rgba(31, 106, 90, 0.22);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  background: #fff;
+  min-height: 2.2rem;
+}
+
+.gia-page .tab-control select:focus,
+.gia-page .tab-control input:focus {
+  outline: 2px solid rgba(31, 106, 90, 0.28);
+  outline-offset: 1px;
+}
+
 .tab-hint-inline {
   margin-left: 0.45rem;
   color: var(--text-muted);
@@ -3339,29 +3390,83 @@ tbody tr:hover {
   color: var(--text-muted);
 }
 
-.gia-riepilogo {
+.gia-filtri {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.5rem;
   margin: 0 0 1rem;
+  padding: 0.55rem;
+  border-radius: 12px;
+  background: #f4f7f6;
+  border: 1px solid rgba(31, 106, 90, 0.1);
 }
 
 .gia-chip {
-  border: 1px solid var(--border, #d1d5db);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
   background: #fff;
   border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.82rem;
+  padding: 0.38rem 0.55rem 0.38rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
+  color: #334155;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.gia-chip:hover {
+  transform: translateY(-1px);
+}
+
+.gia-chip-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.gia-chip-label {
+  white-space: nowrap;
+}
+
+.gia-chip-count {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(15, 23, 42, 0.08);
   color: inherit;
 }
 
-.gia-chip strong { margin-left: 0.25rem; }
-.gia-chip.active { border-color: var(--tab-accent, #2563eb); background: rgba(37, 99, 235, 0.08); }
-.gia-chip.gia-esaurito.active,
-.gia-chip.gia-prima_consegna.active { border-color: #dc2626; background: rgba(220, 38, 38, 0.08); }
-.gia-chip.gia-rischio.active { border-color: #d97706; background: rgba(217, 119, 6, 0.1); }
-.gia-chip.gia-ok.active { border-color: #16a34a; background: rgba(22, 163, 74, 0.08); }
+.gia-chip.gia-tutti { color: var(--gia-tutti); border-color: rgba(31, 106, 90, 0.18); }
+.gia-chip.gia-esaurito { color: var(--gia-esaurito); border-color: rgba(198, 40, 40, 0.18); }
+.gia-chip.gia-prima_consegna { color: var(--gia-prima); border-color: rgba(216, 67, 21, 0.18); }
+.gia-chip.gia-rischio { color: var(--gia-rischio); border-color: rgba(239, 108, 0, 0.2); }
+.gia-chip.gia-ok { color: var(--gia-ok); border-color: rgba(46, 125, 50, 0.18); }
+.gia-chip.gia-fermo { color: var(--gia-fermo); border-color: rgba(84, 110, 122, 0.2); }
+
+.gia-chip.gia-tutti.active { background: var(--gia-tutti); color: #fff; border-color: var(--gia-tutti); }
+.gia-chip.gia-esaurito.active { background: var(--gia-esaurito); color: #fff; border-color: var(--gia-esaurito); }
+.gia-chip.gia-prima_consegna.active { background: var(--gia-prima); color: #fff; border-color: var(--gia-prima); }
+.gia-chip.gia-rischio.active { background: var(--gia-rischio); color: #fff; border-color: var(--gia-rischio); }
+.gia-chip.gia-ok.active { background: var(--gia-ok); color: #fff; border-color: var(--gia-ok); }
+.gia-chip.gia-fermo.active { background: var(--gia-fermo); color: #fff; border-color: var(--gia-fermo); }
+
+.gia-chip.active .gia-chip-dot { background: #fff; }
+.gia-chip.active .gia-chip-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
 
 .gia-table-wrap { overflow-x: auto; }
 
@@ -3433,21 +3538,21 @@ tbody tr:hover {
 .gia-badge {
   display: inline-block;
   border-radius: 999px;
-  padding: 0.15rem 0.55rem;
+  padding: 0.2rem 0.6rem;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
 
-.gia-badge.gia-esaurito,
-.gia-badge.gia-prima_consegna { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
-.gia-badge.gia-rischio { background: rgba(217, 119, 6, 0.14); color: #b45309; }
-.gia-badge.gia-ok { background: rgba(22, 163, 74, 0.12); color: #15803d; }
-.gia-badge.gia-fermo { background: rgba(107, 114, 128, 0.12); color: #4b5563; }
+.gia-badge.gia-esaurito { background: var(--gia-esaurito-bg); color: var(--gia-esaurito); }
+.gia-badge.gia-prima_consegna { background: var(--gia-prima-bg); color: var(--gia-prima); }
+.gia-badge.gia-rischio { background: var(--gia-rischio-bg); color: var(--gia-rischio); }
+.gia-badge.gia-ok { background: var(--gia-ok-bg); color: var(--gia-ok); }
+.gia-badge.gia-fermo { background: var(--gia-fermo-bg); color: var(--gia-fermo); }
 
 .gia-row.gia-esaurito,
-.gia-row.gia-prima_consegna { background: rgba(220, 38, 38, 0.04); }
-.gia-row.gia-rischio { background: rgba(217, 119, 6, 0.05); }
+.gia-row.gia-prima_consegna { background: rgba(216, 67, 21, 0.04); }
+.gia-row.gia-rischio { background: rgba(239, 108, 0, 0.05); }
 
 .gia-neg { color: #b91c1c; font-weight: 600; }
 .gia-manca { color: #b91c1c; font-size: 0.78rem; }
