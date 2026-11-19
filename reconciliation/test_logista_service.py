@@ -25,7 +25,7 @@ from reconciliation.models import (
     TabaUnoRequest,
 )
 
-ENV = {'LOGISTA_SERVICE_URL': 'http://logista.test:3501', 'LOGISTA_SERVICE_KEY': 'chiave-segreta'}
+ENV = {'LOGISTA_SERVICE_URL': 'http://logista.test:3501', 'LOGISTA_SERVICE_KEY': 'chiave-segreta', 'N8N_TABACCHI_WEBHOOK_URL': ''}
 
 
 def _risposta(data):
@@ -116,7 +116,7 @@ class LogistaApiTests(TestCase):
         self.addCleanup(self.media.cleanup)
 
     def _invia(self, svuota=False):
-        with patch('reconciliation.tabacchi_views.avvia_job') as avvia:
+        with patch('reconciliation.logista_service.avvia_job') as avvia:
             response = self.client.post(
                 '/api/tabacchi/logista/invia/',
                 data=json.dumps({'preordine_id': self.preordine.id, 'svuota': svuota}),

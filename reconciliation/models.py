@@ -620,6 +620,12 @@ class LogistaInvioJob(models.Model):
         (COMPLETATO, 'Completato'),
         (ERRORE, 'Errore'),
     ]
+    ORIGINE_PAGINA = 'pagina'
+    ORIGINE_TELEGRAM = 'telegram'
+    ORIGINE_CHOICES = [
+        (ORIGINE_PAGINA, 'Pagina'),
+        (ORIGINE_TELEGRAM, 'Telegram'),
+    ]
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='logista_jobs')
     preordine = models.ForeignKey(
@@ -627,6 +633,7 @@ class LogistaInvioJob(models.Model):
     )
     creato_da = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='logista_jobs')
     stato = models.CharField(max_length=20, choices=STATO_CHOICES, default=IN_CORSO)
+    origine = models.CharField(max_length=16, choices=ORIGINE_CHOICES, default=ORIGINE_PAGINA)
     svuota = models.BooleanField(default=False)
     creato_il = models.DateTimeField(auto_now_add=True)
     aggiornato_il = models.DateTimeField(auto_now=True)

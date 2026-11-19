@@ -15,10 +15,9 @@ from django.utils.dateparse import parse_date
 
 from .company_scope import bind_company
 from .logista_service import (
-    avvia_job,
+    crea_job,
     job_json,
     logista_configurato,
-    righe_logista_payload,
     scadi_job_bloccati,
 )
 from .models import (
@@ -266,6 +265,24 @@ def _crea_righe(preordine, dati):
     _salva_totali(preordine)
 
 
+def consegna_predefinita(company):
+    return prossimo_giorno_consegna(timezone.localdate(), _giorno_consegna_setting(company))
+
+
+def crea_preordine_da_lettura(company, lettura, user, *, giorni=7, consegna=None, scorta_pct=DEFAULT_SCORTA_PCT):
+    preordine = TabacchiPreordine.objects.create(
+        company=company,
+        creato_da=user,
+        request=lettura,
+        data_consegna=consegna or consegna_predefinita(company),
+        giorni_copertura=giorni,
+        scorta_pct=normalizza_scorta_pct(scorta_pct, DEFAULT_SCORTA_PCT),
+    )
+    _crea_righe(preordine, lettura.payload)
+    preordine.refresh_from_db()
+    return preordine
+
+
 def _segna_esportato(preordine):
     if preordine.stato == TabacchiPreordine.BOZZA:
         preordine.stato = TabacchiPreordine.ESPORTATO
@@ -305,6 +322,18 @@ def api_tabacchi_preordini(request):
         ], 'agent_online': agent_is_online(company)})
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'error': 'Usa GET o POST'}, status=405)
+    row, created = accoda_lettura(company, request.user)
+    return JsonResponse({
+        'status': 'success',
+        'created': created,
+        'id': row.id,
+        'request_status': row.status,
+        'agent_online': agent_is_online(company),
+    }, status=201 if created else 200)
+
+
+def accoda_lettura(company, user):
+    """Richiesta preordine_tabacchi all'agente; riusa quella già in coda/in lavorazione."""
     expire_requests()
     existing = TabaUnoRequest.objects.filter(
         company=company,
@@ -312,27 +341,15 @@ def api_tabacchi_preordini(request):
         status__in=(TabaUnoRequest.PENDING, TabaUnoRequest.PROCESSING),
     ).order_by('created_at', 'id').first()
     if existing:
-        return JsonResponse({
-            'status': 'success',
-            'created': False,
-            'id': existing.id,
-            'request_status': existing.status,
-            'agent_online': agent_is_online(company),
-        })
+        return existing, False
     row = TabaUnoRequest.objects.create(
         company=company,
         date=timezone.localdate(),
         tipo=TabaUnoRequest.TIPO_PREORDINE_TABACCHI,
         parametri={},
-        requested_by=request.user,
+        requested_by=user,
     )
-    return JsonResponse({
-        'status': 'success',
-        'created': True,
-        'id': row.id,
-        'request_status': row.status,
-        'agent_online': agent_is_online(company),
-    }, status=201)
+    return row, True
 
 
 @require_auth
@@ -355,26 +372,20 @@ def api_tabacchi_preordine_da_richiesta(request, request_id):
     giorni = _giorni(data.get('giorni_copertura'), 7)
     if giorni is None:
         return JsonResponse({'status': 'error', 'error': 'Giorni di copertura non validi.'}, status=400)
-    default_consegna = prossimo_giorno_consegna(
-        timezone.localdate(), _giorno_consegna_setting(company),
-    )
-    consegna = _consegna(data.get('data_consegna'), default_consegna)
+    consegna = _consegna(data.get('data_consegna'), consegna_predefinita(company))
     if not consegna:
         return JsonResponse({'status': 'error', 'error': 'Data di consegna non valida.'}, status=400)
     esistente = TabacchiPreordine.objects.filter(company=company, request=lettura).order_by('-id').first()
     if esistente:
         return JsonResponse({'status': 'success', 'created': False, 'preordine': _preordine_json(esistente, company)})
-    scorta_pct = normalizza_scorta_pct(data.get('scorta_pct'), DEFAULT_SCORTA_PCT)
-    preordine = TabacchiPreordine.objects.create(
-        company=company,
-        creato_da=request.user,
-        request=lettura,
-        data_consegna=consegna,
-        giorni_copertura=giorni,
-        scorta_pct=scorta_pct,
+    preordine = crea_preordine_da_lettura(
+        company,
+        lettura,
+        request.user,
+        giorni=giorni,
+        consegna=consegna,
+        scorta_pct=normalizza_scorta_pct(data.get('scorta_pct'), DEFAULT_SCORTA_PCT),
     )
-    _crea_righe(preordine, lettura.payload)
-    preordine.refresh_from_db()
     return JsonResponse({'status': 'success', 'created': True, 'preordine': _preordine_json(preordine, company)}, status=201)
 
 
@@ -551,25 +562,15 @@ def api_tabacchi_logista_invia(request):
     preordine = _preordine_per_logista(company, data.get('preordine_id'))
     if not preordine:
         return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
-    righe = righe_logista_payload(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
-    if not righe:
-        return JsonResponse({'status': 'error', 'error': 'Nessuna riga con quantità da caricare.'}, status=409)
-    scadi_job_bloccati(company)
-    attivo = LogistaInvioJob.objects.filter(company=company, stato=LogistaInvioJob.IN_CORSO).first()
-    if attivo:
-        return JsonResponse({
-            'status': 'error',
-            'error': 'C’è già un caricamento in corso su Logista.',
-            'job_id': attivo.id,
-        }, status=409)
-    job = LogistaInvioJob.objects.create(
-        company=company,
-        preordine=preordine,
-        creato_da=request.user,
-        svuota=bool(data.get('svuota')),
-        righe_inviate=len(righe),
+    job, rifiuto = crea_job(
+        company, preordine, request.user, bool(data.get('svuota')), LogistaInvioJob.ORIGINE_PAGINA,
     )
-    avvia_job(job, righe)
+    if rifiuto:
+        status, errore, attivo_id = rifiuto
+        body = {'status': 'error', 'error': errore}
+        if attivo_id:
+            body['job_id'] = attivo_id
+        return JsonResponse(body, status=status)
     return JsonResponse({'status': 'success', 'job_id': job.id, 'job': job_json(job)}, status=202)
 
 

@@ -26,6 +26,8 @@ services:
       - N8N_GRATTA_TOKEN=${N8N_GRATTA_TOKEN:-}
       - LOGISTA_SERVICE_URL=${LOGISTA_SERVICE_URL:-http://host.docker.internal:3501}
       - LOGISTA_SERVICE_KEY=${LOGISTA_SERVICE_KEY:-}
+      - N8N_TABACCHI_WEBHOOK_URL=${N8N_TABACCHI_WEBHOOK_URL:-}
+      - N8N_TABACCHI_TOKEN=${N8N_TABACCHI_TOKEN:-}
       - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
@@ -42,7 +44,7 @@ services:
     command: >
       sh -c "python manage.py migrate &&
              python manage.py ensure_admin &&
-             gunicorn --bind 0.0.0.0:8000 --timeout 300 cash_manager.wsgi:application"
+             gunicorn --bind 0.0.0.0:8000 --timeout 300 --threads 4 cash_manager.wsgi:application"
 
   telegram_bot:
     restart: unless-stopped

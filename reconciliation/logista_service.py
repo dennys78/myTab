@@ -28,6 +28,10 @@ DEFAULT_URL = 'http://host.docker.internal:3501'
 CARICA_TIMEOUT = 20 * 60
 SECONDI_PER_RIGA = 3
 JOB_SCADUTO = timedelta(minutes=25)
+N8N_TIMEOUT = 20
+N8N_TENTATIVI = 2
+FAMIGLIE_ALTRI = ('Dispositivi', 'Solidi')
+STATI_FINALI = (LogistaInvioJob.COMPLETATO, LogistaInvioJob.ATTESA_CONFERMA, LogistaInvioJob.ERRORE)
 
 
 class LogistaServiceError(RuntimeError):
@@ -142,6 +146,108 @@ def applica_risposta(job: LogistaInvioJob, data: dict) -> None:
     job.errore = f'Servizio Logista: esito non previsto ({esito or "vuoto"}).'
 
 
+def n8n_tabacchi_config():
+    url = os.environ.get('N8N_TABACCHI_WEBHOOK_URL', '').strip()
+    token = (
+        os.environ.get('N8N_TABACCHI_TOKEN', '').strip()
+        or os.environ.get('N8N_GRATTA_TOKEN', '').strip()
+    )
+    return url, token
+
+
+def riepilogo_preordine(preordine) -> dict:
+    if preordine is None:
+        return {'kg_tabacco': 0.0, 'pezzi_altri': 0, 'valore_stimato': 0.0}
+    pezzi_altri = sum(
+        int(riga.unita)
+        for riga in preordine.righe.filter(unita__gt=0, famiglia__in=FAMIGLIE_ALTRI)
+    )
+    return {
+        'kg_tabacco': float(preordine.kg or 0),
+        'pezzi_altri': pezzi_altri,
+        'valore_stimato': float(preordine.totale or 0),
+    }
+
+
+def _foto_base64(job: LogistaInvioJob) -> str:
+    if not job.foto_path:
+        return ''
+    path = Path(settings.MEDIA_ROOT) / job.foto_path
+    if not path.is_file():
+        return ''
+    return base64.b64encode(path.read_bytes()).decode('ascii')
+
+
+def payload_n8n(job: LogistaInvioJob) -> dict:
+    risultato = job.risultato or {}
+    proposta = risultato.get('proposta') or {}
+    payload = {
+        'evento': 'logista_caricato',
+        'job_id': job.id,
+        'stato': job.stato,
+        'origine': job.origine,
+        'righe_inviate': job.righe_inviate,
+        'inserite': risultato.get('inserite') or 0,
+        'rifiutate': risultato.get('rifiutate') or [],
+        'avvisi': risultato.get('avvisi') or [],
+        'proposta': {'tabacchi': proposta.get('tabacchi'), 'altri': proposta.get('altri')},
+        **riepilogo_preordine(job.preordine),
+    }
+    if job.stato == LogistaInvioJob.ATTESA_CONFERMA:
+        payload['righe_presenti'] = job.righe_presenti or 0
+    if job.stato == LogistaInvioJob.ERRORE:
+        payload['errore'] = job.errore
+    if job.stato == LogistaInvioJob.COMPLETATO:
+        payload['foto_jpeg_base64'] = _foto_base64(job)
+    return payload
+
+
+def notifica_n8n(job: LogistaInvioJob) -> bool:
+    """POST dell'esito a n8n (stesso header x-api-key del webhook Gratta). Errori solo loggati."""
+    if job.stato not in STATI_FINALI:
+        return False
+    url, token = n8n_tabacchi_config()
+    if not url:
+        return False
+    try:
+        raw = json.dumps(payload_n8n(job)).encode('utf-8')
+    except Exception:
+        logger.exception('notifica n8n tabacchi job %s: payload non costruibile', job.id)
+        return False
+    for tentativo in range(1, N8N_TENTATIVI + 1):
+        richiesta = urllib.request.Request(
+            url,
+            data=raw,
+            headers={
+                'Content-Type': 'application/json',
+                'x-api-key': token,
+                'User-Agent': 'myTaba-Tabacchi/1.0',
+            },
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(richiesta, timeout=N8N_TIMEOUT) as response:
+                response.read()
+            return True
+        except urllib.error.HTTPError as exc:
+            motivo = f'HTTP {exc.code}'
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            motivo = type(exc).__name__
+        logger.warning(
+            'notifica n8n tabacchi job %s fallita (tentativo %s/%s): %s',
+            job.id, tentativo, N8N_TENTATIVI, motivo,
+        )
+    return False
+
+
+def _notifica_sicura(job_id: int) -> None:
+    try:
+        job = LogistaInvioJob.objects.select_related('preordine').get(id=job_id)
+        notifica_n8n(job)
+    except Exception:
+        logger.exception('notifica n8n tabacchi job %s non riuscita', job_id)
+
+
 def esegui_job(job_id: int, righe: list) -> None:
     close_old_connections()
     try:
@@ -168,6 +274,7 @@ def esegui_job(job_id: int, righe: list) -> None:
             errore='Errore interno durante il caricamento su Logista.',
         )
     finally:
+        _notifica_sicura(job_id)
         close_old_connections()
 
 
@@ -184,11 +291,44 @@ def avvia_job(job: LogistaInvioJob, righe: list) -> threading.Thread:
 
 def scadi_job_bloccati(company) -> None:
     """Un riavvio del backend lascia job in_corso orfani: li chiude dopo 25 minuti."""
-    LogistaInvioJob.objects.filter(
+    orfani = list(LogistaInvioJob.objects.filter(
         company=company,
         stato=LogistaInvioJob.IN_CORSO,
         creato_il__lt=timezone.now() - JOB_SCADUTO,
-    ).update(stato=LogistaInvioJob.ERRORE, errore='Caricamento interrotto (nessuna risposta dal servizio).')
+    ).values_list('id', flat=True))
+    if not orfani:
+        return
+    LogistaInvioJob.objects.filter(id__in=orfani, stato=LogistaInvioJob.IN_CORSO).update(
+        stato=LogistaInvioJob.ERRORE,
+        errore='Caricamento interrotto (nessuna risposta dal servizio).',
+    )
+    if not n8n_tabacchi_config()[0]:
+        return
+    for job_id in orfani:
+        threading.Thread(
+            target=_notifica_sicura, args=(job_id,), daemon=True, name=f'logista-notifica-{job_id}',
+        ).start()
+
+
+def crea_job(company, preordine, user, svuota: bool, origine: str):
+    """Crea e avvia il job. Ritorna (job, None) oppure (None, (http_status, messaggio, job_attivo_id))."""
+    righe = righe_logista_payload(list(preordine.righe.filter(unita__gt=0).order_by('aams')))
+    if not righe:
+        return None, (409, 'Nessuna riga con quantità da caricare.', None)
+    scadi_job_bloccati(company)
+    attivo = LogistaInvioJob.objects.filter(company=company, stato=LogistaInvioJob.IN_CORSO).first()
+    if attivo:
+        return None, (409, 'C’è già un caricamento in corso su Logista.', attivo.id)
+    job = LogistaInvioJob.objects.create(
+        company=company,
+        preordine=preordine,
+        creato_da=user,
+        origine=origine,
+        svuota=bool(svuota),
+        righe_inviate=len(righe),
+    )
+    avvia_job(job, righe)
+    return job, None
 
 
 def job_json(job: LogistaInvioJob) -> dict:
@@ -197,6 +337,7 @@ def job_json(job: LogistaInvioJob) -> dict:
     return {
         'id': job.id,
         'stato': job.stato,
+        'origine': job.origine,
         'svuota': job.svuota,
         'preordine_id': job.preordine_id,
         'righe_inviate': job.righe_inviate,

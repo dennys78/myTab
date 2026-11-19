@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import ricevute_views
 from . import gratta_views
+from . import n8n_tabacchi_views
 from . import tabacchi_views
 from . import tabauno_portal
 
@@ -43,6 +44,8 @@ urlpatterns = [
     path('api/tabacchi/logista/invia/', tabacchi_views.api_tabacchi_logista_invia),
     path('api/tabacchi/logista/job/<int:job_id>/', tabacchi_views.api_tabacchi_logista_job),
     path('api/tabacchi/logista/job/<int:job_id>/foto/', tabacchi_views.api_tabacchi_logista_job_foto),
+    path('api/n8n/tabacchi/logista/avvia/', n8n_tabacchi_views.api_n8n_tabacchi_logista_avvia),
+    path('api/n8n/tabacchi/logista/job/<int:job_id>/', n8n_tabacchi_views.api_n8n_tabacchi_logista_job),
     path('api/closures/extract/',                   views.api_extract_closure),
     path('api/closures/list/',                      views.api_list_closures),
     path('api/closures/update/<int:closure_id>/',   views.api_update_closure),
