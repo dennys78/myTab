@@ -512,10 +512,17 @@ export default function OrdineTabacchi() {
               <span className="tab-logista-conteggi">
                 Codice ordine <strong>{job.codice_ordine || '—'}</strong> · Consegna <strong>{job.data_consegna || '—'}</strong>
               </span>
-              <span className="tab-logista-conteggi">Righe inserite {job.inserite ?? 0}/{job.righe_inviate}</span>
-              {(job.totali || []).map((riga, i) => (
+              {(job.kg_tabacco || job.pezzi_elettronici) && (
+                <span className="tab-logista-conteggi">
+                  Tabacco {job.kg_tabacco || '—'} kg · Altri prodotti {job.pezzi_elettronici || '0'} pz
+                </span>
+              )}
+              {job.totale_importo ? (
+                <span className="tab-logista-conteggi">Importo <strong>{job.totale_importo}</strong></span>
+              ) : (job.totali || []).map((riga, i) => (
                 <span key={i} className="tab-logista-conteggi">{riga}</span>
               ))}
+              <span className="tab-logista-conteggi">Righe inserite {job.inserite ?? 0}/{job.righe_inviate}</span>
             </div>
             {fotoLogista(job.foto_invio_url || job.foto_url, 'Conferma invio su WebT')}
           </div>
@@ -525,7 +532,23 @@ export default function OrdineTabacchi() {
         </div>
       );
     }
-    const incerto = job.fase === 'incerto' || /verificare su WebT/i.test(job.errore || '');
+    if (job.stato === 'incerto') {
+      return (
+        <div className="tab-logista warn">
+          <div className="tab-logista-head">
+            <div>
+              <p className="tab-logista-nota">
+                {job.avviso_incerto || "❓ Esito invio non confermato. L'ordine potrebbe essere già partito: NON reinviare, controlla su WebT (Report → ordini)."}
+              </p>
+              {job.errore && <p>{job.errore}</p>}
+            </div>
+            {fotoLogista(job.foto_invio_url || job.foto_url, 'Stato WebT')}
+          </div>
+          {elencoRifiutate(job)}
+          <div className="tab-logista-actions">{chiudiLogista}</div>
+        </div>
+      );
+    }
     const nienteCaricato = job.fase === 'caricamento' && !job.inserite;
     return (
       <div className={`tab-logista ${job.stato === 'errore' ? 'error' : 'warn'}`}>
@@ -534,9 +557,7 @@ export default function OrdineTabacchi() {
             <strong>⚠️ Ordine NON inviato</strong>
             {job.fase && <span className="tab-logista-conteggi">Fase: {job.fase}</span>}
             <p>{job.errore || 'Operazione su Logista non riuscita.'}</p>
-            {incerto ? (
-              <p className="tab-logista-nota">Esito incerto: verifica su WebT se l&apos;ordine è partito prima di reinviarlo.</p>
-            ) : !nienteCaricato && (
+            {!nienteCaricato && (
               <p className="tab-logista-nota">La proposta caricata è rimasta su WebT: controlla e invia a mano.</p>
             )}
           </div>

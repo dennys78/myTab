@@ -101,6 +101,16 @@ WSGI_APPLICATION = 'cash_manager.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'loggers': {
+        'reconciliation.logista_service': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'reconciliation.logista_telegram': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

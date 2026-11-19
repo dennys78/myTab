@@ -19,6 +19,7 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 
+from . import logista_telegram
 from .models import LogistaInvioJob
 from .tabacchi_preordine import righe_export_logista
 
@@ -38,7 +39,10 @@ STATI_IN_CORSO = LogistaInvioJob.STATI_IN_CORSO
 
 FASE_CARICAMENTO = 'caricamento'
 FASE_INVIO = 'invio'
-VERIFICA_WEBT = "verificare su WebT se l'ordine è partito prima di reinviarlo"
+TESTO_INCERTO = (
+    "❓ Esito invio non confermato. L'ordine potrebbe essere già partito: "
+    'NON reinviare, controlla su WebT (Report → ordini).'
+)
 
 
 class LogistaServiceError(RuntimeError):
@@ -193,20 +197,18 @@ def applica_invio(job: LogistaInvioJob, data: dict) -> None:
         job.errore = ''
         return
     if esito == 'bloccato':
+        # Il servizio risponde «bloccato» solo prima di Conferma: ordine sicuramente non partito.
         job.stato = LogistaInvioJob.NON_INVIATO
         job.fase = str(data.get('fase') or FASE_INVIO)[:32]
         job.errore = str(data.get('messaggio') or 'Invio bloccato su WebT.')[:2000]
         return
-    if esito == 'incerto':
-        job.stato = LogistaInvioJob.NON_INVIATO
-        job.fase = 'incerto'
-        messaggio = str(data.get('messaggio') or 'Esito dell\'invio non verificabile.').strip()
-        job.errore = f'{messaggio} — Esito INCERTO: {VERIFICA_WEBT}.'[:2000]
-        return
-    job.stato = LogistaInvioJob.ERRORE
+    job.stato = LogistaInvioJob.INCERTO
     job.fase = FASE_INVIO
-    dettaglio = data.get('errore') or f'esito non previsto ({esito or "vuoto"})'
-    job.errore = f'Invio non confermato: {dettaglio}. Da {VERIFICA_WEBT}.'[:2000]
+    if esito == 'incerto':
+        job.errore = str(data.get('messaggio') or 'Esito dell\'invio non letto.').strip()[:2000]
+    else:
+        dettaglio = data.get('errore') or f'esito non previsto ({esito or "vuoto"})'
+        job.errore = f'Risposta del servizio: {dettaglio}'[:2000]
 
 
 def n8n_tabacchi_config():
@@ -270,28 +272,34 @@ def payload_n8n(job: LogistaInvioJob) -> dict:
         payload['codice_ordine'] = job.codice_ordine
         payload['data_consegna'] = job.data_consegna_logista
         payload['totali'] = invio.get('totali') or []
-    if job.stato in (LogistaInvioJob.NON_INVIATO, LogistaInvioJob.ERRORE):
+        for campo in ('kg_tabacco', 'pezzi_elettronici', 'totale_importo'):
+            if invio.get(campo):
+                payload[f'logista_{campo}'] = str(invio[campo])
+    if job.stato in (LogistaInvioJob.NON_INVIATO, LogistaInvioJob.INCERTO, LogistaInvioJob.ERRORE):
         payload['fase'] = job.fase
         payload['errore'] = job.errore
-    if job.stato in (LogistaInvioJob.INVIATO, LogistaInvioJob.NON_INVIATO):
+    if job.stato == LogistaInvioJob.INCERTO:
+        payload['avviso'] = TESTO_INCERTO
+    if job.stato in (LogistaInvioJob.INVIATO, LogistaInvioJob.NON_INVIATO, LogistaInvioJob.INCERTO):
         foto = foto_esito(job)
         if foto:
             payload['foto_jpeg_base64'] = base64.b64encode(foto).decode('ascii')
     return payload
 
 
-def notifica_n8n(job: LogistaInvioJob) -> bool:
+def notifica_n8n(job: LogistaInvioJob) -> dict:
     """POST dell'esito a n8n (stesso header x-api-key del webhook Gratta). Errori solo loggati."""
     if job.stato not in STATI_FINALI:
-        return False
+        return {'ok': False, 'motivo': 'job non concluso'}
     url, token = n8n_tabacchi_config()
     if not url:
-        return False
+        return {'ok': False, 'motivo': 'N8N_TABACCHI_WEBHOOK_URL non impostato'}
     try:
         raw = json.dumps(payload_n8n(job)).encode('utf-8')
     except Exception:
         logger.exception('notifica n8n tabacchi job %s: payload non costruibile', job.id)
-        return False
+        return {'ok': False, 'motivo': 'payload non costruibile'}
+    tentativi = []
     for tentativo in range(1, N8N_TENTATIVI + 1):
         richiesta = urllib.request.Request(
             url,
@@ -303,19 +311,24 @@ def notifica_n8n(job: LogistaInvioJob) -> bool:
             },
             method='POST',
         )
+        http = None
         try:
             with urllib.request.urlopen(richiesta, timeout=N8N_TIMEOUT) as response:
                 response.read()
-            return True
+                http = getattr(response, 'status', 200)
+            tentativi.append({'ok': True, 'http': http})
+            logger.info('notifica n8n tabacchi job %s OK HTTP %s', job.id, http)
+            return {'ok': True, 'tentativi': tentativi}
         except urllib.error.HTTPError as exc:
-            motivo = f'HTTP {exc.code}'
+            http, motivo = exc.code, f'HTTP {exc.code}'
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             motivo = type(exc).__name__
+        tentativi.append({'ok': False, 'http': http, 'dettaglio': motivo})
         logger.warning(
             'notifica n8n tabacchi job %s fallita (tentativo %s/%s): %s',
             job.id, tentativo, N8N_TENTATIVI, motivo,
         )
-    return False
+    return {'ok': False, 'tentativi': tentativi}
 
 
 def _kg_testo(kg: float) -> str:
@@ -335,80 +348,68 @@ def _righe_rifiutate(job: LogistaInvioJob) -> list[str]:
     return out
 
 
-def testo_telegram(job: LogistaInvioJob) -> str:
-    riepilogo = riepilogo_preordine(job.preordine)
-    risultato = job.risultato or {}
+def _con_rifiutate(righe: list[str], job: LogistaInvioJob) -> str:
     rifiutate = _righe_rifiutate(job)
-    if job.stato == LogistaInvioJob.INVIATO:
-        totali = [str(t).strip() for t in (_invio(job).get('totali') or []) if str(t).strip()]
-        importo = ' · '.join(totali) if totali else f"{_euro_testo(riepilogo['valore_stimato'])} (stima myTaba)"
-        righe = [
-            '✅ Ordine Logista INVIATO',
-            f"Codice ordine: {job.codice_ordine or '—'}   Consegna: {job.data_consegna_logista or '—'}",
-            f"Tabacco: {_kg_testo(riepilogo['kg_tabacco'])} kg · Altri prodotti: {riepilogo['pezzi_altri']} pz",
-            f'Importo: {importo}',
-            f"Righe inserite: {risultato.get('inserite') or 0}/{job.righe_inviate}",
-        ]
-        if rifiutate:
-            righe.append('Righe rifiutate:')
-            righe.extend(rifiutate)
-        return '\n'.join(righe)
-
-    if job.stato == LogistaInvioJob.ATTESA_CONFERMA:
-        fase = FASE_CARICAMENTO
-        motivo = f'su WebT c\'è già una proposta con {job.righe_presenti or 0} righe.'
-        chiusura = 'Apri Ordine Tabacchi in myTaba e scegli «Svuota e carica».'
-    else:
-        fase = job.fase or FASE_CARICAMENTO
-        motivo = job.errore or 'motivo non disponibile'
-        if fase == 'incerto':
-            chiusura = f'ATTENZIONE: {VERIFICA_WEBT}.'
-        elif fase == FASE_CARICAMENTO and not risultato.get('inserite'):
-            chiusura = 'Nessun ordine inviato: controlla la proposta su WebT.'
-        else:
-            chiusura = 'La proposta caricata è rimasta su WebT: controlla e invia a mano.'
-    righe = [
-        '⚠️ Ordine Logista NON inviato',
-        f'Fase: {fase}  Motivo: {motivo}',
-        chiusura,
-    ]
     if rifiutate:
         righe.append('Righe rifiutate:')
         righe.extend(rifiutate)
     return '\n'.join(righe)
 
 
-def notifica_telegram(job: LogistaInvioJob) -> int:
-    """Riepilogo sul bot Telegram di myTaba (stesse chat delle altre notifiche)."""
-    from .draft_notifications import (
-        _get_telegram_chat_ids,
-        _get_telegram_token,
-        _send_telegram_message,
-        send_telegram_photo,
-    )
+def testo_telegram(job: LogistaInvioJob) -> str:
+    riepilogo = riepilogo_preordine(job.preordine)
+    risultato = job.risultato or {}
+    invio = _invio(job)
+    if job.stato == LogistaInvioJob.INVIATO:
+        kg = str(invio.get('kg_tabacco') or '').strip() or _kg_testo(riepilogo['kg_tabacco'])
+        pezzi = str(invio.get('pezzi_elettronici') or '').strip() or str(riepilogo['pezzi_altri'])
+        importo = str(invio.get('totale_importo') or '').strip()
+        if not importo:
+            totali = [str(t).strip() for t in (invio.get('totali') or []) if str(t).strip()]
+            importo = ' · '.join(totali) if totali else f"{_euro_testo(riepilogo['valore_stimato'])} (stima myTaba)"
+        return _con_rifiutate([
+            '✅ Ordine Logista INVIATO',
+            f"Codice ordine: {job.codice_ordine or '—'}   Consegna: {job.data_consegna_logista or '—'}",
+            f'Tabacco: {kg} kg · Altri prodotti: {pezzi} pz',
+            f'Importo: {importo}',
+            f"Righe inserite: {risultato.get('inserite') or 0}/{job.righe_inviate}",
+        ], job)
 
+    if job.stato == LogistaInvioJob.INCERTO:
+        righe = [TESTO_INCERTO]
+        if job.errore:
+            righe.append(f'Dettaglio: {job.errore}')
+        return _con_rifiutate(righe, job)
+
+    if job.stato == LogistaInvioJob.ATTESA_CONFERMA:
+        fase = FASE_CARICAMENTO
+        motivo = f'su WebT c\'è già una proposta con {job.righe_presenti or 0} righe.'
+        chiusura = 'Apri Ordine Tabacchi in myTaba e scegli «Svuota, carica e invia».'
+    else:
+        fase = job.fase or FASE_CARICAMENTO
+        motivo = job.errore or 'motivo non disponibile'
+        if fase == FASE_CARICAMENTO and not risultato.get('inserite'):
+            chiusura = 'Nessun ordine inviato: controlla la proposta su WebT.'
+        else:
+            chiusura = 'La proposta caricata è rimasta su WebT: controlla e invia a mano.'
+    return _con_rifiutate([
+        '⚠️ Ordine Logista NON inviato',
+        f'Fase: {fase}  Motivo: {motivo}',
+        chiusura,
+    ], job)
+
+
+def notifica_telegram(job: LogistaInvioJob) -> dict:
+    """Riepilogo sul bot Telegram di myTaba (stesso token e stesse chat delle altre notifiche)."""
     if job.stato not in STATI_FINALI:
-        return 0
-    token = _get_telegram_token(job.company)
-    if not token:
-        return 0
-    testo = testo_telegram(job)
-    foto = foto_esito(job)
-    inviati = 0
-    for chat_id in _get_telegram_chat_ids(job.company):
-        try:
-            if foto and len(testo) <= TELEGRAM_CAPTION_MAX:
-                ok = send_telegram_photo(token, chat_id, foto, caption=testo)
-            else:
-                ok = _send_telegram_message(token, chat_id, testo)
-                if ok and foto:
-                    send_telegram_photo(token, chat_id, foto)
-            if not ok and foto:
-                ok = _send_telegram_message(token, chat_id, testo)
-            inviati += int(bool(ok))
-        except Exception as exc:
-            logger.warning('Telegram esito Logista job %s fallito per chat %s: %s', job.id, chat_id, type(exc).__name__)
-    return inviati
+        return {'ok': False, 'motivo': 'job non concluso'}
+    return logista_telegram.notifica(
+        job.company,
+        testo_telegram(job),
+        foto_esito(job),
+        etichetta=f'job Logista {job.id}',
+        caption_max=TELEGRAM_CAPTION_MAX,
+    )
 
 
 def _notifica_sicura(job_id: int) -> None:
@@ -417,17 +418,25 @@ def _notifica_sicura(job_id: int) -> None:
     except Exception:
         logger.exception('notifiche job Logista %s: job non leggibile', job_id)
         return
-    for notifica in (notifica_telegram, notifica_n8n):
+    esito = {'quando': timezone.localtime().isoformat(timespec='seconds'), 'stato': job.stato}
+    for nome, notifica in (('telegram', notifica_telegram), ('n8n', notifica_n8n)):
         try:
-            notifica(job)
-        except Exception:
-            logger.exception('notifica %s job Logista %s non riuscita', notifica.__name__, job_id)
-
-
-def _errore_invio(exc: LogistaServiceError) -> str:
-    if exc.sicuro:
-        return f'Ordine NON inviato: {exc}'
-    return f'Invio non confermato: {exc} Da {VERIFICA_WEBT}.'
+            esito[nome] = notifica(job)
+        except Exception as exc:
+            logger.exception('notifica %s job Logista %s non riuscita', nome, job_id)
+            esito[nome] = {'ok': False, 'motivo': f'eccezione {type(exc).__name__}'}
+    telegram = esito.get('telegram') or {}
+    logger.info(
+        'notifiche job Logista %s (%s): telegram %s%s, n8n %s',
+        job_id, job.stato,
+        'OK' if telegram.get('ok') else 'NON consegnata',
+        f" ({telegram.get('motivo')})" if telegram.get('motivo') else '',
+        'OK' if (esito.get('n8n') or {}).get('ok') else (esito.get('n8n') or {}).get('motivo', 'fallita'),
+    )
+    try:
+        LogistaInvioJob.objects.filter(id=job_id).update(notifica_esito=esito)
+    except Exception:
+        logger.exception('job Logista %s: esito notifica non salvato', job_id)
 
 
 def esegui_job(job_id: int, righe: list) -> None:
@@ -459,18 +468,21 @@ def esegui_job(job_id: int, righe: list) -> None:
         try:
             esito = posta_invia(url, key)
         except LogistaServiceError as exc:
-            job.stato = LogistaInvioJob.ERRORE
-            job.errore = _errore_invio(exc)
+            job.stato = LogistaInvioJob.NON_INVIATO if exc.sicuro else LogistaInvioJob.INCERTO
+            job.errore = str(exc)
             job.save()
             return
         applica_invio(job, esito)
         job.save()
     except Exception:
         logger.exception('job Logista %s fallito', job_id)
-        LogistaInvioJob.objects.filter(id=job_id).update(
-            stato=LogistaInvioJob.ERRORE,
-            errore=f'Errore interno durante il job Logista: {VERIFICA_WEBT}.',
+        in_invio = LogistaInvioJob.objects.filter(id=job_id, stato=LogistaInvioJob.IN_CORSO_INVIO).update(
+            stato=LogistaInvioJob.INCERTO, errore='Errore interno durante l\'invio.',
         )
+        if not in_invio:
+            LogistaInvioJob.objects.filter(id=job_id).exclude(stato__in=STATI_FINALI).update(
+                stato=LogistaInvioJob.ERRORE, errore='Errore interno durante il caricamento.',
+            )
     finally:
         _notifica_sicura(job_id)
         close_old_connections()
@@ -497,10 +509,10 @@ def scadi_job_bloccati(company) -> None:
         return
     for job_id, stato in orfani:
         if stato == LogistaInvioJob.IN_CORSO_INVIO:
-            errore = f'Invio interrotto senza risposta: {VERIFICA_WEBT}.'
+            nuovo, errore = LogistaInvioJob.INCERTO, 'Invio interrotto senza risposta dal servizio.'
         else:
-            errore = 'Caricamento interrotto (nessuna risposta dal servizio).'
-        LogistaInvioJob.objects.filter(id=job_id, stato=stato).update(stato=LogistaInvioJob.ERRORE, errore=errore)
+            nuovo, errore = LogistaInvioJob.ERRORE, 'Caricamento interrotto (nessuna risposta dal servizio).'
+        LogistaInvioJob.objects.filter(id=job_id, stato=stato).update(stato=nuovo, errore=errore)
     for job_id, _stato in orfani:
         threading.Thread(
             target=_notifica_sicura, args=(job_id,), daemon=True, name=f'logista-notifica-{job_id}',
@@ -558,6 +570,11 @@ def job_json(job: LogistaInvioJob) -> dict:
         'data_consegna': job.data_consegna_logista,
         'totali': invio.get('totali') or [],
         'conferma': invio.get('conferma') or '',
+        'kg_tabacco': str(invio.get('kg_tabacco') or ''),
+        'pezzi_elettronici': str(invio.get('pezzi_elettronici') or ''),
+        'totale_importo': str(invio.get('totale_importo') or ''),
+        'avviso_incerto': TESTO_INCERTO if job.stato == LogistaInvioJob.INCERTO else '',
+        'notifica_esito': job.notifica_esito,
         'foto_url': base if job.foto_path else None,
         'foto_invio_url': f'{base}?tipo=invio' if job.foto_invio_path else None,
         'errore': job.errore,

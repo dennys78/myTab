@@ -197,6 +197,9 @@ class LogistaApiTests(TestCase):
             'data_consegna': '23/11/2026',
             'conferma': 'Ordine inviato',
             'totali': ['Totale con IVA: 522,00 €'],
+            'kg_tabacco': '1,800',
+            'pezzi_elettronici': '4',
+            'totale_importo': '522,00 €',
             'passi': ['riepilogo', 'invio'],
             'foto_jpeg_base64': base64.b64encode(foto_invio).decode(),
         }))
@@ -213,6 +216,10 @@ class LogistaApiTests(TestCase):
         self.assertEqual(job['codice_ordine'], 'ORD-123')
         self.assertEqual(job['data_consegna'], '23/11/2026')
         self.assertEqual(job['totali'], ['Totale con IVA: 522,00 €'])
+        self.assertEqual(job['totale_importo'], '522,00 €')
+        self.assertEqual(job['kg_tabacco'], '1,800')
+        self.assertEqual(job['pezzi_elettronici'], '4')
+        self.assertEqual(job['avviso_incerto'], '')
         self.assertEqual(job['inserite'], 1)
         self.assertEqual(job['rifiutate'][0]['errore'], 'Codice non ordinabile')
         salvato = LogistaInvioJob.objects.get(id=job_id)
@@ -238,9 +245,9 @@ class LogistaApiTests(TestCase):
         }))
         self.assertEqual(urlopen.call_count, 2)
         job = self._job(job_id)
-        self.assertEqual(job['stato'], LogistaInvioJob.NON_INVIATO)
-        self.assertEqual(job['fase'], 'incerto')
-        self.assertIn('verificare su WebT', job['errore'])
+        self.assertEqual(job['stato'], LogistaInvioJob.INCERTO)
+        self.assertEqual(job['errore'], 'Pagina di conferma non trovata')
+        self.assertIn('NON reinviare', job['avviso_incerto'])
 
     def test_errore_http_invio_nessun_retry(self):
         job_id, urlopen = self._esegui(
@@ -248,23 +255,22 @@ class LogistaApiTests(TestCase):
         )
         self.assertEqual(urlopen.call_count, 2)
         job = self._job(job_id)
-        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
+        self.assertEqual(job['stato'], LogistaInvioJob.INCERTO)
         self.assertEqual(job['fase'], 'invio')
         self.assertIn('Sessione scaduta', job['errore'])
-        self.assertIn('verificare su WebT', job['errore'])
 
     def test_timeout_invio_esito_incerto(self):
         job_id, urlopen = self._esegui(_risposta(CARICATO), urllib.error.URLError(TimeoutError('timed out')))
         self.assertEqual(urlopen.call_count, 2)
         job = self._job(job_id)
-        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
-        self.assertIn('verificare su WebT', job['errore'])
+        self.assertEqual(job['stato'], LogistaInvioJob.INCERTO)
+        self.assertIn('tempo scaduto', job['errore'])
 
     def test_occupato_su_invio_non_inviato_certo(self):
         job_id, _ = self._esegui(_risposta(CARICATO), _http_error(409, {'errore': 'occupato'}))
         job = self._job(job_id)
-        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
-        self.assertTrue(job['errore'].startswith('Ordine NON inviato'))
+        self.assertEqual(job['stato'], LogistaInvioJob.NON_INVIATO)
+        self.assertIn('occupato', job['errore'])
 
     def test_inserite_zero_non_invia(self):
         job_id, urlopen = self._esegui(_risposta(CARICATO | {'inserite': 0}))

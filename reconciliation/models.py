@@ -615,6 +615,7 @@ class LogistaInvioJob(models.Model):
     ATTESA_CONFERMA = 'attesa_conferma'
     INVIATO = 'inviato'
     NON_INVIATO = 'non_inviato'
+    INCERTO = 'incerto'
     ERRORE = 'errore'
     STATO_CHOICES = [
         (IN_CORSO_CARICAMENTO, 'Caricamento righe'),
@@ -622,10 +623,11 @@ class LogistaInvioJob(models.Model):
         (ATTESA_CONFERMA, 'Attesa conferma'),
         (INVIATO, 'Inviato'),
         (NON_INVIATO, 'Non inviato'),
+        (INCERTO, 'Esito incerto'),
         (ERRORE, 'Errore'),
     ]
     STATI_IN_CORSO = (IN_CORSO_CARICAMENTO, IN_CORSO_INVIO)
-    STATI_FINALI = (ATTESA_CONFERMA, INVIATO, NON_INVIATO, ERRORE)
+    STATI_FINALI = (ATTESA_CONFERMA, INVIATO, NON_INVIATO, INCERTO, ERRORE)
     ORIGINE_PAGINA = 'pagina'
     ORIGINE_TELEGRAM = 'telegram'
     ORIGINE_CHOICES = [
@@ -643,6 +645,7 @@ class LogistaInvioJob(models.Model):
     codice_ordine = models.CharField(max_length=64, blank=True, default='')
     data_consegna_logista = models.CharField(max_length=16, blank=True, default='')
     foto_invio_path = models.CharField(max_length=255, blank=True, default='')
+    notifica_esito = models.JSONField(null=True, blank=True)
     origine = models.CharField(max_length=16, choices=ORIGINE_CHOICES, default=ORIGINE_PAGINA)
     svuota = models.BooleanField(default=False)
     creato_il = models.DateTimeField(auto_now_add=True)

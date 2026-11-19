@@ -7,7 +7,6 @@ import logging
 import os
 import urllib.parse
 import urllib.request
-import uuid
 
 from django.contrib.auth.models import User
 
@@ -165,32 +164,6 @@ def _send_telegram_message(token, chat_id, text):
         method='POST',
     )
     with urllib.request.urlopen(req, timeout=8) as response:
-        return response.status == 200
-
-
-def send_telegram_photo(token, chat_id, jpeg_bytes, caption=''):
-    boundary = f'----myTaba{uuid.uuid4().hex}'
-    parti = []
-    campi = {'chat_id': str(chat_id)}
-    if caption:
-        campi['caption'] = caption
-    for nome, valore in campi.items():
-        parti.append(
-            f'--{boundary}\r\nContent-Disposition: form-data; name="{nome}"\r\n\r\n{valore}\r\n'.encode('utf-8')
-        )
-    parti.append(
-        f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="logista.jpg"\r\n'
-        'Content-Type: image/jpeg\r\n\r\n'.encode('utf-8')
-    )
-    parti.append(jpeg_bytes)
-    parti.append(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
-    req = urllib.request.Request(
-        f'https://api.telegram.org/bot{token}/sendPhoto',
-        data=b''.join(parti),
-        headers={'Content-Type': f'multipart/form-data; boundary={boundary}'},
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=30) as response:
         return response.status == 200
 
 
