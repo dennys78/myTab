@@ -6,7 +6,7 @@ const FILTRI = [
   { id: 'tutti', label: 'In elenco' },
   { id: 'immancabile', label: 'Immancabili' },
   { id: 'esaurito', label: 'Esaurito' },
-  { id: 'prima_consegna', label: 'Prima dell’ordine' },
+  { id: 'prima_consegna', label: 'Prima ordine' },
   { id: 'rischio', label: 'Rischio' },
 ];
 const SOGLIE_MINIME = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -196,8 +196,8 @@ export default function StatisticheGiacenze() {
     return ordinamento.direzione === 'asc' ? ' ↑' : ' ↓';
   };
 
-  const intestazione = (chiave, titolo, sotto = '') => (
-    <th className={chiave === 'descrizione' ? 'gia-col-articolo' : 'gia-col-num'}>
+  const intestazione = (chiave, titolo, sotto = '', classe = 'gia-col-num') => (
+    <th className={classe}>
       <button
         type="button"
         className={`tab-sort gia-sort ${ordinamento.chiave === chiave ? 'active' : ''}`}
@@ -275,46 +275,37 @@ export default function StatisticheGiacenze() {
                 ))}
               </select>
             </div>
-            <div className="tab-control gia-control-filtri">
-              <span className="tab-label">Filtra</span>
-              <div className="gia-filtri" role="group" aria-label="Filtra per stato">
-                {FILTRI.map(filtro => (
-                  <button
-                    key={filtro.id}
-                    type="button"
-                    className={`tab-btn gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
-                    onClick={() => setFiltroStato(filtro.id)}
-                  >
-                    {filtro.label}
-                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          </div>
+
+          <div className="gia-filtri" role="group" aria-label="Filtra per stato">
+            {FILTRI.map(filtro => (
+              <button
+                key={filtro.id}
+                type="button"
+                className={`gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
+                onClick={() => setFiltroStato(filtro.id)}
+              >
+                <span className="gia-filtro-label">{filtro.label}</span>
+                <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+              </button>
+            ))}
           </div>
 
           <div className="tab-table-wrap gia-table-wrap">
             <table className="tab-table gia-table">
               <thead>
                 <tr>
-                  {intestazione('descrizione', 'Articolo')}
                   {intestazione('giacenza', 'Giacenza', 'oggi')}
                   {intestazione('media', 'Media', 'pz/giorno')}
                   {intestazione('venduto_4_settimane', 'Venduto', '4 settimane')}
                   {intestazione('data_fine', 'Fine stimata per il')}
                   {intestazione('alla_data', 'Stimati', formattaChiusura(analisi.data_proiezione))}
-                  {intestazione('stato', 'Stato')}
+                  {intestazione('stato', 'Stato', '', 'gia-col-stato')}
                 </tr>
               </thead>
               <tbody>
                 {righe.map(riga => (
                   <tr key={riga.aams} className={`gia-row gia-${riga.immancabile ? 'immancabile' : riga.stato}`}>
-                    <td className="gia-col-articolo">
-                      <div className="tab-articolo">
-                        <span className="tab-aams">{riga.aams}</span>
-                        <span className="tab-nome">{riga.descrizione}</span>
-                      </div>
-                    </td>
                     <td className="gia-col-num">{formattaNumero(riga.giacenza, 0)}</td>
                     <td className="gia-col-num">{formattaNumero(riga.media, 1)}</td>
                     <td className="gia-col-num">
@@ -337,7 +328,7 @@ export default function StatisticheGiacenze() {
                 ))}
                 {!righe.length && (
                   <tr>
-                    <td colSpan={7} className="tab-empty-cell">
+                    <td colSpan={6} className="tab-empty-cell">
                       Nessun articolo con giacenza stimata ≤ {sogliaMinima} pz
                       {filtroStato !== 'tutti' ? ' per questo filtro' : ''}.
                     </td>
