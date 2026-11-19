@@ -276,7 +276,6 @@ export default function StatisticheGiacenze() {
               </select>
             </div>
             <div className="tab-control gia-control-filtri">
-              <span className="tab-label">Filtra</span>
               <div className="gia-filtri" role="group" aria-label="Filtra per stato">
                 {FILTRI.map(filtro => (
                   <button
