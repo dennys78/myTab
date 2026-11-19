@@ -227,33 +227,13 @@ export default function StatisticheGiacenze() {
               : 'Vendite delle ultime 4 settimane · proiezione giacenze'}
           </p>
         </div>
-        <div className="tab-header-actions">
-          <button
-            type="button"
-            className="tab-btn primary gia-btn-leggi"
-            onClick={leggi}
-            disabled={attesa || online !== true}
-            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
-          >
-            <Wifi size={16} aria-hidden="true" />
-            {attesa ? 'Lettura…' : analisi ? 'Aggiorna da PC' : 'Leggi da PC'}
-          </button>
-        </div>
       </header>
 
       {errore && <div className="tab-error">{errore}</div>}
 
-      {!analisi && !attesa && (
-        <p className="tab-empty">
-          {online === true
-            ? 'Premi «Leggi da PC» per caricare le giacenze.'
-            : 'Il PC remoto non è raggiungibile: avvia TabaUnoAgent e riprova.'}
-        </p>
-      )}
-
-      {analisi && (
-        <>
-          <div className="tab-controls gia-controls">
+      <div className="tab-controls gia-controls">
+        {analisi && (
+          <>
             <div className="tab-control">
               <span className="tab-label">Giacenza stimata al</span>
               <input
@@ -291,7 +271,33 @@ export default function StatisticheGiacenze() {
                 ))}
               </div>
             </div>
-          </div>
+          </>
+        )}
+        <div className="tab-control gia-control-leggi">
+          <button
+            type="button"
+            className="tab-btn primary gia-btn-leggi"
+            onClick={leggi}
+            disabled={attesa || online !== true}
+            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+          >
+            <Wifi size={16} aria-hidden="true" />
+            {attesa ? 'Lettura…' : analisi ? 'Aggiorna da PC' : 'Leggi da PC'}
+          </button>
+        </div>
+      </div>
+
+      {!analisi && !attesa && (
+        <p className="tab-empty">
+          {online === true
+            ? 'Premi «Leggi da PC» per caricare le giacenze.'
+            : 'Il PC remoto non è raggiungibile: avvia TabaUnoAgent e riprova.'}
+        </p>
+      )}
+
+      {analisi && (
+        <>
+          <div className="gia-sep" aria-hidden="true" />
 
           <div className="tab-table-wrap gia-table-wrap">
             <table className="tab-table gia-table">

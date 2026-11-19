@@ -3343,16 +3343,33 @@ tbody tr:hover {
 }
 
 .gia-btn-leggi {
-  min-width: 10.5rem;
+  box-sizing: border-box;
+  height: var(--gia-control-h);
+  min-height: var(--gia-control-h);
+  min-width: 9.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
   box-shadow: 0 1px 2px rgba(31, 106, 90, 0.18);
 }
 
 .gia-btn-leggi:hover:not(:disabled) {
   filter: brightness(1.05);
+}
+
+.gia-control-leggi {
+  margin-left: auto;
+  align-self: flex-end;
+}
+
+.gia-sep {
+  height: 0;
+  margin: 0.85rem 0 0.95rem;
+  border: 0;
+  border-top: 1px solid rgba(31, 106, 90, 0.18);
 }
 
 .gia-page .gia-controls {
