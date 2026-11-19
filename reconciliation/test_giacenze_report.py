@@ -7,13 +7,19 @@ from django.test import TestCase
 from django.utils import timezone
 
 from reconciliation.giacenze_report import (
+    _parti_report,
+    blocco_articolo,
     corpo_da_lettura,
     costruisci_testo,
     escape_html,
     formatta_data_corta,
+    formatta_giorno_relativo,
+    giacenza_mostrata,
     messaggio_indisponibile,
+    nome_articolo,
     sezioni_report,
-    spezza_messaggi,
+    sezioni_testo,
+    spezza_messaggi_strutturati,
 )
 from reconciliation.giacenze_stats import ESAURITO, FERMO, OK, PRIMA_CONSEGNA, RISCHIO
 from reconciliation.models import Company, TabaUnoAgent, TabaUnoRequest
@@ -28,14 +34,19 @@ ENV = {
 def _righe_esempio():
     return [
         {
-            'aams': '1', 'descrizione': 'MARLBORO GOLD', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
+            'aams': '1', 'descrizione': 'MARLBORO GOLD DA 20 A.', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
             'giacenza': 0, 'media': 3.2, 'stato': ESAURITO, 'immancabile': True,
             'giorni_fine': 0, 'data_fine': None, 'mancanti_alla_data': 13,
         },
         {
-            'aams': '2', 'descrizione': 'CAMEL BLUE', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
+            'aams': '2', 'descrizione': 'CAMEL BLUE DA 20', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
             'giacenza': 4, 'media': 1.8, 'stato': PRIMA_CONSEGNA, 'immancabile': True,
             'giorni_fine': 2, 'data_fine': '2026-11-21', 'mancanti_alla_data': 3,
+        },
+        {
+            'aams': '7', 'descrizione': 'VEEV ONE STRAWBERRY 1.8%', 'famiglia': 'Dispositivi', 'tipo': 'dispositivo',
+            'giacenza': -2, 'media': 0.6, 'stato': ESAURITO, 'immancabile': False,
+            'giorni_fine': 0, 'data_fine': None, 'mancanti_alla_data': 3,
         },
         {
             'aams': '3', 'descrizione': 'LENTO', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
@@ -53,7 +64,7 @@ def _righe_esempio():
             'giorni_fine': None, 'data_fine': None, 'mancanti_alla_data': 0,
         },
         {
-            'aams': '6', 'descrizione': 'DEBole', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
+            'aams': '6', 'descrizione': 'DEBOLE', 'famiglia': 'Sigarette', 'tipo': 'tabacco',
             'giacenza': 1, 'media': 0.4, 'stato': PRIMA_CONSEGNA, 'immancabile': False,
             'giorni_fine': 1, 'data_fine': '2026-11-20', 'mancanti_alla_data': 2,
         },
@@ -61,57 +72,130 @@ def _righe_esempio():
 
 
 class SezioniReportTests(TestCase):
-    def test_immancabili_e_prima_di_lunedi(self):
+    def test_tre_sezioni_e_api_compat(self):
+        esaurite, in_esa, altre = sezioni_testo({'righe': _righe_esempio()})
+        self.assertEqual([r['aams'] for r in esaurite], ['1'])
+        self.assertEqual([r['aams'] for r in in_esa], ['2'])
+        # Sigarette prima di Dispositivi; dentro Sigarette per data_fine
+        self.assertEqual([r['aams'] for r in altre], ['6', '3', '7'])
+
         imm, prima = sezioni_report({'righe': _righe_esempio()})
-        self.assertEqual([r['aams'] for r in imm], ['1', '2'])  # esaurito prima di prima_consegna
-        self.assertEqual([r['aams'] for r in prima], ['6', '3'])  # per data_fine; media 0 esclusa; OK escluso
+        self.assertEqual([r['aams'] for r in imm], ['1', '2'])
+        self.assertEqual([r['aams'] for r in prima], ['6', '3', '7'])
         self.assertTrue(all(r['media'] > 0 for r in imm + prima))
 
 
 class FormattazioneReportTests(TestCase):
-    def test_data_corta_e_escape(self):
-        # 2026-11-19 = giovedì, 2026-11-20 = venerdì
-        self.assertEqual(formatta_data_corta(date(2026, 11, 19)), 'gio 19/11')
-        self.assertEqual(formatta_data_corta(date(2026, 11, 20)), 'ven 20/11')
+    def test_nome_e_giacenza(self):
+        self.assertEqual(nome_articolo('BLENDS SILVER CLASSICS DA 20 A.'), 'Blends Silver Classics')
+        self.assertEqual(nome_articolo('CAMEL BLUE DA 20'), 'Camel Blue')
+        self.assertEqual(nome_articolo('201 CHESTERFIELD BLUE', aams='201'), 'Chesterfield Blue')
+        self.assertEqual(nome_articolo('PLN99 VEEV ONE STRAWBERRY 1.8%'), 'Veev One Strawberry 1.8%')
+        lungo = nome_articolo('ABCDEFGHIJKLMNOPQRSTUVWXYZ EXTRA LUNGO')
+        self.assertLessEqual(len(lungo), 32)
+        self.assertEqual(giacenza_mostrata(-4), 0)
+        self.assertEqual(giacenza_mostrata(15.0), 15)
+
+    def test_data_corta_e_relativa(self):
+        oggi = date(2026, 11, 20)  # ven
+        self.assertEqual(formatta_data_corta(oggi), 'ven 20/11')
+        self.assertEqual(formatta_giorno_relativo(date(2026, 11, 21), oggi), 'sab')
+        self.assertEqual(formatta_giorno_relativo(date(2026, 12, 5), oggi), '05/12')
         self.assertEqual(escape_html('A <B> & C'), 'A &lt;B&gt; &amp; C')
 
-    def test_testo_sezioni_e_vuoto(self):
-        oggi = date(2026, 11, 19)  # gio
-        lunedi = date(2026, 11, 24)
-        consegna = date(2026, 11, 24)
-        imm, prima = sezioni_report({'righe': _righe_esempio()})
+    def test_testo_nuovo_formato(self):
+        oggi = date(2026, 11, 20)
+        lunedi = date(2026, 11, 23)
+        consegna = date(2026, 11, 23)
+        esaurite, in_esa, altre = sezioni_testo({'righe': _righe_esempio()})
         testo = costruisci_testo(
             oggi=oggi, lunedi=lunedi, consegna=consegna,
-            ultimo_giorno_chiuso='2026-11-18',
-            letto_alle='2026-11-19T10:05:00',
-            immancabili=imm, prima_di_lunedi=prima,
+            letto_alle='2026-11-20T10:02:00',
+            esaurite=esaurite, in_esaurimento=in_esa, altre=altre,
         )
-        self.assertIn('📦 <b>Giacenze – gio 19/11</b>', testo)
-        self.assertIn('dati chiusura 18/11', testo)
-        self.assertIn('letti alle 10:05', testo)
-        self.assertIn('🔴 <b>IMMANCABILI (2)</b>', testo)
-        self.assertIn('<b>ESAURITO</b>', testo)
-        self.assertIn('🟠 <b>FINISCONO PRIMA DI LUNEDÌ 24/11 (2)</b>', testo)
-        self.assertIn('3,2/gg', testo)
+        self.assertIn('📦 <b>Giacenze – ven 20/11</b> · letti alle 10:02', testo)
+        self.assertIn('Consegna: <b>lun 23/11</b>', testo)
+        self.assertIn('🔴 <b>1 esaurita</b>', testo)
+        self.assertIn('🟠 <b>1</b> finiscono entro la consegna', testo)
+        self.assertIn('🟡 <b>3</b> altre prima di lunedì', testo)
+        self.assertIn('🔴 <b>ESAURITE – IMMANCABILI</b>', testo)
+        self.assertIn('🟠 <b>IMMANCABILI IN ESAURIMENTO</b>', testo)
+        self.assertIn('🟡 <b>ALTRE PRIMA DI LUNEDÌ</b>', testo)
+        self.assertIn('<b>Sigarette</b>', testo)
+        self.assertIn('<b>Dispositivi</b>', testo)
+        self.assertIn('• Marlboro Gold', testo)
+        self.assertIn('3,2/gg · <b>−13 pz</b> a lun', testo)
+        self.assertIn('giac 4 · 1,8/gg · finisce <b>sab</b>', testo)
+        self.assertIn('<b>ESAURITO</b> · 0,6/gg · <b>−3 pz</b>', testo)
+        self.assertNotIn('dati chiusura', testo)
         self.assertNotIn('FERMO', testo)
+        self.assertNotIn('Okay', testo)
 
         vuoto = costruisci_testo(
-            oggi=oggi, lunedi=lunedi, consegna=consegna,
-            ultimo_giorno_chiuso='2026-11-18', letto_alle='',
-            immancabili=[], prima_di_lunedi=[],
+            oggi=oggi, consegna=consegna, letto_alle='',
+            esaurite=[], in_esaurimento=[], altre=[],
         )
         self.assertIn('✅ Nessun articolo in esaurimento fino a lunedì', vuoto)
+        self.assertNotIn('ESAURITE', vuoto)
 
-    def test_spezza_senza_tagliare_righe(self):
-        linee = [f'riga-{i}-{"x" * 80}' for i in range(60)]
-        testo = '\n'.join(linee)
-        pezzi = spezza_messaggi(testo, max_len=400)
+    def test_sezioni_vuote_omesse(self):
+        oggi = date(2026, 11, 20)
+        solo_altre = [r for r in _righe_esempio() if r['aams'] == '7']
+        testo = costruisci_testo(
+            oggi=oggi, consegna=date(2026, 11, 23), letto_alle='',
+            esaurite=[], in_esaurimento=[], altre=solo_altre,
+        )
+        self.assertNotIn('ESAURITE – IMMANCABILI', testo)
+        self.assertNotIn('IMMANCABILI IN ESAURIMENTO', testo)
+        self.assertIn('ALTRE PRIMA DI LUNEDÌ', testo)
+        self.assertIn('🟡 <b>1</b> altre prima di lunedì', testo)
+        self.assertNotIn('esaurit', testo.lower().split('altre')[0])  # no 🔴 esaurite nel riepilogo
+
+    def test_spezza_tra_articoli_con_ripetizione_sezione(self):
+        oggi = date(2026, 11, 20)
+        righe = []
+        for i in range(12):
+            righe.append({
+                'aams': str(i),
+                'descrizione': f'PRODOTTO LUNGO NUMERO {i} EXTRA',
+                'famiglia': 'Sigarette',
+                'tipo': 'tabacco',
+                'giacenza': 0,
+                'media': 2.0,
+                'stato': ESAURITO,
+                'immancabile': True,
+                'giorni_fine': 0,
+                'data_fine': None,
+                'mancanti_alla_data': 5 + i,
+            })
+        header, sezioni = _parti_report(
+            oggi=oggi, consegna=date(2026, 11, 23), letto_alle='',
+            esaurite=righe, in_esaurimento=[], altre=[],
+        )
+        # Forza split stretto
+        pezzi = spezza_messaggi_strutturati(header, sezioni, max_len=280)
         self.assertGreater(len(pezzi), 1)
-        self.assertEqual('\n'.join(pezzi), testo)
+        self.assertIn('📦 <b>Giacenze', pezzi[0])
+        for pezzo in pezzi[1:]:
+            self.assertIn('ESAURITE – IMMANCABILI', pezzo)
+            self.assertIn('<b>Sigarette</b>', pezzo)
+            self.assertLessEqual(len(pezzo), 280)
+        # Nessun articolo spezzato a metà: ogni blocco ha "• " e la riga dettaglio
         for pezzo in pezzi:
-            self.assertLessEqual(len(pezzo), 400)
-            for linea in pezzo.split('\n'):
-                self.assertTrue(linea.startswith('riga-') or linea == '')
+            linee = pezzo.split('\n')
+            for i, linea in enumerate(linee):
+                if linea.startswith('• '):
+                    self.assertLess(i + 1, len(linee))
+                    self.assertTrue(linee[i + 1].startswith('   '))
+
+    def test_blocco_articolo_negativo(self):
+        riga = {
+            'descrizione': 'TEST', 'aams': '9', 'giacenza': -3, 'media': 1.1,
+            'mancanti_alla_data': 4, 'data_fine': '2026-11-21',
+        }
+        blocco = blocco_articolo(riga, stile='in_esaurimento', oggi=date(2026, 11, 20))
+        self.assertIn('giac 0', blocco)
+        self.assertNotIn('giac -', blocco)
 
     def test_messaggio_indisponibile(self):
         pezzi = messaggio_indisponibile('PC negozio offline')
@@ -127,10 +211,10 @@ class CorpoDaLetturaTests(TestCase):
         payload = {
             'ultimo_giorno_chiuso': ultimo.isoformat(),
             'giorni_apertura': aperture,
-            'letto_alle': '2026-11-20T09:30:00+01:00',
+            'letto_alle': '2026-11-20T09:30:00',
             'articoli': [
                 {
-                    'aams': 'E1', 'descrizione': 'ESAURITO HOT', 'categoria': 'SIGARETTE',
+                    'aams': 'E1', 'descrizione': 'ESAURITO HOT DA 20 A.', 'categoria': 'SIGARETTE',
                     'prezzo': 5.8, 'prezzo_kg': 290, 'minimo_grammi': 200,
                     'giacenza': 0,
                     'vendite_giornaliere': {day: 5 for day in aperture},
@@ -147,12 +231,13 @@ class CorpoDaLetturaTests(TestCase):
         }
         body = corpo_da_lettura(payload, oggi=date(2026, 11, 20), giorno_consegna=0)
         self.assertEqual(body['data'], '2026-11-20')
-        self.assertEqual(body['lunedi'], '2026-11-23')  # prossimo lunedì dopo ven 20/11
+        self.assertEqual(body['lunedi'], '2026-11-23')
         self.assertTrue(any(r['aams'] == 'E1' for r in body['immancabili']))
         self.assertFalse(any(r['aams'] == 'F0' for r in body['immancabili'] + body['prima_di_lunedi']))
         self.assertIn('messaggi', body)
         self.assertEqual(body['messaggi'][0], body['testo'])
-        self.assertTrue(body['messaggi'])
+        self.assertIn('• Esaurito Hot', body['testo'])
+        self.assertIn('ESAURITE – IMMANCABILI', body['testo'])
 
 
 @patch.dict('os.environ', ENV)
@@ -206,9 +291,9 @@ class ApiN8nGiacenzeReportTests(TestCase):
         payload = {
             'ultimo_giorno_chiuso': ultimo.isoformat(),
             'giorni_apertura': aperture,
-            'letto_alle': '2026-11-20T10:00:00+01:00',
+            'letto_alle': '2026-11-20T10:00:00',
             'articoli': [{
-                'aams': '201', 'descrizione': 'CHESTERFIELD <GOLD>', 'categoria': 'SIGARETTE',
+                'aams': '201', 'descrizione': 'CHESTERFIELD <GOLD> DA 20 A.', 'categoria': 'SIGARETTE',
                 'prezzo': 5.8, 'prezzo_kg': 290, 'minimo_grammi': 200,
                 'giacenza': 0,
                 'vendite_giornaliere': {day: 4 for day in aperture},
@@ -232,4 +317,5 @@ class ApiN8nGiacenzeReportTests(TestCase):
         self.assertIn('testo', data)
         self.assertIn('immancabili', data)
         self.assertNotIn('telegram', data)
-        self.assertIn('CHESTERFIELD &lt;GOLD&gt;', data['testo'])
+        self.assertIn('Chesterfield &lt;Gold&gt;', data['testo'])
+        self.assertIn('ESAURITE – IMMANCABILI', data['testo'])
