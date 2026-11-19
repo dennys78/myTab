@@ -3324,6 +3324,7 @@ tbody tr:hover {
 .gia-page {
   --tab-accent: #1f6a5a;
   --tab-accent-soft: rgba(31, 106, 90, 0.12);
+  --gia-control-h: 2.35rem;
   --gia-esaurito: #c62828;
   --gia-esaurito-bg: #fdecea;
   --gia-prima: #d84315;
@@ -3367,12 +3368,15 @@ tbody tr:hover {
 .gia-page .tab-control select,
 .gia-page .tab-control input[type="date"],
 .gia-page .tab-control input[type="search"] {
+  box-sizing: border-box;
+  height: var(--gia-control-h);
+  min-height: var(--gia-control-h);
   border: 1px solid rgba(31, 106, 90, 0.28);
   border-radius: 8px;
-  padding: 0.4rem 0.55rem;
+  padding: 0 0.55rem;
   background: var(--gia-tutti-bg);
   color: var(--text-main, #1e293b);
-  min-height: 2rem;
+  line-height: 1.2;
 }
 
 .gia-page .tab-control select:focus,
@@ -3388,7 +3392,7 @@ tbody tr:hover {
 }
 
 .gia-control-filtri .gia-filtri {
-  min-height: 2rem;
+  height: var(--gia-control-h);
 }
 
 .tab-hint-inline {
@@ -3424,12 +3428,13 @@ tbody tr:hover {
 .gia-filtro-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.3rem;
   flex: 0 0 auto;
   margin: 0;
-  min-height: 2rem;
-  height: 2rem;
   box-sizing: border-box;
+  height: var(--gia-control-h);
+  min-height: var(--gia-control-h);
   border: 1px solid rgba(31, 106, 90, 0.28);
   border-radius: 8px;
   padding: 0 0.55rem;
