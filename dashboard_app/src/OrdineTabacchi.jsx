@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Trash2, Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 import {
   DEFAULT_SCORTA_PCT,
@@ -10,7 +10,6 @@ import {
   altriArticoli,
   conteggiSezioni,
   elencoCopia,
-  fraseCopertura,
   formattaChiusura,
   formattaResiduo,
   gruppiDaOrdinare,
@@ -665,12 +664,13 @@ export default function OrdineTabacchi() {
   };
 
   const rigaTabella = (riga, { conStepper = true } = {}) => (
-    <tr key={riga.aams} className={Number(riga.unita) > 0 ? 'tab-row-order' : undefined}>
-      <td className="tab-col-articolo" title={`${riga.aams} · ${riga.descrizione}`}>
-        <div className="tab-articolo">
-          <span className="tab-aams">{riga.aams}</span>
-          <span className="tab-nome">{riga.descrizione}</span>
-        </div>
+    <tr key={riga.aams} className={`gia-row${Number(riga.unita) > 0 ? ' tab-row-order' : ''}`}>
+      <td className="gia-col-articolo" title={`${riga.aams} · ${riga.descrizione}`}>
+        <span className="gia-nome">{riga.descrizione || '—'}</span>
+        <span className="grt-meta">
+          {riga.aams}
+          {riga.corretto_a_mano ? ' · corretto' : ''}
+        </span>
         <div className="tab-mobile-meta">
           <span>{Number(riga.giacenza).toLocaleString('it-IT')}</span>
           <span>·</span>
@@ -679,22 +679,34 @@ export default function OrdineTabacchi() {
           {cellaResiduo(riga)}
         </div>
       </td>
-      <td className="tab-num tab-desktop-only">{Number(riga.giacenza).toLocaleString('it-IT')}</td>
-      <td className="tab-num tab-desktop-only">{mediaTesto(riga.media)}</td>
-      <td className="tab-num tab-desktop-only">
+      <td className="gia-col-num tab-desktop-only">{Number(riga.giacenza).toLocaleString('it-IT')}</td>
+      <td className="gia-col-num tab-desktop-only">{mediaTesto(riga.media)}</td>
+      <td className="gia-col-num tab-desktop-only">
         {cellaResiduo(riga)}
       </td>
-      <td className="tab-stecche">
+      <td className="gia-col-num tab-stecche">
         {conStepper ? (
-          <div className="tab-stepper">
-            <button type="button" onClick={() => cambiaUnita(riga.aams, -1)} disabled={!preordine?.modificabile} aria-label="Diminuisci">
-              <Minus size={14} />
+          <div className="grt-step" role="group" aria-label={`Quantità ${riga.descrizione || riga.aams}`}>
+            <button
+              type="button"
+              className="grt-step-btn"
+              onClick={() => cambiaUnita(riga.aams, -1)}
+              disabled={!preordine?.modificabile || Number(riga.unita) <= 0}
+              aria-label="Diminuisci"
+            >
+              −
             </button>
-            <span className={riga.corretto_a_mano ? 'tab-step-manual' : (Number(riga.unita) > 0 ? 'tab-step-on' : '')}>
+            <b className={riga.corretto_a_mano ? 'tab-step-manual' : (Number(riga.unita) > 0 ? 'tab-step-on' : '')}>
               {Number(riga.unita) || 0}
-            </span>
-            <button type="button" onClick={() => cambiaUnita(riga.aams, 1)} disabled={!preordine?.modificabile} aria-label="Aumenta">
-              <Plus size={14} />
+            </b>
+            <button
+              type="button"
+              className="grt-step-btn"
+              onClick={() => cambiaUnita(riga.aams, 1)}
+              disabled={!preordine?.modificabile}
+              aria-label="Aumenta"
+            >
+              +
             </button>
             {Number(riga.unita) > 0 && (
               <button
@@ -710,17 +722,36 @@ export default function OrdineTabacchi() {
             )}
           </div>
         ) : (
-          <button type="button" className="tab-add" onClick={() => cambiaUnita(riga.aams, 1)} disabled={!preordine?.modificabile}>
-            <Plus size={14} />
+          <button
+            type="button"
+            className="grt-step-btn tab-add"
+            onClick={() => cambiaUnita(riga.aams, 1)}
+            disabled={!preordine?.modificabile}
+            aria-label="Aggiungi"
+          >
+            +
           </button>
         )}
       </td>
-      <td className="tab-num tab-importo">{euro(riga.importo)}</td>
+      <td className="gia-col-num tab-importo">{euro(riga.importo)}</td>
     </tr>
   );
 
+  const bottoneLettura = (
+    <button
+      type="button"
+      className="tab-btn primary gia-btn-leggi"
+      onClick={() => (preordine ? elimina({ poiLeggi: true }) : leggi())}
+      disabled={attesa || (!preordine && online !== true)}
+      title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+    >
+      <Wifi size={16} aria-hidden="true" />
+      {attesa ? 'Lettura…' : preordine ? 'Aggiorna da PC' : 'Leggi da PC'}
+    </button>
+  );
+
   return (
-    <div className="tab-page">
+    <div className="tab-page tabacchi-page">
       <header className="tab-header">
         <div>
           <h1>Ordine Tabacchi</h1>
@@ -729,30 +760,6 @@ export default function OrdineTabacchi() {
               ? `Dati TabaUno alla chiusura del ${formattaChiusura(preordine.ultimo_giorno_chiuso)} · vendite delle ultime 4 settimane`
               : 'Dati TabaUno · vendite delle ultime 4 settimane'}
           </p>
-          <p className={`tab-pc ${online ? 'online' : online === false ? 'offline' : ''}`}>
-            PC negozio: {online == null ? '…' : online ? 'online' : 'offline'}
-          </p>
-        </div>
-        <div className="tab-header-actions">
-          {preordine && (
-            <button
-              type="button"
-              className="tab-btn tab-btn-danger"
-              onClick={() => elimina()}
-              disabled={attesa}
-            >
-              <Trash2 size={15} />
-              Elimina
-            </button>
-          )}
-          <button
-            type="button"
-            className="tab-btn"
-            onClick={() => (preordine ? elimina({ poiLeggi: true }) : leggi())}
-            disabled={attesa || (!preordine && online !== true)}
-          >
-            {attesa ? 'Lettura…' : preordine ? 'Nuova lettura' : 'Leggi da PC'}
-          </button>
         </div>
       </header>
 
@@ -760,25 +767,21 @@ export default function OrdineTabacchi() {
       {messaggio && !errore && <div className="tab-ok">{messaggio}</div>}
       {preordine && pannelloLogista()}
 
-      {!preordine && !attesa && (
-        <p className="tab-empty">Premi «Leggi da PC» quando il servizio TabaUnoAgent è online.</p>
-      )}
-
-      {preordine && (
-        <>
-          <div className="tab-controls">
+      <div className="tab-controls gia-controls">
+        {preordine && (
+          <>
             <div className="tab-control">
               <span className="tab-label">Copertura</span>
-              <div className="tab-segments" role="group" aria-label="Giorni di copertura">
+              <div className="grt-days" role="group" aria-label="Giorni di copertura">
                 {GIORNI.map(giorni => (
                   <button
                     key={giorni}
                     type="button"
-                    className={preordine.giorni_copertura === giorni ? 'active' : ''}
+                    className={`grt-day-btn ${preordine.giorni_copertura === giorni ? 'active' : ''}`}
                     disabled={!preordine.modificabile}
                     onClick={() => aggiornaParametri({ giorni_copertura: giorni })}
                   >
-                    {giorni} gg
+                    {giorni}
                   </button>
                 ))}
               </div>
@@ -810,32 +813,55 @@ export default function OrdineTabacchi() {
                 <span>{SCORTA_PCT_MAX}%</span>
               </div>
             </div>
+          </>
+        )}
+        {!preordine && (
+          <div className="tab-control gia-control-leggi">
+            {bottoneLettura}
           </div>
-          <p className="tab-hint">
-            {fraseCopertura(preordine.giorni_alla_consegna, preordine.giorni_copertura, preordine.scorta_pct)}
-          </p>
+        )}
+      </div>
 
-          <div className="tab-sezioni" role="tablist" aria-label="Tipo merce">
-            {SEZIONI_ORDINE.map(item => {
-              const stats = conteggi?.[item.id];
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={sezione === item.id}
-                  className={`tab-sezione tab-sezione--${item.id}${sezione === item.id ? ' active' : ''}`}
-                  onClick={() => { setSezione(item.id); setAltriAperti(false); setRicerca(''); }}
-                >
-                  <strong>{item.label}</strong>
-                  <span>
-                    {stats ? `${stats.articoli} da ordinare` : '—'}
-                    {stats && stats.totali ? ` · ${stats.totali} in elenco` : ''}
-                  </span>
-                </button>
-              );
-            })}
+      {preordine && (
+        <div className="tab-controls gia-controls gia-controls-tools">
+          <div className="tab-control gia-control-filtri">
+            <div className="gia-filtri" role="tablist" aria-label="Tipo merce">
+              {SEZIONI_ORDINE.map(item => {
+                const stats = conteggi?.[item.id];
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={sezione === item.id}
+                    className={`gia-filtro-btn tab-filtro-${item.id} ${sezione === item.id ? 'active' : ''}`}
+                    onClick={() => { setSezione(item.id); setAltriAperti(false); setRicerca(''); }}
+                  >
+                    <span className="gia-filtro-dot" aria-hidden="true" />
+                    <span className="gia-filtro-label">{item.label}</span>
+                    <span className="gia-filtro-count">{stats?.articoli ?? 0}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          <div className="tab-control gia-control-leggi">
+            {bottoneLettura}
+          </div>
+        </div>
+      )}
+
+      {!preordine && !attesa && (
+        <p className="tab-empty">
+          {online === true
+            ? 'Premi «Leggi da PC» quando il servizio TabaUnoAgent è online.'
+            : 'Il PC remoto non è raggiungibile: avvia TabaUnoAgent e riprova.'}
+        </p>
+      )}
+
+      {preordine && (
+        <>
+          <div className="gia-sep" aria-hidden="true" />
 
           {senzaLetturaDsp && (sezione === 'dispositivi' || sezione === 'solidi') && (
             <p className="tab-empty tab-empty-warn">
@@ -843,57 +869,56 @@ export default function OrdineTabacchi() {
             </p>
           )}
 
-          <section className="tab-card">
-            <div className="tab-card-head">
-              <h2>Da ordinare · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</h2>
-              {sezioneMeta && (
-                <span className="tab-card-meta">
-                  {sezione === 'tabacchi'
-                    ? `${sezioneMeta.kg.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
-                    : `${sezioneMeta.stecche} conf. · ${sezioneMeta.pezzi} pz`}
-                  {' · '}
-                  {euro(sezioneMeta.importo) || '0,00 €'}
-                </span>
-              )}
-            </div>
-            {gruppi.length === 0 ? (
-              <p className="tab-empty">
-                {senzaLetturaDsp && sezione !== 'tabacchi'
-                  ? 'Nessun articolo in questa sezione per la lettura attuale.'
-                  : 'Niente da ordinare con questa copertura.'}
-              </p>
-            ) : (
-              gruppi.map(group => (
-                <div key={group.famiglia} className="tab-family">
-                  <div className="tab-family-title">
-                    <strong>{group.famiglia}</strong>
-                    <span>{group.items.length} articoli · subtotale {euro(group.subtotale) || '0,00 €'}</span>
-                  </div>
-                  <div className="tab-table-wrap">
-                    <table className="tab-table">
-                      <thead>
-                        <tr>
-                          <th>{etichettaSort('descrizione', 'Articolo')}</th>
-                          <th>Giac.</th>
-                          <th>Vende/gg</th>
-                          <th title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
-                            {etichettaSort('residuo', 'Al prox. ordine')}
-                          </th>
-                          <th>{unitaLabel}</th>
-                          <th>{etichettaSort('importo', 'Importo')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.items.map(riga => rigaTabella(riga))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))
+          <div className="tab-section-head">
+            <h2>Da ordinare · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</h2>
+            {sezioneMeta && (
+              <span className="tab-section-meta">
+                {sezione === 'tabacchi'
+                  ? `${sezioneMeta.kg.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
+                  : `${sezioneMeta.stecche} conf. · ${sezioneMeta.pezzi} pz`}
+                {' · '}
+                {euro(sezioneMeta.importo) || '0,00 €'}
+              </span>
             )}
-          </section>
+          </div>
 
-          <section className="tab-card tab-others">
+          {gruppi.length === 0 ? (
+            <p className="tab-empty">
+              {senzaLetturaDsp && sezione !== 'tabacchi'
+                ? 'Nessun articolo in questa sezione per la lettura attuale.'
+                : 'Niente da ordinare con questa copertura.'}
+            </p>
+          ) : (
+            gruppi.map(group => (
+              <div key={group.famiglia} className="tab-family">
+                <div className="tab-family-title">
+                  <strong>{group.famiglia}</strong>
+                  <span>{group.items.length} articoli · subtotale {euro(group.subtotale) || '0,00 €'}</span>
+                </div>
+                <div className="tab-table-wrap gia-table-wrap">
+                  <table className="tab-table gia-table">
+                    <thead>
+                      <tr>
+                        <th className="gia-col-articolo">{etichettaSort('descrizione', 'Articolo')}</th>
+                        <th className="gia-col-num">Giac.</th>
+                        <th className="gia-col-num">Vende/gg</th>
+                        <th className="gia-col-num" title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
+                          {etichettaSort('residuo', 'Al prox. ordine')}
+                        </th>
+                        <th className="gia-col-num">{unitaLabel}</th>
+                        <th className="gia-col-num">{etichettaSort('importo', 'Importo')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map(riga => rigaTabella(riga))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
+
+          <section className="tab-others">
             <button type="button" className="tab-others-toggle" onClick={() => setAltriAperti(v => !v)}>
               {altriAperti ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               <span>Altri articoli · {SEZIONI_ORDINE.find(item => item.id === sezione)?.label}</span>
@@ -908,18 +933,18 @@ export default function OrdineTabacchi() {
                   value={ricerca}
                   onChange={e => setRicerca(e.target.value)}
                 />
-                <div className="tab-table-wrap">
-                  <table className="tab-table">
+                <div className="tab-table-wrap gia-table-wrap">
+                  <table className="tab-table gia-table">
                     <thead>
                       <tr>
-                        <th>{etichettaSort('descrizione', 'Articolo')}</th>
-                        <th>Giac.</th>
-                        <th>Vende/gg</th>
-                        <th title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
+                        <th className="gia-col-articolo">{etichettaSort('descrizione', 'Articolo')}</th>
+                        <th className="gia-col-num">Giac.</th>
+                        <th className="gia-col-num">Vende/gg</th>
+                        <th className="gia-col-num" title={`Pacchetti che ti restano al prossimo ordine (dopo ${giorniCopertura} gg di vendita, incluso questo ordine)`}>
                           {etichettaSort('residuo', 'Al prox. ordine')}
                         </th>
-                        <th></th>
-                        <th>{etichettaSort('importo', 'Importo')}</th>
+                        <th className="gia-col-num" />
+                        <th className="gia-col-num">{etichettaSort('importo', 'Importo')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -931,7 +956,7 @@ export default function OrdineTabacchi() {
             )}
           </section>
 
-          <div className="tab-dock">
+          <div className="tab-dock gratta-dock">
             <div className="tab-dock-totals">
               <span>Articoli <strong>{preordine.articoli}</strong></span>
               <span>Stecche/conf. <strong>{preordine.stecche}</strong></span>
@@ -942,19 +967,17 @@ export default function OrdineTabacchi() {
               )}
               <span className="tab-dock-total">Totale <strong>{Number(preordine.totale || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</strong></span>
             </div>
-            <div className="tab-dock-actions">
+            <div className="tab-dock-actions gratta-dock-actions">
               {haCorrezioni && (
-                <button type="button" className="tab-btn ghost" onClick={annullaCorrezioni}>
+                <button type="button" onClick={annullaCorrezioni}>
                   Annulla correzioni
                 </button>
               )}
-              <button type="button" className="tab-btn ghost tab-btn-danger" onClick={() => elimina()} disabled={attesa}>
-                <Trash2 size={14} />
+              <button type="button" className="is-danger" onClick={() => elimina()} disabled={attesa}>
                 Elimina
               </button>
               <button
                 type="button"
-                className="tab-btn ghost"
                 onClick={scaricaLogista}
                 title="Da caricare sul portale Logista (non in TabaUno)"
               >
@@ -962,7 +985,6 @@ export default function OrdineTabacchi() {
               </button>
               <button
                 type="button"
-                className="tab-btn ghost"
                 onClick={inviaALogista}
                 disabled={logistaInCorso || attesa}
                 title="Carica le righe nella proposta WebT e INVIA l'ordine a Logista in modo definitivo."
@@ -971,14 +993,13 @@ export default function OrdineTabacchi() {
               </button>
               <button
                 type="button"
-                className="tab-btn ghost"
                 onClick={depositaInTabauno}
                 disabled={deposito || attesa || online !== true}
                 title="Scrive Ordine_Logista.xls nella cartella TabaUno del PC negozio. Non popola la griglia ordine di TabaUno."
               >
                 {deposito ? 'Deposito…' : 'Deposita in TabaUno'}
               </button>
-              <button type="button" className="tab-btn primary" onClick={copiaElenco}>
+              <button type="button" className="is-primary" onClick={copiaElenco}>
                 {copiato ? 'Copiato' : 'Copia elenco'}
               </button>
             </div>

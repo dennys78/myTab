@@ -2719,9 +2719,73 @@ tbody tr:hover {
   --tab-accent-soft: rgba(139, 90, 43, 0.14);
   --tab-orange: #c57a2c;
   --tab-red: #c2410c;
-  max-width: 860px;
+  --gia-control-h: 2.35rem;
+  max-width: 1100px;
   margin: 0 auto 5.5rem;
+  padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
   font-family: "IBM Plex Sans", Inter, sans-serif;
+}
+
+.tabacchi-page .gia-btn-leggi {
+  background: var(--tab-accent);
+  border-color: var(--tab-accent);
+}
+
+.tabacchi-page .grt-day-btn.active {
+  background: var(--tab-accent);
+  border-color: var(--tab-accent);
+}
+
+.tabacchi-page .tab-control input[type="date"],
+.tabacchi-page .tab-control input[type="search"],
+.tabacchi-page .tab-search {
+  box-sizing: border-box;
+  height: var(--gia-control-h);
+  min-height: var(--gia-control-h);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 0 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  color-scheme: dark;
+}
+
+.tabacchi-page .gia-filtro-btn.tab-filtro-tabacchi { color: #fdba74; }
+.tabacchi-page .gia-filtro-btn.tab-filtro-dispositivi { color: #93c5fd; }
+.tabacchi-page .gia-filtro-btn.tab-filtro-solidi { color: #86efac; }
+.tabacchi-page .gia-filtro-btn.tab-filtro-tabacchi.active {
+  background: var(--tab-accent);
+  color: #fff;
+  border-color: transparent;
+}
+.tabacchi-page .gia-filtro-btn.tab-filtro-dispositivi.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: transparent;
+}
+.tabacchi-page .gia-filtro-btn.tab-filtro-solidi.active {
+  background: #15803d;
+  color: #fff;
+  border-color: transparent;
+}
+
+.tab-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.65rem;
+}
+
+.tab-section-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.tab-section-meta {
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
 .tab-header {
@@ -2757,7 +2821,7 @@ tbody tr:hover {
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text-main);
-  border-radius: 8px;
+  border-radius: 999px;
   padding: 0.55rem 0.9rem;
   cursor: pointer;
   font: inherit;
@@ -3157,14 +3221,38 @@ tbody tr:hover {
 }
 
 .tab-trash {
+  box-sizing: border-box;
+  width: 2.1rem;
+  height: 2.1rem;
   margin-left: 0.15rem;
-  color: var(--tab-red) !important;
-  border-color: rgba(194, 65, 12, 0.35) !important;
-  background: rgba(194, 65, 12, 0.08) !important;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(248, 113, 113, 0.45) !important;
+  background: rgba(194, 65, 12, 0.18) !important;
 }
 
 .tab-trash:hover:not(:disabled) {
-  background: rgba(194, 65, 12, 0.16) !important;
+  background: rgba(194, 65, 12, 0.32) !important;
+}
+
+.tabacchi-page .grt-step-btn {
+  border-color: rgba(253, 186, 116, 0.45);
+  background: rgba(139, 90, 43, 0.4);
+}
+
+.tabacchi-page .grt-step-btn:hover:not(:disabled) {
+  background: rgba(139, 90, 43, 0.6);
+}
+
+.tabacchi-page .grt-day-btn {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
 }
 
 .tab-stepper span {
@@ -3247,7 +3335,11 @@ tbody tr:hover {
 .tab-dock-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.75rem;
+}
+
+.tabacchi-page .gratta-dock-actions .is-primary {
+  background: var(--tab-accent);
 }
 
 .tab-copy-fallback {
