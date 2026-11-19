@@ -295,6 +295,7 @@ export default function StatisticheGiacenze() {
             <table className="tab-table gia-table">
               <thead>
                 <tr>
+                  {intestazione('descrizione', 'Articolo', '', 'gia-col-articolo')}
                   {intestazione('giacenza', 'Giacenza', 'oggi')}
                   {intestazione('media', 'Media', 'pz/giorno')}
                   {intestazione('venduto_4_settimane', 'Venduto', '4 settimane')}
@@ -306,6 +307,9 @@ export default function StatisticheGiacenze() {
               <tbody>
                 {righe.map(riga => (
                   <tr key={riga.aams} className={`gia-row gia-${riga.immancabile ? 'immancabile' : riga.stato}`}>
+                    <td className="gia-col-articolo">
+                      <span className="gia-nome">{riga.descrizione || '—'}</span>
+                    </td>
                     <td className="gia-col-num">{formattaNumero(riga.giacenza, 0)}</td>
                     <td className="gia-col-num">{formattaNumero(riga.media, 1)}</td>
                     <td className="gia-col-num">
@@ -328,7 +332,7 @@ export default function StatisticheGiacenze() {
                 ))}
                 {!righe.length && (
                   <tr>
-                    <td colSpan={6} className="tab-empty-cell">
+                    <td colSpan={7} className="tab-empty-cell">
                       Nessun articolo con giacenza stimata ≤ {sogliaMinima} pz
                       {filtroStato !== 'tutti' ? ' per questo filtro' : ''}.
                     </td>
