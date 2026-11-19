@@ -609,17 +609,23 @@ class TabacchiPreordineRiga(models.Model):
 
 
 class LogistaInvioJob(models.Model):
-    """Caricamento dell'ordine nella proposta WebT tramite il servizio locale «logista»."""
-    IN_CORSO = 'in_corso'
+    """Caricamento nella proposta WebT e invio definitivo tramite il servizio locale «logista»."""
+    IN_CORSO_CARICAMENTO = 'in_corso_caricamento'
+    IN_CORSO_INVIO = 'in_corso_invio'
     ATTESA_CONFERMA = 'attesa_conferma'
-    COMPLETATO = 'completato'
+    INVIATO = 'inviato'
+    NON_INVIATO = 'non_inviato'
     ERRORE = 'errore'
     STATO_CHOICES = [
-        (IN_CORSO, 'In corso'),
+        (IN_CORSO_CARICAMENTO, 'Caricamento righe'),
+        (IN_CORSO_INVIO, 'Invio ordine'),
         (ATTESA_CONFERMA, 'Attesa conferma'),
-        (COMPLETATO, 'Completato'),
+        (INVIATO, 'Inviato'),
+        (NON_INVIATO, 'Non inviato'),
         (ERRORE, 'Errore'),
     ]
+    STATI_IN_CORSO = (IN_CORSO_CARICAMENTO, IN_CORSO_INVIO)
+    STATI_FINALI = (ATTESA_CONFERMA, INVIATO, NON_INVIATO, ERRORE)
     ORIGINE_PAGINA = 'pagina'
     ORIGINE_TELEGRAM = 'telegram'
     ORIGINE_CHOICES = [
@@ -632,7 +638,11 @@ class LogistaInvioJob(models.Model):
         TabacchiPreordine, null=True, blank=True, on_delete=models.SET_NULL, related_name='logista_jobs',
     )
     creato_da = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='logista_jobs')
-    stato = models.CharField(max_length=20, choices=STATO_CHOICES, default=IN_CORSO)
+    stato = models.CharField(max_length=24, choices=STATO_CHOICES, default=IN_CORSO_CARICAMENTO)
+    fase = models.CharField(max_length=32, blank=True, default='')
+    codice_ordine = models.CharField(max_length=64, blank=True, default='')
+    data_consegna_logista = models.CharField(max_length=16, blank=True, default='')
+    foto_invio_path = models.CharField(max_length=255, blank=True, default='')
     origine = models.CharField(max_length=16, choices=ORIGINE_CHOICES, default=ORIGINE_PAGINA)
     svuota = models.BooleanField(default=False)
     creato_il = models.DateTimeField(auto_now_add=True)

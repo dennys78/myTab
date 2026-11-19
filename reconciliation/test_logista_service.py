@@ -25,7 +25,19 @@ from reconciliation.models import (
     TabaUnoRequest,
 )
 
-ENV = {'LOGISTA_SERVICE_URL': 'http://logista.test:3501', 'LOGISTA_SERVICE_KEY': 'chiave-segreta', 'N8N_TABACCHI_WEBHOOK_URL': ''}
+ENV = {
+    'LOGISTA_SERVICE_URL': 'http://logista.test:3501',
+    'LOGISTA_SERVICE_KEY': 'chiave-segreta',
+    'N8N_TABACCHI_WEBHOOK_URL': '',
+    'TELEGRAM_BOT_TOKEN': '',
+}
+CARICATO = {
+    'esito': 'caricato',
+    'inserite': 1,
+    'rifiutate': [{'codice': '2423', 'qta': '0,2', 'errore': 'Codice non ordinabile'}],
+    'avvisi': [{'codice': '0201', 'avvisi': ['Quantità arrotondata']}],
+    'proposta': {'tabacchi': 1, 'altri': 0, 'testo': 'Proposta 1 riga'},
+}
 
 
 def _risposta(data):
@@ -148,8 +160,10 @@ class LogistaApiTests(TestCase):
     def test_job_orfano_scade(self):
         response, _ = self._invia()
         job_id = response.json()['job_id']
-        LogistaInvioJob.objects.filter(id=job_id).update(creato_il=timezone.now() - timedelta(minutes=30))
-        self.assertEqual(self._job(job_id)['stato'], LogistaInvioJob.ERRORE)
+        LogistaInvioJob.objects.filter(id=job_id).update(creato_il=timezone.now() - timedelta(minutes=31))
+        with patch('reconciliation.logista_service.threading.Thread') as thread:
+            self.assertEqual(self._job(job_id)['stato'], LogistaInvioJob.ERRORE)
+        self.assertEqual(thread.call_args[1]['args'], (job_id,))
         nuovo, _ = self._invia()
         self.assertEqual(nuovo.status_code, 202)
 
@@ -164,29 +178,100 @@ class LogistaApiTests(TestCase):
         self.assertEqual(job['stato'], LogistaInvioJob.ATTESA_CONFERMA)
         self.assertEqual(job['righe_presenti'], 12)
 
-    def test_caricato_salva_foto_senza_base64(self):
-        foto = b'\xff\xd8\xff\xe0fake-jpeg'
+    def _esegui(self, *risposte):
         response, _ = self._invia()
         job_id = response.json()['job_id']
-        with override_settings(MEDIA_ROOT=self.media.name), patch('urllib.request.urlopen', return_value=_risposta({
-            'esito': 'caricato',
-            'inserite': 1,
-            'rifiutate': [{'codice': '2423', 'qta': '0,2', 'errore': 'Codice non ordinabile'}],
-            'avvisi': [{'codice': '0201', 'avvisi': ['Quantità arrotondata']}],
-            'proposta': {'tabacchi': 1, 'altri': 0, 'testo': 'Proposta 1 riga'},
-            'foto_jpeg_base64': base64.b64encode(foto).decode(),
-        })):
+        with override_settings(MEDIA_ROOT=self.media.name), \
+                patch('urllib.request.urlopen', side_effect=list(risposte)) as urlopen:
             esegui_job(job_id, [{'codice': '0201', 'qta': '1,8'}])
+        return job_id, urlopen
+
+    def test_caricato_e_inviato(self):
+        foto = b'\xff\xd8\xff\xe0carica'
+        foto_invio = b'\xff\xd8\xff\xe0invio'
+        job_id, urlopen = self._esegui(_risposta(CARICATO | {
+            'foto_jpeg_base64': base64.b64encode(foto).decode(),
+        }), _risposta({
+            'esito': 'inviato',
+            'codice_ordine': 'ORD-123',
+            'data_consegna': '23/11/2026',
+            'conferma': 'Ordine inviato',
+            'totali': ['Totale con IVA: 522,00 €'],
+            'passi': ['riepilogo', 'invio'],
+            'foto_jpeg_base64': base64.b64encode(foto_invio).decode(),
+        }))
+        self.assertEqual(urlopen.call_count, 2)
+        invio = urlopen.call_args_list[1][0][0]
+        self.assertEqual(invio.full_url, 'http://logista.test:3501/logista/invia')
+        self.assertEqual(json.loads(invio.data), {'conferma': True})
+        self.assertEqual(urlopen.call_args_list[1][1]['timeout'], 300)
+        with override_settings(MEDIA_ROOT=self.media.name):
             job = self._job(job_id)
-            foto_resp = self.client.get(job['foto_url'])
-            self.assertEqual(b''.join(foto_resp.streaming_content), foto)
-        self.assertEqual(job['stato'], LogistaInvioJob.COMPLETATO)
+            self.assertEqual(b''.join(self.client.get(job['foto_url']).streaming_content), foto)
+            self.assertEqual(b''.join(self.client.get(job['foto_invio_url']).streaming_content), foto_invio)
+        self.assertEqual(job['stato'], LogistaInvioJob.INVIATO)
+        self.assertEqual(job['codice_ordine'], 'ORD-123')
+        self.assertEqual(job['data_consegna'], '23/11/2026')
+        self.assertEqual(job['totali'], ['Totale con IVA: 522,00 €'])
         self.assertEqual(job['inserite'], 1)
         self.assertEqual(job['rifiutate'][0]['errore'], 'Codice non ordinabile')
-        self.assertEqual(job['proposta']['tabacchi'], 1)
         salvato = LogistaInvioJob.objects.get(id=job_id)
         self.assertNotIn('foto_jpeg_base64', salvato.risultato)
-        self.assertEqual(salvato.foto_path, f'logista/{job_id}.jpg')
+        self.assertNotIn('foto_jpeg_base64', salvato.risultato['invio'])
+        self.assertEqual(salvato.foto_invio_path, f'logista/{job_id}_invio.jpg')
+
+    def test_bloccato_non_inviato(self):
+        job_id, urlopen = self._esegui(_risposta(CARICATO), _risposta({
+            'esito': 'bloccato', 'fase': 'data', 'messaggio': 'Data di consegna non disponibile',
+            'passi': [], 'foto_jpeg_base64': base64.b64encode(b'blocco').decode(),
+        }))
+        self.assertEqual(urlopen.call_count, 2)
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.NON_INVIATO)
+        self.assertEqual(job['fase'], 'data')
+        self.assertEqual(job['errore'], 'Data di consegna non disponibile')
+        self.assertTrue(job['foto_invio_url'])
+
+    def test_incerto_nessun_retry(self):
+        job_id, urlopen = self._esegui(_risposta(CARICATO), _risposta({
+            'esito': 'incerto', 'messaggio': 'Pagina di conferma non trovata',
+        }))
+        self.assertEqual(urlopen.call_count, 2)
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.NON_INVIATO)
+        self.assertEqual(job['fase'], 'incerto')
+        self.assertIn('verificare su WebT', job['errore'])
+
+    def test_errore_http_invio_nessun_retry(self):
+        job_id, urlopen = self._esegui(
+            _risposta(CARICATO), _http_error(500, {'errore': 'Sessione scaduta'}),
+        )
+        self.assertEqual(urlopen.call_count, 2)
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
+        self.assertEqual(job['fase'], 'invio')
+        self.assertIn('Sessione scaduta', job['errore'])
+        self.assertIn('verificare su WebT', job['errore'])
+
+    def test_timeout_invio_esito_incerto(self):
+        job_id, urlopen = self._esegui(_risposta(CARICATO), urllib.error.URLError(TimeoutError('timed out')))
+        self.assertEqual(urlopen.call_count, 2)
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
+        self.assertIn('verificare su WebT', job['errore'])
+
+    def test_occupato_su_invio_non_inviato_certo(self):
+        job_id, _ = self._esegui(_risposta(CARICATO), _http_error(409, {'errore': 'occupato'}))
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.ERRORE)
+        self.assertTrue(job['errore'].startswith('Ordine NON inviato'))
+
+    def test_inserite_zero_non_invia(self):
+        job_id, urlopen = self._esegui(_risposta(CARICATO | {'inserite': 0}))
+        self.assertEqual(urlopen.call_count, 1)
+        job = self._job(job_id)
+        self.assertEqual(job['stato'], LogistaInvioJob.NON_INVIATO)
+        self.assertIn('Nessuna riga accettata', job['errore'])
 
     def test_errore_servizio(self):
         response, _ = self._invia()

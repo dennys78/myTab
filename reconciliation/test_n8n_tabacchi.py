@@ -3,6 +3,7 @@ import hashlib
 import json
 import tempfile
 import urllib.error
+import urllib.parse
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -28,12 +29,14 @@ ENV = {
     'N8N_TABACCHI_WEBHOOK_URL': WEBHOOK,
     'N8N_TABACCHI_TOKEN': TOKEN,
     'N8N_GRATTA_TOKEN': '',
+    'TELEGRAM_BOT_TOKEN': '',
 }
 
 
 def _ok():
     response = MagicMock()
     response.read.return_value = b'{}'
+    response.status = 200
     response.__enter__.return_value = response
     response.__exit__.return_value = False
     return response
@@ -104,20 +107,23 @@ class NotificaN8nTests(_Base):
             company=self.company, preordine=self._preordine(), righe_inviate=2, **campi,
         )
 
-    def test_completato_con_foto(self):
+    def test_inviato_con_foto(self):
         foto = b'\xff\xd8jpeg'
         with override_settings(MEDIA_ROOT=self.media.name):
             job = self._job(
-                stato=LogistaInvioJob.COMPLETATO,
+                stato=LogistaInvioJob.INVIATO,
                 origine=LogistaInvioJob.ORIGINE_TELEGRAM,
-                foto_path='logista/1.jpg',
+                codice_ordine='ORD-9',
+                data_consegna_logista='23/11/2026',
+                foto_invio_path='logista/1_invio.jpg',
                 risultato={
                     'esito': 'caricato', 'inserite': 2, 'rifiutate': [], 'avvisi': [],
                     'proposta': {'tabacchi': 1, 'altri': 1, 'testo': 'x'},
+                    'invio': {'esito': 'inviato', 'totali': ['Totale 522,00']},
                 },
             )
             (self.media_path() / 'logista').mkdir(parents=True)
-            (self.media_path() / 'logista' / '1.jpg').write_bytes(foto)
+            (self.media_path() / 'logista' / '1_invio.jpg').write_bytes(foto)
             with patch('urllib.request.urlopen', return_value=_ok()) as urlopen:
                 self.assertTrue(notifica_n8n(job))
         richiesta = urlopen.call_args[0][0]
@@ -126,7 +132,9 @@ class NotificaN8nTests(_Base):
         self.assertEqual(urlopen.call_args[1]['timeout'], 20)
         body = json.loads(richiesta.data)
         self.assertEqual(body['evento'], 'logista_caricato')
-        self.assertEqual(body['stato'], 'completato')
+        self.assertEqual(body['stato'], 'inviato')
+        self.assertEqual(body['codice_ordine'], 'ORD-9')
+        self.assertEqual(body['totali'], ['Totale 522,00'])
         self.assertEqual(body['origine'], 'telegram')
         self.assertEqual(body['inserite'], 2)
         self.assertEqual(body['proposta'], {'tabacchi': 1, 'altri': 1})
@@ -198,6 +206,94 @@ class NotificaN8nTests(_Base):
         self.assertEqual(urlopen.call_count, 2)
         self.assertEqual(urlopen.call_args_list[1][0][0].full_url, WEBHOOK)
         self.assertEqual(json.loads(urlopen.call_args_list[1][0][0].data)['stato'], 'attesa_conferma')
+
+
+BOT = 'bot-token-segreto'
+
+
+@patch.dict('os.environ', {**ENV, 'N8N_TABACCHI_WEBHOOK_URL': '', 'TELEGRAM_BOT_TOKEN': BOT})
+@patch('reconciliation.draft_notifications._get_telegram_chat_ids', return_value=['555'])
+class NotificaTelegramTests(_Base):
+    def _job(self, **campi):
+        return LogistaInvioJob.objects.create(
+            company=self.company, preordine=self._preordine(), righe_inviate=2, **campi,
+        )
+
+    def _media(self):
+        from pathlib import Path
+        cartella = Path(self.media.name) / 'logista'
+        cartella.mkdir(parents=True, exist_ok=True)
+        return cartella
+
+    def test_successo_con_foto(self, _chat):
+        from reconciliation.logista_service import notifica_telegram
+
+        with override_settings(MEDIA_ROOT=self.media.name):
+            (self._media() / '7_invio.jpg').write_bytes(b'\xff\xd8invio')
+            job = self._job(
+                stato=LogistaInvioJob.INVIATO,
+                codice_ordine='ORD-77',
+                data_consegna_logista='23/11/2026',
+                foto_invio_path='logista/7_invio.jpg',
+                risultato={
+                    'inserite': 1,
+                    'rifiutate': [{'codice': '2423', 'qta': '0,2', 'errore': 'Fuori catalogo'}],
+                    'invio': {'esito': 'inviato', 'totali': ['Totale con IVA 522,00 €']},
+                },
+            )
+            with patch('urllib.request.urlopen', return_value=_ok()) as urlopen:
+                self.assertEqual(notifica_telegram(job), 1)
+        richiesta = urlopen.call_args[0][0]
+        self.assertTrue(richiesta.full_url.endswith('/sendPhoto'))
+        corpo = richiesta.data.decode('utf-8', errors='replace')
+        self.assertIn('✅ Ordine Logista INVIATO', corpo)
+        self.assertIn('Codice ordine: ORD-77   Consegna: 23/11/2026', corpo)
+        self.assertIn('Tabacco: 1,8 kg · Altri prodotti: 4 pz', corpo)
+        self.assertIn('Importo: Totale con IVA 522,00 €', corpo)
+        self.assertIn('Righe inserite: 1/2', corpo)
+        self.assertIn('2423 0,2 → Fuori catalogo', corpo)
+        self.assertIn(b'\xff\xd8invio', richiesta.data)
+
+    def test_fallimento_solo_testo(self, _chat):
+        from reconciliation.logista_service import notifica_telegram
+
+        job = self._job(
+            stato=LogistaInvioJob.NON_INVIATO,
+            fase='data',
+            errore='Data di consegna non disponibile',
+            risultato={'inserite': 2, 'rifiutate': []},
+        )
+        with override_settings(MEDIA_ROOT=self.media.name), \
+                patch('urllib.request.urlopen', return_value=_ok()) as urlopen:
+            self.assertEqual(notifica_telegram(job), 1)
+        richiesta = urlopen.call_args[0][0]
+        self.assertTrue(richiesta.full_url.endswith('/sendMessage'))
+        testo = urllib.parse.parse_qs(richiesta.data.decode())['text'][0]
+        self.assertEqual(testo, '\n'.join([
+            '⚠️ Ordine Logista NON inviato',
+            'Fase: data  Motivo: Data di consegna non disponibile',
+            'La proposta caricata è rimasta su WebT: controlla e invia a mano.',
+        ]))
+
+    def test_incerto_chiede_verifica(self, _chat):
+        from reconciliation.logista_service import testo_telegram
+
+        job = self._job(
+            stato=LogistaInvioJob.NON_INVIATO, fase='incerto', errore='x — Esito INCERTO',
+            risultato={'inserite': 2},
+        )
+        self.assertIn('verificare su WebT', testo_telegram(job))
+        self.assertNotIn('invia a mano', testo_telegram(job))
+
+    def test_errore_rete_solo_log_senza_token(self, _chat):
+        from reconciliation.logista_service import notifica_telegram
+
+        job = self._job(stato=LogistaInvioJob.ERRORE, fase='caricamento', errore='giù')
+        with override_settings(MEDIA_ROOT=self.media.name), \
+                patch('urllib.request.urlopen', side_effect=urllib.error.URLError('down')), \
+                self.assertLogs('reconciliation.logista_service', level='WARNING') as logs:
+            self.assertEqual(notifica_telegram(job), 0)
+        self.assertNotIn(BOT, '\n'.join(logs.output))
 
 
 @patch.dict('os.environ', ENV)

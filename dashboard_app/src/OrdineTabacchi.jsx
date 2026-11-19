@@ -32,6 +32,9 @@ function mediaTesto(value) {
   return Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+const STATI_LOGISTA_IN_CORSO = ['in_corso_caricamento', 'in_corso_invio'];
+const FAMIGLIE_ALTRI = ['Dispositivi', 'Solidi'];
+
 export default function OrdineTabacchi() {
   const oggi = isoLocale(new Date());
   const [online, setOnline] = useState(null);
@@ -82,9 +85,9 @@ export default function OrdineTabacchi() {
       setPreordine(data.preordine);
       setOnline(data.preordine.agent_online);
       const job = data.preordine.logista_job;
-      if (job && (job.stato === 'in_corso' || job.stato === 'attesa_conferma')) {
+      if (job && (STATI_LOGISTA_IN_CORSO.includes(job.stato) || job.stato === 'attesa_conferma')) {
         setLogistaJob(job);
-        if (job.stato === 'in_corso') seguiJobLogistaRef.current?.(job.id);
+        if (STATI_LOGISTA_IN_CORSO.includes(job.stato)) seguiJobLogistaRef.current?.(job.id);
       }
     }
   }, []);
@@ -364,7 +367,7 @@ export default function OrdineTabacchi() {
         const data = await response.json();
         if (data.status === 'success') {
           setLogistaJob(data.job);
-          if (data.job.stato !== 'in_corso') return;
+          if (!STATI_LOGISTA_IN_CORSO.includes(data.job.stato)) return;
         }
       } catch {
         // rete instabile: si riprova al giro successivo
@@ -390,17 +393,17 @@ export default function OrdineTabacchi() {
       const data = await response.json();
       if (data.status !== 'success') {
         if (data.job_id) {
-          setLogistaJob({ id: data.job_id, stato: 'in_corso', righe_inviate: 0, minuti_stimati: 1 });
+          setLogistaJob({ id: data.job_id, stato: 'in_corso_caricamento', righe_inviate: 0, minuti_stimati: 1 });
           seguiJobLogista(data.job_id);
         } else {
-          setLogistaJob({ stato: 'errore', errore: data.error || 'Invio a Logista non riuscito.' });
+          setLogistaJob({ stato: 'errore', fase: 'caricamento', errore: data.error || 'Invio a Logista non riuscito.' });
         }
         return;
       }
       setLogistaJob(data.job);
       seguiJobLogista(data.job_id);
     } catch {
-      setLogistaJob({ stato: 'errore', errore: 'Impossibile contattare il server myTaba.' });
+      setLogistaJob({ stato: 'errore', fase: 'caricamento', errore: 'Impossibile contattare il server myTaba.' });
     } finally {
       setLogistaAvvio(false);
     }
@@ -409,38 +412,89 @@ export default function OrdineTabacchi() {
   const inviaALogista = () => {
     if (!preordine) return;
     if (!preordine.logista_configurato) {
-      setLogistaJob({ stato: 'errore', errore: 'Servizio Logista non configurato.' });
+      setLogistaJob({ stato: 'errore', fase: 'caricamento', errore: 'Servizio Logista non configurato.' });
       return;
     }
-    const righe = (preordine.righe || []).filter(riga => Number(riga.unita) > 0).length;
-    if (!righe) {
+    const attive = (preordine.righe || []).filter(riga => Number(riga.unita) > 0);
+    if (!attive.length) {
       setErrore('Nessuna riga con quantità da caricare.');
       return;
     }
+    const pezziAltri = attive
+      .filter(riga => FAMIGLIE_ALTRI.includes(riga.famiglia))
+      .reduce((somma, riga) => somma + Number(riga.unita || 0), 0);
     const kg = Number(preordine.kg || 0).toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-    if (!window.confirm(`Inserire ${righe} righe (${kg} kg) nella proposta Logista? L'ordine NON verrà inviato.`)) return;
+    const testo = `Verranno caricate ${attive.length} righe (${kg} kg tabacco, ${pezziAltri} pz altri) `
+      + 'e l\'ordine verrà INVIATO a Logista in modo definitivo. Procedere?';
+    if (!window.confirm(testo)) return;
     avviaLogista(false);
   };
 
-  const logistaInCorso = logistaAvvio || logistaJob?.stato === 'in_corso';
+  const logistaInCorso = logistaAvvio || STATI_LOGISTA_IN_CORSO.includes(logistaJob?.stato);
+
+  const fotoLogista = (url, alt) => (url ? (
+    <a href={url} target="_blank" rel="noreferrer" className="tab-logista-foto">
+      <img src={url} alt={alt} />
+    </a>
+  ) : null);
+
+  const elencoRifiutate = (job) => {
+    const rifiutate = job.rifiutate || [];
+    if (!rifiutate.length) return null;
+    return (
+      <div className="tab-logista-rifiutate">
+        <strong>Rifiutate ({rifiutate.length})</strong>
+        <ul>
+          {rifiutate.map((riga, i) => (
+            <li key={`${riga.codice}-${i}`}>
+              <span className="tab-aams">{riga.codice}</span> {riga.qta} — {riga.errore}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  const elencoAvvisi = (job) => {
+    const avvisi = job.avvisi || [];
+    if (!avvisi.length) return null;
+    return (
+      <div className="tab-logista-avvisi">
+        <strong>Avvisi</strong>
+        <ul>
+          {avvisi.map((riga, i) => (
+            <li key={`${riga.codice}-${i}`}>
+              <span className="tab-aams">{riga.codice}</span> {(riga.avvisi || []).join(' · ')}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  const chiudiLogista = (
+    <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>Chiudi</button>
+  );
 
   const pannelloLogista = () => {
     if (!logistaJob) return null;
     const job = logistaJob;
-    if (job.stato === 'in_corso') {
+    if (STATI_LOGISTA_IN_CORSO.includes(job.stato)) {
       return (
         <div className="tab-logista">
-          Caricamento in corso su Logista… (~{job.minuti_stimati || 1} {Number(job.minuti_stimati) === 1 ? 'minuto' : 'minuti'})
+          {job.stato === 'in_corso_invio'
+            ? 'Invio ordine a Logista… (fino a 3 minuti)'
+            : `Caricamento righe… (~${job.minuti_stimati || 1} minuti in tutto)`}
         </div>
       );
     }
     if (job.stato === 'attesa_conferma') {
       return (
         <div className="tab-logista warn">
-          <p>Su WebT c&apos;è già una proposta con {job.righe_presenti ?? 0} righe. Svuotarla e caricare questo ordine?</p>
+          <p>Su WebT c&apos;è già una proposta con {job.righe_presenti ?? 0} righe. Svuotarla, caricare e inviare questo ordine?</p>
           <div className="tab-logista-actions">
             <button type="button" className="tab-btn primary" onClick={() => avviaLogista(true)} disabled={logistaInCorso}>
-              Svuota e carica
+              Svuota, carica e invia
             </button>
             <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>
               Annulla
@@ -449,69 +503,53 @@ export default function OrdineTabacchi() {
         </div>
       );
     }
-    if (job.stato === 'errore') {
+    if (job.stato === 'inviato') {
       return (
-        <div className="tab-logista error">
-          <p>{job.errore || 'Caricamento su Logista non riuscito.'}</p>
-          <div className="tab-logista-actions">
-            {preordine?.logista_configurato && (
-              <button type="button" className="tab-btn ghost" onClick={() => avviaLogista(false)} disabled={logistaInCorso}>
-                Riprova
-              </button>
-            )}
-            <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>
-              Chiudi
-            </button>
+        <div className="tab-logista ok">
+          <div className="tab-logista-head">
+            <div>
+              <strong>✅ Ordine INVIATO a Logista</strong>
+              <span className="tab-logista-conteggi">
+                Codice ordine <strong>{job.codice_ordine || '—'}</strong> · Consegna <strong>{job.data_consegna || '—'}</strong>
+              </span>
+              <span className="tab-logista-conteggi">Righe inserite {job.inserite ?? 0}/{job.righe_inviate}</span>
+              {(job.totali || []).map((riga, i) => (
+                <span key={i} className="tab-logista-conteggi">{riga}</span>
+              ))}
+            </div>
+            {fotoLogista(job.foto_invio_url || job.foto_url, 'Conferma invio su WebT')}
           </div>
+          {elencoRifiutate(job)}
+          {elencoAvvisi(job)}
+          <div className="tab-logista-actions">{chiudiLogista}</div>
         </div>
       );
     }
-    const rifiutate = job.rifiutate || [];
-    const avvisi = job.avvisi || [];
+    const incerto = job.fase === 'incerto' || /verificare su WebT/i.test(job.errore || '');
+    const nienteCaricato = job.fase === 'caricamento' && !job.inserite;
     return (
-      <div className="tab-logista ok">
+      <div className={`tab-logista ${job.stato === 'errore' ? 'error' : 'warn'}`}>
         <div className="tab-logista-head">
           <div>
-            <strong>Inserite {job.inserite ?? 0}/{job.righe_inviate}</strong>
-            {(job.proposta?.tabacchi != null || job.proposta?.altri != null) && (
-              <span className="tab-logista-conteggi">
-                Proposta WebT: {job.proposta?.tabacchi ?? 0} tabacchi · {job.proposta?.altri ?? 0} altri
-              </span>
+            <strong>⚠️ Ordine NON inviato</strong>
+            {job.fase && <span className="tab-logista-conteggi">Fase: {job.fase}</span>}
+            <p>{job.errore || 'Operazione su Logista non riuscita.'}</p>
+            {incerto ? (
+              <p className="tab-logista-nota">Esito incerto: verifica su WebT se l&apos;ordine è partito prima di reinviarlo.</p>
+            ) : !nienteCaricato && (
+              <p className="tab-logista-nota">La proposta caricata è rimasta su WebT: controlla e invia a mano.</p>
             )}
           </div>
-          {job.foto_url && (
-            <a href={job.foto_url} target="_blank" rel="noreferrer" className="tab-logista-foto">
-              <img src={job.foto_url} alt="Proposta su WebT" />
-            </a>
-          )}
+          {fotoLogista(job.foto_invio_url || job.foto_url, 'Stato WebT')}
         </div>
-        {rifiutate.length > 0 && (
-          <div className="tab-logista-rifiutate">
-            <strong>Rifiutate ({rifiutate.length})</strong>
-            <ul>
-              {rifiutate.map((riga, i) => (
-                <li key={`${riga.codice}-${i}`}>
-                  <span className="tab-aams">{riga.codice}</span> {riga.qta} — {riga.errore}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {avvisi.length > 0 && (
-          <div className="tab-logista-avvisi">
-            <strong>Avvisi</strong>
-            <ul>
-              {avvisi.map((riga, i) => (
-                <li key={`${riga.codice}-${i}`}>
-                  <span className="tab-aams">{riga.codice}</span> {(riga.avvisi || []).join(' · ')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <p className="tab-logista-nota">Ordine NON inviato: controlla su WebT e premi «Invia ordine».</p>
+        {elencoRifiutate(job)}
         <div className="tab-logista-actions">
-          <button type="button" className="tab-btn ghost" onClick={() => setLogistaJob(null)}>Chiudi</button>
+          {nienteCaricato && job.stato === 'errore' && preordine?.logista_configurato && (
+            <button type="button" className="tab-btn ghost" onClick={() => avviaLogista(false)} disabled={logistaInCorso}>
+              Riprova
+            </button>
+          )}
+          {chiudiLogista}
         </div>
       </div>
     );
@@ -906,9 +944,9 @@ export default function OrdineTabacchi() {
                 className="tab-btn ghost"
                 onClick={inviaALogista}
                 disabled={logistaInCorso || attesa}
-                title="Inserisce le righe nella proposta d'ordine WebT. Non invia l'ordine."
+                title="Carica le righe nella proposta WebT e INVIA l'ordine a Logista in modo definitivo."
               >
-                {logistaInCorso ? 'Caricamento…' : 'Invia a Logista'}
+                {logistaInCorso ? 'In corso…' : 'Carica e invia a Logista'}
               </button>
               <button
                 type="button"

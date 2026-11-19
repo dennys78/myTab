@@ -10,7 +10,14 @@ import time
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .logista_service import crea_job, job_json, logista_configurato, riepilogo_preordine, scadi_job_bloccati
+from .logista_service import (
+    crea_job,
+    job_attivo,
+    job_json,
+    logista_configurato,
+    riepilogo_preordine,
+    scadi_job_bloccati,
+)
 from .models import Company, LogistaInvioJob, TabaUnoAgent, TabaUnoRequest
 from .tabacchi_views import accoda_lettura, crea_preordine_da_lettura
 from .tabauno_portal import agent_is_online, expire_requests
@@ -81,9 +88,9 @@ def api_n8n_tabacchi_logista_avvia(request):
     if not logista_configurato():
         return JsonResponse({'errore': 'Servizio Logista non configurato.'}, status=503)
     scadi_job_bloccati(company)
-    attivo = LogistaInvioJob.objects.filter(company=company, stato=LogistaInvioJob.IN_CORSO).first()
+    attivo = job_attivo(company)
     if attivo:
-        return JsonResponse({'errore': 'C’è già un caricamento in corso su Logista.', 'job_id': attivo.id}, status=409)
+        return JsonResponse({'errore': 'C’è già un job Logista in corso.', 'job_id': attivo.id}, status=409)
     if not agent_is_online(company):
         return JsonResponse({'errore': AGENTE_IRRAGGIUNGIBILE}, status=503)
 

@@ -596,9 +596,12 @@ def api_tabacchi_logista_job_foto(request, job_id):
     if err:
         return err
     job = LogistaInvioJob.objects.filter(id=job_id, company=company).first()
-    if not job or not job.foto_path:
+    rel = ''
+    if job:
+        rel = job.foto_invio_path if request.GET.get('tipo') == 'invio' else job.foto_path
+    if not rel:
         return JsonResponse({'status': 'error', 'error': 'Foto non disponibile.'}, status=404)
-    path = Path(settings.MEDIA_ROOT) / job.foto_path
+    path = Path(settings.MEDIA_ROOT) / rel
     if not path.is_file():
         return JsonResponse({'status': 'error', 'error': 'Foto non disponibile.'}, status=404)
     return FileResponse(path.open('rb'), content_type='image/jpeg')
