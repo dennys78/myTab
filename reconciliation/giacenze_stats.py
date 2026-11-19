@@ -38,6 +38,13 @@ ETICHETTE_STATO = {
     OK: 'Copre',
     FERMO: 'Fermo',
 }
+# Media minima (pz/giorno) per considerare un prodotto «immancabile».
+MEDIA_IMMANCABILE = Decimal('1')
+
+
+def is_immancabile(stato, media) -> bool:
+    """Va integrato prima dell'ordine: finisce prima della consegna e ha vendite rilevanti."""
+    return stato in (ESAURITO, PRIMA_CONSEGNA) and _decimal(media) >= MEDIA_IMMANCABILE
 
 
 def vendite_settimanali(vendite, ultimo) -> list[Decimal]:
@@ -126,6 +133,7 @@ def calcola_giacenze(dati_agente, oggi, consegna=None, data_proiezione=None, *, 
         alla_data = giacenza - media * distanza_proiezione
         mancanti = int((-alla_consegna).to_integral_value(rounding=ROUND_CEILING)) if alla_consegna < 0 else 0
         mancanti_alla_data = int((-alla_data).to_integral_value(rounding=ROUND_CEILING)) if alla_data < 0 else 0
+        stato = stato_giacenza(giacenza, media, distanza_consegna)
         righe.append({
             'aams': _text_code(articolo.get('aams')),
             'descrizione': ' '.join(str(articolo.get('descrizione') or '').split()),
@@ -143,9 +151,11 @@ def calcola_giacenze(dati_agente, oggi, consegna=None, data_proiezione=None, *, 
             'alla_data': numero_json(alla_data, 1),
             'mancanti': mancanti,
             'mancanti_alla_data': mancanti_alla_data,
-            'stato': stato_giacenza(giacenza, media, distanza_consegna),
+            'stato': stato,
+            'immancabile': is_immancabile(stato, media),
         })
     righe.sort(key=lambda riga: (
+        0 if riga['immancabile'] else 1,
         STATI.index(riga['stato']) if riga['stato'] in STATI else 99,
         riga['giorni_fine'] if riga['giorni_fine'] is not None else 10**9,
         riga['descrizione'],
@@ -162,6 +172,9 @@ def calcola_giacenze(dati_agente, oggi, consegna=None, data_proiezione=None, *, 
 
 def _riepilogo(righe) -> dict:
     conteggi = {stato: 0 for stato in STATI}
+    conteggi['immancabile'] = 0
     for riga in righe:
         conteggi[riga['stato']] += 1
+        if riga.get('immancabile'):
+            conteggi['immancabile'] += 1
     return conteggi

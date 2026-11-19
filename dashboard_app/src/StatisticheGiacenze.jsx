@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 
-const STATI_ORDINE = ['esaurito', 'prima_consegna', 'rischio', 'ok', 'fermo'];
+const FILTRI = [
+  { id: 'tutti', label: 'In elenco' },
+  { id: 'immancabile', label: 'Immancabili' },
+  { id: 'esaurito', label: 'Esaurito' },
+  { id: 'prima_consegna', label: 'Prima dell’ordine' },
+  { id: 'rischio', label: 'Rischio' },
+];
 const SOGLIE_MINIME = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const SOGLIA_DEFAULT = 5;
-const CHIP_LABEL = {
-  esaurito: 'Esaurito',
-  prima_consegna: 'Prima dell’ordine',
-  rischio: 'Rischio',
-  ok: 'Copre',
-  fermo: 'Fermo',
-};
 
 function sottoSoglia(riga, soglia) {
   return Number(riga.alla_data) <= soglia;
@@ -25,7 +25,7 @@ function formattaChiusura(iso) {
 /** Sabato della settimana in corso (lunedì–domenica). */
 function sabatoSettimanaCorrente(oggi = new Date()) {
   const d = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate(), 12);
-  const giorno = d.getDay(); // 0=dom … 6=sab
+  const giorno = d.getDay();
   const versoLunedi = giorno === 0 ? -6 : 1 - giorno;
   d.setDate(d.getDate() + versoLunedi + 5);
   const y = d.getFullYear();
@@ -48,6 +48,7 @@ function confronta(a, b, chiave, direzione) {
   if (va == null) return 1;
   if (vb == null) return -1;
   if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * segno;
+  if (typeof va === 'boolean' && typeof vb === 'boolean') return ((va === vb) ? 0 : va ? -1 : 1) * segno;
   return String(va).localeCompare(String(vb), 'it') * segno;
 }
 
@@ -60,7 +61,6 @@ export default function StatisticheGiacenze() {
   const [dataProiezione, setDataProiezione] = useState(() => sabatoSettimanaCorrente());
   const [filtroStato, setFiltroStato] = useState('tutti');
   const [sogliaMinima, setSogliaMinima] = useState(SOGLIA_DEFAULT);
-  const [ricerca, setRicerca] = useState('');
   const [ordinamento, setOrdinamento] = useState({ chiave: 'alla_data', direzione: 'asc' });
   const pollRef = useRef(null);
 
@@ -108,6 +108,7 @@ export default function StatisticheGiacenze() {
   }, [caricaAnalisi]);
 
   const leggi = async () => {
+    if (online !== true || attesa) return;
     setErrore('');
     setAttesa(true);
     ferma();
@@ -164,35 +165,23 @@ export default function StatisticheGiacenze() {
     [analisi, sogliaMinima],
   );
 
-  const riepilogo = useMemo(() => {
-    const conteggi = Object.fromEntries(STATI_ORDINE.map(s => [s, 0]));
-    for (const riga of rilevanti) conteggi[riga.stato] = (conteggi[riga.stato] || 0) + 1;
-    return conteggi;
+  const conteggi = useMemo(() => {
+    const out = { tutti: rilevanti.length, immancabile: 0, esaurito: 0, prima_consegna: 0, rischio: 0 };
+    for (const riga of rilevanti) {
+      if (out[riga.stato] != null) out[riga.stato] += 1;
+      if (riga.immancabile) out.immancabile += 1;
+    }
+    return out;
   }, [rilevanti]);
 
   const righe = useMemo(() => {
     let lista = [...rilevanti];
-    if (filtroStato !== 'tutti') lista = lista.filter(r => r.stato === filtroStato);
-    const q = ricerca.trim().toLowerCase();
-    if (q) {
-      lista = lista.filter(r =>
-        String(r.aams).toLowerCase().includes(q)
-        || String(r.descrizione).toLowerCase().includes(q)
-        || String(r.famiglia).toLowerCase().includes(q));
-    }
+    if (filtroStato === 'immancabile') lista = lista.filter(r => r.immancabile);
+    else if (filtroStato !== 'tutti') lista = lista.filter(r => r.stato === filtroStato);
     const { chiave, direzione } = ordinamento;
-    if (chiave === 'stato') {
-      lista.sort((a, b) => {
-        const ia = STATI_ORDINE.indexOf(a.stato);
-        const ib = STATI_ORDINE.indexOf(b.stato);
-        const base = (ia - ib) * (direzione === 'asc' ? 1 : -1);
-        return base || confronta(a, b, 'alla_data', 'asc');
-      });
-    } else {
-      lista.sort((a, b) => confronta(a, b, chiave, direzione));
-    }
+    lista.sort((a, b) => confronta(a, b, chiave, direzione));
     return lista;
-  }, [rilevanti, filtroStato, ricerca, ordinamento]);
+  }, [rilevanti, filtroStato, ordinamento]);
 
   const ordina = (chiave) => {
     setOrdinamento(prev => (
@@ -220,6 +209,13 @@ export default function StatisticheGiacenze() {
     </th>
   );
 
+  const badgeStato = (riga) => {
+    if (riga.immancabile) {
+      return <span className="gia-badge gia-immancabile">Immancabile</span>;
+    }
+    return <span className={`gia-badge gia-${riga.stato}`}>{etichette[riga.stato]}</span>;
+  };
+
   return (
     <div className="tab-page gia-page">
       <header className="tab-header">
@@ -230,9 +226,6 @@ export default function StatisticheGiacenze() {
               ? `Vendite delle ultime 4 settimane · chiusura del ${formattaChiusura(analisi.ultimo_giorno_chiuso)}`
               : 'Vendite delle ultime 4 settimane · proiezione giacenze'}
           </p>
-          <p className={`tab-pc ${online ? 'online' : online === false ? 'offline' : ''}`}>
-            PC negozio: {online == null ? '…' : online ? 'online' : 'offline'}
-          </p>
         </div>
         <div className="tab-header-actions">
           <button
@@ -240,7 +233,9 @@ export default function StatisticheGiacenze() {
             className="tab-btn primary gia-btn-leggi"
             onClick={leggi}
             disabled={attesa || online !== true}
+            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
           >
+            <Wifi size={16} aria-hidden="true" />
             {attesa ? 'Lettura…' : analisi ? 'Aggiorna da PC' : 'Leggi da PC'}
           </button>
         </div>
@@ -249,7 +244,11 @@ export default function StatisticheGiacenze() {
       {errore && <div className="tab-error">{errore}</div>}
 
       {!analisi && !attesa && (
-        <p className="tab-empty">Premi «Leggi da PC» quando il servizio TabaUnoAgent è online.</p>
+        <p className="tab-empty">
+          {online === true
+            ? 'Premi «Leggi da PC» per caricare le giacenze.'
+            : 'Il PC remoto non è raggiungibile: avvia TabaUnoAgent e riprova.'}
+        </p>
       )}
 
       {analisi && (
@@ -276,39 +275,22 @@ export default function StatisticheGiacenze() {
                 ))}
               </select>
             </div>
-            <div className="tab-control gia-control-cerca">
-              <span className="tab-label">Cerca</span>
-              <input
-                type="search"
-                value={ricerca}
-                placeholder="Codice, nome, famiglia…"
-                onChange={e => setRicerca(e.target.value)}
-              />
+            <div className="tab-control gia-control-filtri">
+              <span className="tab-label">Filtra</span>
+              <div className="gia-filtri" role="group" aria-label="Filtra per stato">
+                {FILTRI.map(filtro => (
+                  <button
+                    key={filtro.id}
+                    type="button"
+                    className={`tab-btn gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
+                    onClick={() => setFiltroStato(filtro.id)}
+                  >
+                    {filtro.label}
+                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-
-          <div className="gia-filtri" role="group" aria-label="Filtra per stato">
-            <button
-              type="button"
-              className={`gia-chip gia-tutti ${filtroStato === 'tutti' ? 'active' : ''}`}
-              onClick={() => setFiltroStato('tutti')}
-            >
-              <span className="gia-chip-dot" aria-hidden="true" />
-              <span className="gia-chip-label">In elenco</span>
-              <span className="gia-chip-count">{rilevanti.length}</span>
-            </button>
-            {STATI_ORDINE.map(stato => (
-              <button
-                key={stato}
-                type="button"
-                className={`gia-chip gia-${stato} ${filtroStato === stato ? 'active' : ''}`}
-                onClick={() => setFiltroStato(stato)}
-              >
-                <span className="gia-chip-dot" aria-hidden="true" />
-                <span className="gia-chip-label">{CHIP_LABEL[stato] || etichette[stato]}</span>
-                <span className="gia-chip-count">{riepilogo[stato] || 0}</span>
-              </button>
-            ))}
           </div>
 
           <div className="tab-table-wrap gia-table-wrap">
@@ -326,7 +308,7 @@ export default function StatisticheGiacenze() {
               </thead>
               <tbody>
                 {righe.map(riga => (
-                  <tr key={riga.aams} className={`gia-row gia-${riga.stato}`}>
+                  <tr key={riga.aams} className={`gia-row gia-${riga.immancabile ? 'immancabile' : riga.stato}`}>
                     <td className="gia-col-articolo">
                       <div className="tab-articolo">
                         <span className="tab-aams">{riga.aams}</span>
@@ -350,16 +332,14 @@ export default function StatisticheGiacenze() {
                         <span className="gia-manca"> (−{riga.mancanti_alla_data})</span>
                       )}
                     </td>
-                    <td className="gia-col-stato">
-                      <span className={`gia-badge gia-${riga.stato}`}>{etichette[riga.stato]}</span>
-                    </td>
+                    <td className="gia-col-stato">{badgeStato(riga)}</td>
                   </tr>
                 ))}
                 {!righe.length && (
                   <tr>
                     <td colSpan={7} className="tab-empty-cell">
                       Nessun articolo con giacenza stimata ≤ {sogliaMinima} pz
-                      {filtroStato !== 'tutti' ? ' per questo stato' : ''}.
+                      {filtroStato !== 'tutti' ? ' per questo filtro' : ''}.
                     </td>
                   </tr>
                 )}

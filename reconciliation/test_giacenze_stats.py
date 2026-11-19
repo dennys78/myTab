@@ -12,6 +12,7 @@ from reconciliation.giacenze_stats import (
     PRIMA_CONSEGNA,
     RISCHIO,
     calcola_giacenze,
+    is_immancabile,
     stato_giacenza,
     vendite_settimanali,
 )
@@ -32,6 +33,13 @@ class FormulaGiacenzeTests(TestCase):
         self.assertEqual(stato_giacenza(35, 5, 6), RISCHIO)  # 7 giorni < 6+2
         self.assertEqual(stato_giacenza(50, 5, 6), OK)
         self.assertEqual(stato_giacenza(10, 0, 6), FERMO)
+
+    def test_immancabile(self):
+        self.assertTrue(is_immancabile(PRIMA_CONSEGNA, 5))
+        self.assertTrue(is_immancabile(ESAURITO, 2))
+        self.assertFalse(is_immancabile(PRIMA_CONSEGNA, 0.4))
+        self.assertFalse(is_immancabile(OK, 10))
+        self.assertFalse(is_immancabile(RISCHIO, 5))
 
     def test_proiezione_a_data_scelta(self):
         ultimo = date(2026, 11, 16)
