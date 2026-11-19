@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus, Wifi } from 'lucide-react';
+import { Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 import {
   GIORNI,
   domaniIso,
-  fraseCopertura,
-  giorniAllaConsegna,
   isoLocale,
   ricalcolaRighe,
   totaleOrdine,
@@ -296,9 +294,6 @@ export default function OrdineGratta() {
 
   const totale = useMemo(() => totaleOrdine(preordine?.righe || []), [preordine]);
   const bloccato = preordine && !preordine.modificabile;
-  const distanza = preordine
-    ? giorniAllaConsegna(oggi, preordine.ultimo_giorno_chiuso, preordine.data_consegna)
-    : 0;
 
   const ordina = (chiave) => {
     setOrdinamento(prev => (
@@ -375,37 +370,56 @@ export default function OrdineGratta() {
                 onChange={e => aggiornaParametri({ data_consegna: e.target.value })}
               />
             </div>
-            <div className="tab-control gia-control-filtri">
-              <div className="gia-filtri" role="group" aria-label="Filtra per gruppo">
-                {FILTRI.map(filtro => (
-                  <button
-                    key={filtro.id}
-                    type="button"
-                    className={`gia-filtro-btn grt-filtro-${filtro.id} ${filtroGruppo === filtro.id ? 'active' : ''}`}
-                    onClick={() => setFiltroGruppo(filtro.id)}
-                  >
-                    <span className="gia-filtro-dot" aria-hidden="true" />
-                    <span className="gia-filtro-label">{filtro.label}</span>
-                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </>
         )}
-        <div className="tab-control gia-control-leggi">
-          <button
-            type="button"
-            className="tab-btn primary gia-btn-leggi"
-            onClick={leggi}
-            disabled={attesa || online !== true}
-            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
-          >
-            <Wifi size={16} aria-hidden="true" />
-            {attesa ? 'Lettura…' : preordine ? 'Aggiorna da PC' : 'Leggi da PC'}
-          </button>
-        </div>
+        {!preordine && (
+          <div className="tab-control gia-control-leggi">
+            <button
+              type="button"
+              className="tab-btn primary gia-btn-leggi"
+              onClick={leggi}
+              disabled={attesa || online !== true}
+              title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+            >
+              <Wifi size={16} aria-hidden="true" />
+              {attesa ? 'Lettura…' : 'Leggi da PC'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {preordine && (
+        <div className="tab-controls gia-controls grt-controls grt-controls-tools">
+          <div className="tab-control gia-control-filtri">
+            <div className="gia-filtri" role="group" aria-label="Filtra per gruppo">
+              {FILTRI.map(filtro => (
+                <button
+                  key={filtro.id}
+                  type="button"
+                  className={`gia-filtro-btn grt-filtro-${filtro.id} ${filtroGruppo === filtro.id ? 'active' : ''}`}
+                  onClick={() => setFiltroGruppo(filtro.id)}
+                >
+                  <span className="gia-filtro-dot" aria-hidden="true" />
+                  <span className="gia-filtro-label">{filtro.label}</span>
+                  <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="tab-control gia-control-leggi">
+            <button
+              type="button"
+              className="tab-btn primary gia-btn-leggi"
+              onClick={leggi}
+              disabled={attesa || online !== true}
+              title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+            >
+              <Wifi size={16} aria-hidden="true" />
+              {attesa ? 'Lettura…' : 'Aggiorna da PC'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {!preordine && !attesa && (
         <p className="tab-empty">
@@ -417,9 +431,6 @@ export default function OrdineGratta() {
 
       {preordine && (
         <>
-          <p className="grt-frase">
-            {fraseCopertura(preordine.data_consegna, distanza, preordine.giorni_copertura)}
-          </p>
           <div className="gia-sep" aria-hidden="true" />
 
           <div className="tab-table-wrap gia-table-wrap">
@@ -458,23 +469,25 @@ export default function OrdineGratta() {
                       {riga.giorni_coperti == null ? '—' : mediaTesto(riga.giorni_coperti, 1)}
                     </td>
                     <td className="gia-col-num grt-col-pacchi">
-                      <div className="grt-step">
+                      <div className="grt-step" role="group" aria-label={`Pacchi ${riga.descrizione || riga.codice}`}>
                         <button
                           type="button"
+                          className="grt-step-btn"
                           aria-label="Meno un pacco"
-                          disabled={bloccato}
+                          disabled={bloccato || Number(riga.pacchi) <= 0}
                           onClick={() => cambiaPacchi(riga.codice, -1)}
                         >
-                          <Minus size={16} />
+                          −
                         </button>
                         <b>{riga.pacchi}</b>
                         <button
                           type="button"
+                          className="grt-step-btn"
                           aria-label="Più un pacco"
                           disabled={bloccato}
                           onClick={() => cambiaPacchi(riga.codice, 1)}
                         >
-                          <Plus size={16} />
+                          +
                         </button>
                       </div>
                     </td>
