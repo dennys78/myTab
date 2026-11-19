@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus, Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 import {
   GIORNI,
@@ -21,6 +21,21 @@ const STATI = {
   errore: 'Errore',
 };
 
+const FILTRI = [
+  { id: 'tutti', label: 'Tutti' },
+  { id: 'ordinare', label: 'Da ordinare' },
+  { id: 'occhio', label: 'Occhio' },
+  { id: 'coperti', label: 'Coperti' },
+];
+
+const ORDINE_GRUPPO = { ordinare: 0, occhio: 1, coperti: 2 };
+
+const ETICHETTE_GRUPPO = {
+  ordinare: 'Da ordinare',
+  occhio: 'Occhio',
+  coperti: 'Coperto',
+};
+
 function oraLetta(iso) {
   if (!iso) return '';
   const data = new Date(iso);
@@ -32,9 +47,21 @@ function euro(value) {
   return `${Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 }
 
-function mediaTesto(value) {
-  const n = Number(value || 0);
-  return n.toLocaleString('it-IT', { maximumFractionDigits: 2 });
+function mediaTesto(value, digits = 2) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('it-IT', { maximumFractionDigits: digits });
+}
+
+function confronta(a, b, chiave, direzione) {
+  const segno = direzione === 'asc' ? 1 : -1;
+  const va = a[chiave];
+  const vb = b[chiave];
+  if (va == null && vb == null) return 0;
+  if (va == null) return 1;
+  if (vb == null) return -1;
+  if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * segno;
+  return String(va).localeCompare(String(vb), 'it') * segno;
 }
 
 export default function OrdineGratta() {
@@ -44,7 +71,8 @@ export default function OrdineGratta() {
   const [attesa, setAttesa] = useState(false);
   const [errore, setErrore] = useState('');
   const [invio, setInvio] = useState(false);
-  const [copertiAperti, setCopertiAperti] = useState(false);
+  const [filtroGruppo, setFiltroGruppo] = useState('tutti');
+  const [ordinamento, setOrdinamento] = useState({ chiave: 'giorni_coperti', direzione: 'asc' });
   const pollRef = useRef(null);
   const saveRef = useRef(null);
 
@@ -83,7 +111,12 @@ export default function OrdineGratta() {
       .then(d => {
         if (d.status !== 'success') return;
         setOnline(!!d.agent_online);
-        const bozza = (d.preordini || []).find(row => row.stato === 'bozza' || row.stato === 'errore' || row.stato === 'inviato_n8n' || row.stato === 'carrello_pronto');
+        const bozza = (d.preordini || []).find(row => (
+          row.stato === 'bozza'
+          || row.stato === 'errore'
+          || row.stato === 'inviato_n8n'
+          || row.stato === 'carrello_pronto'
+        ));
         if (bozza) apri(bozza.id);
       })
       .catch(() => {});
@@ -233,15 +266,33 @@ export default function OrdineGratta() {
     else setErrore(data.error || 'Eliminazione non riuscita.');
   };
 
-  const gruppi = useMemo(() => {
+  const conteggi = useMemo(() => {
     const righe = preordine?.righe || [];
-    const perCopertura = (a, b) => (a.giorni_coperti ?? 9999) - (b.giorni_coperti ?? 9999);
-    return {
-      ordinare: righe.filter(riga => riga.gruppo === 'ordinare').sort(perCopertura),
-      occhio: righe.filter(riga => riga.gruppo === 'occhio').sort(perCopertura),
-      coperti: righe.filter(riga => riga.gruppo === 'coperti'),
-    };
+    const out = { tutti: righe.length, ordinare: 0, occhio: 0, coperti: 0 };
+    for (const riga of righe) {
+      if (out[riga.gruppo] != null) out[riga.gruppo] += 1;
+    }
+    return out;
   }, [preordine]);
+
+  const righe = useMemo(() => {
+    let lista = [...(preordine?.righe || [])];
+    if (filtroGruppo !== 'tutti') lista = lista.filter(r => r.gruppo === filtroGruppo);
+    const { chiave, direzione } = ordinamento;
+    lista.sort((a, b) => {
+      if (chiave === 'gruppo') {
+        const ga = ORDINE_GRUPPO[a.gruppo] ?? 9;
+        const gb = ORDINE_GRUPPO[b.gruppo] ?? 9;
+        if (ga !== gb) return (ga - gb) * (direzione === 'asc' ? 1 : -1);
+      }
+      const cmp = confronta(a, b, chiave, direzione);
+      if (cmp !== 0) return cmp;
+      return (ORDINE_GRUPPO[a.gruppo] ?? 9) - (ORDINE_GRUPPO[b.gruppo] ?? 9)
+        || (a.giorni_coperti ?? 9999) - (b.giorni_coperti ?? 9999)
+        || String(a.descrizione || '').localeCompare(String(b.descrizione || ''), 'it');
+    });
+    return lista;
+  }, [preordine, filtroGruppo, ordinamento]);
 
   const totale = useMemo(() => totaleOrdine(preordine?.righe || []), [preordine]);
   const bloccato = preordine && !preordine.modificabile;
@@ -249,41 +300,64 @@ export default function OrdineGratta() {
     ? giorniAllaConsegna(oggi, preordine.ultimo_giorno_chiuso, preordine.data_consegna)
     : 0;
 
+  const ordina = (chiave) => {
+    setOrdinamento(prev => (
+      prev.chiave === chiave
+        ? { chiave, direzione: prev.direzione === 'asc' ? 'desc' : 'asc' }
+        : { chiave, direzione: chiave === 'descrizione' ? 'asc' : 'asc' }
+    ));
+  };
+
+  const freccia = (chiave) => {
+    if (ordinamento.chiave !== chiave) return '';
+    return ordinamento.direzione === 'asc' ? ' ↑' : ' ↓';
+  };
+
+  const intestazione = (chiave, titolo, sotto = '', classe = 'grt-col-num') => (
+    <th className={classe}>
+      <button
+        type="button"
+        className={`tab-sort gia-sort ${ordinamento.chiave === chiave ? 'active' : ''}`}
+        onClick={() => ordina(chiave)}
+      >
+        <span className="gia-th-main">{titolo}{freccia(chiave)}</span>
+        {sotto ? <span className="gia-th-sub">{sotto}</span> : null}
+      </button>
+    </th>
+  );
+
   return (
-    <div className="gratta-page">
-      <header className="gratta-top">
+    <div className="tab-page gratta-page">
+      <header className="tab-header">
         <div>
           <h1>Ordine Gratta e Vinci</h1>
-          <p className="gratta-meta">
-            {preordine?.letto_alle ? `Dati TabaUno letti alle ${oraLetta(preordine.letto_alle)}` : 'Nessuna lettura ancora'}
-            {' · '}
-            PC negozio {online ? 'online' : online === false ? 'offline' : '…'}
+          <p className="tab-sub">
+            {preordine?.letto_alle
+              ? `Dati TabaUno letti alle ${oraLetta(preordine.letto_alle)}`
+              : 'Lettura vendite e giacenze dal PC negozio'}
           </p>
         </div>
-        <button type="button" className="gratta-read" onClick={leggi} disabled={attesa || online !== true}>
-          {attesa ? 'In attesa del PC…' : 'Leggi da PC'}
-        </button>
       </header>
 
-      {errore && <p className="gratta-error">{errore}</p>}
+      {errore && <div className="tab-error">{errore}</div>}
       {preordine && !preordine.modificabile && (
-        <p className="gratta-status">
+        <div className="tab-ok">
           {STATI[preordine.stato] || preordine.stato}
           {preordine.messaggio_stato ? ` — ${preordine.messaggio_stato}` : ''}
-        </p>
+        </div>
       )}
 
-      {preordine && (
-        <>
-          <section className="gratta-choices">
-            <div>
-              <span>L&apos;ordine deve coprire</span>
-              <div className="gratta-days">
+      <div className="tab-controls gia-controls grt-controls">
+        {preordine && (
+          <>
+            <div className="tab-control">
+              <span className="tab-label">Copre (giorni)</span>
+              <div className="grt-days" role="group" aria-label="Giorni di copertura">
                 {GIORNI.map(giorni => (
                   <button
                     key={giorni}
                     type="button"
-                    className={preordine.giorni_copertura === giorni ? 'is-on' : ''}
+                    className={`grt-day-btn ${preordine.giorni_copertura === giorni ? 'active' : ''}`}
                     disabled={bloccato}
                     onClick={() => aggiornaParametri({ giorni_copertura: giorni })}
                   >
@@ -292,28 +366,136 @@ export default function OrdineGratta() {
                 ))}
               </div>
             </div>
-            <label>
-              Consegna
+            <div className="tab-control">
+              <span className="tab-label">Consegna</span>
               <input
                 type="date"
                 value={preordine.data_consegna}
                 disabled={bloccato}
                 onChange={e => aggiornaParametri({ data_consegna: e.target.value })}
               />
-            </label>
-          </section>
-          <p className="gratta-frase">
+            </div>
+            <div className="tab-control gia-control-filtri">
+              <div className="gia-filtri" role="group" aria-label="Filtra per gruppo">
+                {FILTRI.map(filtro => (
+                  <button
+                    key={filtro.id}
+                    type="button"
+                    className={`gia-filtro-btn grt-filtro-${filtro.id} ${filtroGruppo === filtro.id ? 'active' : ''}`}
+                    onClick={() => setFiltroGruppo(filtro.id)}
+                  >
+                    <span className="gia-filtro-dot" aria-hidden="true" />
+                    <span className="gia-filtro-label">{filtro.label}</span>
+                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        <div className="tab-control gia-control-leggi">
+          <button
+            type="button"
+            className="tab-btn primary gia-btn-leggi"
+            onClick={leggi}
+            disabled={attesa || online !== true}
+            title={online === true ? 'PC remoto raggiungibile' : 'PC remoto non raggiungibile'}
+          >
+            <Wifi size={16} aria-hidden="true" />
+            {attesa ? 'Lettura…' : preordine ? 'Aggiorna da PC' : 'Leggi da PC'}
+          </button>
+        </div>
+      </div>
+
+      {!preordine && !attesa && (
+        <p className="tab-empty">
+          {online === true
+            ? 'Premi «Leggi da PC» per calcolare l’ordine Gratta e Vinci.'
+            : 'Il PC remoto non è raggiungibile: avvia TabaUnoAgent e riprova.'}
+        </p>
+      )}
+
+      {preordine && (
+        <>
+          <p className="grt-frase">
             {fraseCopertura(preordine.data_consegna, distanza, preordine.giorni_copertura)}
           </p>
+          <div className="gia-sep" aria-hidden="true" />
 
-          <Gruppo titolo="Da ordinare" righe={gruppi.ordinare} vuoto="Nessun gioco da ordinare." onStep={cambiaPacchi} bloccato={bloccato} />
-          <Gruppo titolo="Da tenere d'occhio" righe={gruppi.occhio} vuoto="Nessun gioco al limite." onStep={cambiaPacchi} bloccato={bloccato} />
-          <section className="gratta-group">
-            <button type="button" className="gratta-fold" onClick={() => setCopertiAperti(v => !v)}>
-              Coperti ({gruppi.coperti.length}) {copertiAperti ? '▾' : '▸'}
-            </button>
-            {copertiAperti && <Lista righe={gruppi.coperti} onStep={cambiaPacchi} bloccato={bloccato} />}
-          </section>
+          <div className="tab-table-wrap gia-table-wrap">
+            <table className="tab-table gia-table grt-table">
+              <thead>
+                <tr>
+                  {intestazione('descrizione', 'Gioco', '', 'gia-col-articolo')}
+                  {intestazione('giacenza', 'Giacenza', 'oggi')}
+                  {intestazione('media', 'Media', 'pz/giorno')}
+                  {intestazione('giorni_coperti', 'Coperti', 'dopo consegna')}
+                  {intestazione('pacchi', 'Pacchi', 'ordine')}
+                  {intestazione('importo', 'Importo')}
+                  {intestazione('gruppo', 'Stato', '', 'gia-col-stato')}
+                </tr>
+              </thead>
+              <tbody>
+                {righe.map(riga => (
+                  <tr key={riga.codice} className={`gia-row grt-row grt-${riga.gruppo}`}>
+                    <td className="gia-col-articolo">
+                      <span className="gia-nome">{riga.descrizione || '—'}</span>
+                      <span className="grt-meta">
+                        {riga.codice}
+                        {riga.corretto_a_mano ? ' · corretto' : ''}
+                        {riga.escluso ? ' · escluso' : ''}
+                        {Number(riga.giorni_esauriti) > 0 ? ` · ${riga.giorni_esauriti} gg esaurito` : ''}
+                      </span>
+                    </td>
+                    <td className="gia-col-num">{mediaTesto(riga.giacenza, 0)}</td>
+                    <td className="gia-col-num">
+                      {mediaTesto(riga.media, 1)}
+                      {(riga.settimane || []).length > 0 && (
+                        <span className="gia-trend">{(riga.settimane || []).join(' · ')}</span>
+                      )}
+                    </td>
+                    <td className="gia-col-num">
+                      {riga.giorni_coperti == null ? '—' : mediaTesto(riga.giorni_coperti, 1)}
+                    </td>
+                    <td className="gia-col-num grt-col-pacchi">
+                      <div className="grt-step">
+                        <button
+                          type="button"
+                          aria-label="Meno un pacco"
+                          disabled={bloccato}
+                          onClick={() => cambiaPacchi(riga.codice, -1)}
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <b>{riga.pacchi}</b>
+                        <button
+                          type="button"
+                          aria-label="Più un pacco"
+                          disabled={bloccato}
+                          onClick={() => cambiaPacchi(riga.codice, 1)}
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="gia-col-num">{euro(riga.importo)}</td>
+                    <td className="gia-col-stato">
+                      <span className={`gia-badge grt-badge grt-${riga.gruppo}`}>
+                        {ETICHETTE_GRUPPO[riga.gruppo] || riga.gruppo}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!righe.length && (
+                  <tr>
+                    <td colSpan={7} className="tab-empty-cell">
+                      Nessun gioco in questo filtro.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           <div className="gratta-dock">
             <div>
@@ -333,43 +515,6 @@ export default function OrdineGratta() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Gruppo({ titolo, righe, vuoto, onStep, bloccato }) {
-  return (
-    <section className="gratta-group">
-      <h2>{titolo}</h2>
-      {righe.length === 0 ? <p className="gratta-empty">{vuoto}</p> : <Lista righe={righe} onStep={onStep} bloccato={bloccato} />}
-    </section>
-  );
-}
-
-function Lista({ righe, onStep, bloccato }) {
-  return (
-    <div className="gratta-list">
-      {righe.map(riga => (
-        <article key={riga.codice} className={`gratta-row is-${riga.gruppo}`}>
-          <div className="gratta-row-main">
-            <strong>{riga.codice} {riga.descrizione}</strong>
-            <span>{euro(riga.prezzo)} · vende {mediaTesto(riga.media)}/giorno · giacenza {mediaTesto(riga.giacenza)}</span>
-            <span className="gratta-weeks">{(riga.settimane || []).join(' · ')}</span>
-            <span>
-              {Number(riga.giorni_esauriti) > 0 ? `${riga.giorni_esauriti} gg esaurito · ` : ''}
-              {riga.giorni_coperti == null ? 'nessuna vendita recente' : `${mediaTesto(riga.giorni_coperti)} gg coperti dopo la consegna`}
-              {riga.corretto_a_mano ? ' · corretto' : ''}
-              {riga.escluso ? ' · escluso' : ''}
-            </span>
-          </div>
-          <div className="gratta-step">
-            <button type="button" aria-label="Meno un pacco" disabled={bloccato} onClick={() => onStep(riga.codice, -1)}><Minus size={18} /></button>
-            <b>{riga.pacchi}</b>
-            <button type="button" aria-label="Più un pacco" disabled={bloccato} onClick={() => onStep(riga.codice, 1)}><Plus size={18} /></button>
-            <small>{euro(riga.importo)}</small>
-          </div>
-        </article>
-      ))}
     </div>
   );
 }
