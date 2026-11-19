@@ -24,24 +24,29 @@ def _chat_ids_env() -> list[str]:
 
 def canale(company) -> dict:
     """Token e chat: stesse regole del bot (env, poi impostazione azienda, poi qualsiasi azienda)."""
+    from .user_notifications import telegram_chat_ids_for_company
+
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
     fonte_token = 'env TELEGRAM_BOT_TOKEN' if token else ''
+    azienda_bot = None
     if not token and company is not None:
         row = AppSetting.objects.filter(company=company, key='telegram_bot_token').exclude(value='').first()
         if row:
-            token, fonte_token = row.value.strip(), f'impostazioni azienda «{company}»'
+            token, fonte_token, azienda_bot = row.value.strip(), f'impostazioni azienda «{company}»', company
     if not token:
         row = AppSetting.objects.filter(key='telegram_bot_token').exclude(value='').select_related('company').first()
         if row:
-            token, fonte_token = row.value.strip(), f'impostazioni azienda «{row.company}»'
+            token, fonte_token, azienda_bot = row.value.strip(), f'impostazioni azienda «{row.company}»', row.company
 
     chat_ids = _chat_ids_env()
     fonte_chat = 'env TELEGRAM_LOGISTA_CHAT_IDS' if chat_ids else ''
     if not chat_ids and company is not None:
-        from .user_notifications import telegram_chat_ids_for_company
-
         chat_ids = telegram_chat_ids_for_company(company)
         fonte_chat = f'operatori con notifiche attive di «{company}»'
+    if not chat_ids and azienda_bot is not None and azienda_bot != company:
+        # Il bot appartiene a un'altra azienda: si avvisano i suoi operatori.
+        chat_ids = telegram_chat_ids_for_company(azienda_bot)
+        fonte_chat = f'operatori con notifiche attive di «{azienda_bot}» (azienda del bot)'
     return {'token': token, 'fonte_token': fonte_token, 'chat_ids': chat_ids, 'fonte_chat': fonte_chat}
 
 

@@ -308,6 +308,19 @@ class NotificaTelegramTests(_Base):
         self.assertEqual(info['token'], 'tok-altra')
         self.assertIn('Bar', info['fonte_token'])
 
+    def test_chat_dell_azienda_del_bot_se_azienda_job_senza_chat(self, chat):
+        from reconciliation.logista_telegram import canale
+        from reconciliation.models import AppSetting
+
+        tabaccheria = Company.objects.create(denominazione='Tabaccheria del corso')
+        AppSetting.objects.create(company=tabaccheria, key='telegram_bot_token', value='tok-tabaccheria')
+        chat.side_effect = lambda azienda: ['999'] if azienda == tabaccheria else []
+        with patch.dict('os.environ', {'TELEGRAM_BOT_TOKEN': ''}):
+            info = canale(self.company)
+        self.assertEqual(info['token'], 'tok-tabaccheria')
+        self.assertEqual(info['chat_ids'], ['999'])
+        self.assertIn('azienda del bot', info['fonte_chat'])
+
     def test_chat_da_env(self, chat):
         from reconciliation.logista_telegram import canale
 
