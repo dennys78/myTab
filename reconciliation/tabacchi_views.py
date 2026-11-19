@@ -269,7 +269,22 @@ def consegna_predefinita(company):
     return prossimo_giorno_consegna(timezone.localdate(), _giorno_consegna_setting(company))
 
 
-def crea_preordine_da_lettura(company, lettura, user, *, giorni=7, consegna=None, scorta_pct=DEFAULT_SCORTA_PCT):
+def scorta_ultimo_ordine(company, fallback=DEFAULT_SCORTA_PCT):
+    """Percentuale scorta dell'ultimo preordine dell'azienda (slide iniziale)."""
+    ultimo = (
+        TabacchiPreordine.objects.filter(company=company)
+        .order_by('-creato_il', '-id')
+        .values_list('scorta_pct', flat=True)
+        .first()
+    )
+    if ultimo is None:
+        return normalizza_scorta_pct(fallback, DEFAULT_SCORTA_PCT)
+    return normalizza_scorta_pct(ultimo, fallback)
+
+
+def crea_preordine_da_lettura(company, lettura, user, *, giorni=7, consegna=None, scorta_pct=None):
+    if scorta_pct is None:
+        scorta_pct = scorta_ultimo_ordine(company)
     preordine = TabacchiPreordine.objects.create(
         company=company,
         creato_da=user,
@@ -314,12 +329,13 @@ def api_tabacchi_preordini(request):
                 'stato': row.stato,
                 'data_consegna': row.data_consegna.isoformat(),
                 'giorni_copertura': row.giorni_copertura,
+                'scorta_pct': normalizza_scorta_pct(row.scorta_pct),
                 'totale': numero_json(row.totale),
                 'kg': numero_json(row.kg, 3),
                 'creato_il': timezone.localtime(row.creato_il).isoformat(timespec='seconds'),
             }
             for row in rows
-        ], 'agent_online': agent_is_online(company)})
+        ], 'agent_online': agent_is_online(company), 'scorta_ultimo': scorta_ultimo_ordine(company)})
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'error': 'Usa GET o POST'}, status=405)
     row, created = accoda_lettura(company, request.user)
@@ -378,13 +394,17 @@ def api_tabacchi_preordine_da_richiesta(request, request_id):
     esistente = TabacchiPreordine.objects.filter(company=company, request=lettura).order_by('-id').first()
     if esistente:
         return JsonResponse({'status': 'success', 'created': False, 'preordine': _preordine_json(esistente, company)})
+    if 'scorta_pct' in data and data.get('scorta_pct') is not None and data.get('scorta_pct') != '':
+        scorta = normalizza_scorta_pct(data.get('scorta_pct'), DEFAULT_SCORTA_PCT)
+    else:
+        scorta = scorta_ultimo_ordine(company)
     preordine = crea_preordine_da_lettura(
         company,
         lettura,
         request.user,
         giorni=giorni,
         consegna=consegna,
-        scorta_pct=normalizza_scorta_pct(data.get('scorta_pct'), DEFAULT_SCORTA_PCT),
+        scorta_pct=scorta,
     )
     return JsonResponse({'status': 'success', 'created': True, 'preordine': _preordine_json(preordine, company)}, status=201)
 

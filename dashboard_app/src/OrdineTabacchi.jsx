@@ -47,6 +47,7 @@ export default function OrdineTabacchi() {
   const [copiato, setCopiato] = useState(false);
   const [ordinamento, setOrdinamento] = useState({ chiave: 'residuo', direzione: 'asc' });
   const [sezione, setSezione] = useState('tabacchi');
+  const [scortaUltimo, setScortaUltimo] = useState(DEFAULT_SCORTA_PCT);
   const [logistaJob, setLogistaJob] = useState(null);
   const [logistaAvvio, setLogistaAvvio] = useState(false);
   const pollRef = useRef(null);
@@ -82,6 +83,7 @@ export default function OrdineTabacchi() {
     const data = await response.json();
     if (data.status === 'success') {
       setPreordine(data.preordine);
+      setScortaUltimo(normalizzaScortaPct(data.preordine.scorta_pct));
       setOnline(data.preordine.agent_online);
       const job = data.preordine.logista_job;
       if (job && (STATI_LOGISTA_IN_CORSO.includes(job.stato) || job.stato === 'attesa_conferma')) {
@@ -97,6 +99,10 @@ export default function OrdineTabacchi() {
       .then(d => {
         if (d.status !== 'success') return;
         setOnline(!!d.agent_online);
+        if (d.scorta_ultimo != null) setScortaUltimo(normalizzaScortaPct(d.scorta_ultimo));
+        else if (d.preordini?.[0]?.scorta_pct != null) {
+          setScortaUltimo(normalizzaScortaPct(d.preordini[0].scorta_pct));
+        }
         const bozza = (d.preordini || []).find(row => row.stato === 'bozza' || row.stato === 'esportato');
         if (bozza) apri(bozza.id);
       })
@@ -138,7 +144,7 @@ export default function OrdineTabacchi() {
       if (!prev?.modificabile) return prev;
       const giorni = patch.giorni_copertura ?? prev.giorni_copertura;
       const consegna = patch.data_consegna ?? prev.data_consegna;
-      const scortaPct = normalizzaScortaPct(patch.scorta_pct ?? prev.scorta_pct ?? DEFAULT_SCORTA_PCT);
+      const scortaPct = normalizzaScortaPct(patch.scorta_pct ?? prev.scorta_pct ?? scortaUltimo);
       const righe = ricalcolaRighe(prev.righe, {
         giorniCopertura: giorni,
         oggi,
@@ -147,6 +153,7 @@ export default function OrdineTabacchi() {
         scortaPct,
       });
       const totali = totaliOrdine(righe);
+      setScortaUltimo(scortaPct);
       const next = {
         ...prev,
         giorni_copertura: giorni,
@@ -261,12 +268,18 @@ export default function OrdineTabacchi() {
         const creato = await apiFetch(`/api/tabacchi/preordini/da-richiesta/${data.id}/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ giorni_copertura: 7, scorta_pct: DEFAULT_SCORTA_PCT, data_consegna: consegna }),
+          body: JSON.stringify({
+            giorni_copertura: 7,
+            scorta_pct: normalizzaScortaPct(scortaUltimo),
+            data_consegna: consegna,
+          }),
         });
         const ordine = await creato.json();
         setAttesa(false);
-        if (ordine.status === 'success') setPreordine(ordine.preordine);
-        else setErrore(ordine.error || 'Calcolo non riuscito.');
+        if (ordine.status === 'success') {
+          setPreordine(ordine.preordine);
+          setScortaUltimo(normalizzaScortaPct(ordine.preordine.scorta_pct));
+        } else setErrore(ordine.error || 'Calcolo non riuscito.');
         return;
       }
       if (body.status === 'error' || body.status === 'expired') {

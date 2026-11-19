@@ -241,6 +241,27 @@ class TabacchiApiTests(TestCase):
         self.assertTrue(any(r['aams'] == '201' for r in body['righe']))
         self.assertFalse(any(r['aams'] == '999' for r in body['righe']))
 
+    def test_nuovo_preordine_eredita_scorta_ultimo(self):
+        primo = self._lettura_pronta()
+        creato = self.client.post(
+            f'/api/tabacchi/preordini/da-richiesta/{primo.id}/',
+            data='{"giorni_copertura":7,"data_consegna":"2026-11-23","scorta_pct":80}',
+            content_type='application/json',
+        )
+        self.assertEqual(creato.status_code, 201)
+        self.assertEqual(creato.json()['preordine']['scorta_pct'], 80)
+        lista = self.client.get('/api/tabacchi/preordini/')
+        self.assertEqual(lista.json()['scorta_ultimo'], 80)
+
+        seconda = self._lettura_pronta()
+        erede = self.client.post(
+            f'/api/tabacchi/preordini/da-richiesta/{seconda.id}/',
+            data='{"giorni_copertura":7,"data_consegna":"2026-11-30"}',
+            content_type='application/json',
+        )
+        self.assertEqual(erede.status_code, 201)
+        self.assertEqual(erede.json()['preordine']['scorta_pct'], 80)
+
     def test_patch_conserva_correzioni_e_xls_logista(self):
         lettura = self._lettura_pronta()
         creato = self.client.post(
