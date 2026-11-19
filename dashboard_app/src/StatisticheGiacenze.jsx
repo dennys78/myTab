@@ -3,10 +3,10 @@ import { Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 
 const FILTRI = [
-  { id: 'tutti', label: 'In elenco' },
+  { id: 'tutti', label: 'Tutti' },
   { id: 'immancabile', label: 'Immancabili' },
-  { id: 'esaurito', label: 'Esaurito' },
-  { id: 'prima_consegna', label: 'Prima ordine' },
+  { id: 'esaurito', label: 'Esauriti' },
+  { id: 'prima_consegna', label: 'Prima' },
   { id: 'rischio', label: 'Rischio' },
 ];
 const SOGLIE_MINIME = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -275,20 +275,23 @@ export default function StatisticheGiacenze() {
                 ))}
               </select>
             </div>
-          </div>
-
-          <div className="gia-filtri" role="group" aria-label="Filtra per stato">
-            {FILTRI.map(filtro => (
-              <button
-                key={filtro.id}
-                type="button"
-                className={`gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
-                onClick={() => setFiltroStato(filtro.id)}
-              >
-                <span className="gia-filtro-label">{filtro.label}</span>
-                <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
-              </button>
-            ))}
+            <div className="tab-control gia-control-filtri">
+              <span className="tab-label">Filtra</span>
+              <div className="gia-filtri" role="group" aria-label="Filtra per stato">
+                {FILTRI.map(filtro => (
+                  <button
+                    key={filtro.id}
+                    type="button"
+                    className={`gia-filtro-btn gia-${filtro.id} ${filtroStato === filtro.id ? 'active' : ''}`}
+                    onClick={() => setFiltroStato(filtro.id)}
+                  >
+                    <span className="gia-filtro-dot" aria-hidden="true" />
+                    <span className="gia-filtro-label">{filtro.label}</span>
+                    <span className="gia-filtro-count">{conteggi[filtro.id] || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="tab-table-wrap gia-table-wrap">

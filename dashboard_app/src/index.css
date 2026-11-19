@@ -3336,7 +3336,9 @@ tbody tr:hover {
   --gia-fermo-bg: #eceff1;
   --gia-tutti: #1f6a5a;
   --gia-tutti-bg: rgba(31, 106, 90, 0.1);
-  max-width: 980px;
+  --gia-immancabile: #5b3cc4;
+  --gia-immancabile-bg: #efe9ff;
+  max-width: 1100px;
 }
 
 .gia-btn-leggi {
@@ -3353,10 +3355,13 @@ tbody tr:hover {
 }
 
 .gia-page .gia-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
   background: transparent;
   border: none;
   padding: 0;
-  gap: 0.85rem 1.25rem;
+  gap: 0.75rem 1rem;
 }
 
 .gia-page .tab-control select,
@@ -3364,16 +3369,21 @@ tbody tr:hover {
 .gia-page .tab-control input[type="search"] {
   border: 1px solid rgba(31, 106, 90, 0.28);
   border-radius: 8px;
-  padding: 0.45rem 0.65rem;
+  padding: 0.4rem 0.55rem;
   background: var(--gia-tutti-bg);
   color: var(--text-main, #1e293b);
-  min-height: 2.2rem;
+  min-height: 2rem;
 }
 
 .gia-page .tab-control select:focus,
 .gia-page .tab-control input:focus {
   outline: 2px solid rgba(31, 106, 90, 0.28);
   outline-offset: 1px;
+}
+
+.gia-control-filtri {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .tab-hint-inline {
@@ -3397,37 +3407,42 @@ tbody tr:hover {
 .gia-filtri {
   display: flex;
   flex-wrap: nowrap;
-  align-items: stretch;
-  gap: 0;
-  width: 100%;
-  margin: 0.15rem 0 1rem;
-  padding: 0.28rem;
-  background: rgba(15, 23, 42, 0.05);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 12px;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
   overflow-x: auto;
 }
 
 .gia-filtro-btn {
-  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-width: 0;
+  gap: 0.3rem;
+  flex: 0 0 auto;
   margin: 0;
-  border: none;
-  border-radius: 9px;
-  padding: 0.55rem 0.65rem;
-  background: transparent;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem 0.28rem 0.45rem;
+  background: #fff;
   color: #475569;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 650;
-  letter-spacing: 0.01em;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.gia-filtro-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  opacity: 0.85;
 }
 
 .gia-filtro-label {
@@ -3437,28 +3452,38 @@ tbody tr:hover {
 
 .gia-filtro-count {
   flex-shrink: 0;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 0.35rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.28rem;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   background: rgba(15, 23, 42, 0.08);
   color: inherit;
 }
 
+.gia-filtro-btn.gia-tutti { color: var(--gia-tutti); }
+.gia-filtro-btn.gia-immancabile { color: var(--gia-immancabile); }
+.gia-filtro-btn.gia-esaurito { color: var(--gia-esaurito); }
+.gia-filtro-btn.gia-prima_consegna { color: var(--gia-prima); }
+.gia-filtro-btn.gia-rischio { color: var(--gia-rischio); }
+
 .gia-filtro-btn:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.65);
-  color: #0f172a;
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.2);
 }
 
 .gia-filtro-btn.active {
+  border-color: transparent;
   color: #fff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+}
+
+.gia-filtro-btn.active .gia-filtro-dot {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .gia-filtro-btn.active .gia-filtro-count {
@@ -3467,10 +3492,10 @@ tbody tr:hover {
 }
 
 .gia-filtro-btn.gia-tutti.active {
-  background: var(--tab-accent);
+  background: var(--gia-tutti);
 }
 .gia-filtro-btn.gia-immancabile.active {
-  background: #5b3cc4;
+  background: var(--gia-immancabile);
 }
 .gia-filtro-btn.gia-esaurito.active {
   background: var(--gia-esaurito);
@@ -3593,9 +3618,9 @@ tbody tr:hover {
 .gia-trend.down { color: #b91c1c; }
 
 @media (max-width: 900px) {
+  .gia-page .gia-controls { flex-wrap: wrap; }
   .gia-table { table-layout: auto; }
   .gia-col-articolo { width: auto; min-width: 8rem; }
   .gia-col-num,
   .gia-col-stato { width: auto; }
-  .gia-filtro-btn { padding: 0.5rem 0.45rem; font-size: 0.74rem; }
 }
