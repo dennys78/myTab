@@ -326,6 +326,22 @@ def api_tabauno_agent_result(request, request_id):
         and row.status == TabaUnoRequest.DONE
         and row.tipo == TabaUnoRequest.TIPO_CHIUSURA
     ):
+        # In background: non ritardare l'agente né il poll della chiusura.
         from .portale_giornata import prova_leggi_portale_su_chiusura
-        prova_leggi_portale_su_chiusura(row.company, row.date)
+        company_id = row.company_id
+        day = row.date
+
+        def _bg():
+            from django.db import close_old_connections
+            close_old_connections()
+            try:
+                from .models import Company
+                company = Company.objects.filter(id=company_id).first()
+                if company:
+                    prova_leggi_portale_su_chiusura(company, day)
+            finally:
+                close_old_connections()
+
+        import threading
+        threading.Thread(target=_bg, name=f'portale-chiusura-{row.id}', daemon=True).start()
     return JsonResponse({'status': 'success', 'id': row.id})

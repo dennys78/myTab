@@ -21,6 +21,7 @@ import {
   postExtractAiWithProgress,
 } from './acquisitionProgress';
 import { useCompactCaptureUI } from './useCompactCaptureUI';
+import { applicaPortaleSuItems } from './portaleOverlay';
 
 function localIsoDate() {
   const now = new Date();
@@ -170,8 +171,38 @@ export default function AcquisisciChiusureAI({ onBack }) {
     `${Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
   );
 
-  const caricaPortale = (data, { rileggi = false } = {}) => {
-    if (!data) return;
+  const applicaPortaleAllaPreview = (portaleData, { avviso = true } = {}) => {
+    if (!portaleData) return;
+    let appliedNow = [];
+    setPreviewData(prev => {
+      if (!prev?.from_tabauno || !Array.isArray(prev.items)) return prev;
+      const { items, applied } = applicaPortaleSuItems(prev.items, portaleData);
+      if (!applied.length) return prev;
+      appliedNow = applied;
+      return {
+        ...prev,
+        items,
+        portale_applied: applied,
+        summary: syncSummaryFromItems(prev.summary, items, {
+          withReports: !!prev.with_reports,
+          totaleFromSaldi: !!prev.totale_from_saldi,
+          fromTabauno: true,
+          cassettoManuale: !!prev.scassettato_manuale,
+        }),
+      };
+    });
+    if (avviso && appliedNow.length) {
+      const msg = `Compilato dal portale Lotterie: ${appliedNow.join(', ')}.`;
+      setError(curr => {
+        if (!curr) return msg;
+        if (String(curr).includes('portale Lotterie')) return curr;
+        return `${curr} ${msg}`;
+      });
+    }
+  };
+
+  const caricaPortale = (data, { rileggi = false, applicaPreview = false } = {}) => {
+    if (!data) return Promise.resolve(null);
     setPortaleErrore('');
     setPortaleWait(true);
     const req = rileggi
@@ -181,20 +212,24 @@ export default function AcquisisciChiusureAI({ onBack }) {
           body: JSON.stringify({ data }),
         })
       : apiFetch(`/api/portale/giornata/?data=${encodeURIComponent(data)}`);
-    req
+    return req
       .then(r => r.json().then(d => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
         if (!ok || d.status !== 'success') {
           setPortale(null);
           setPortaleErrore(d.error || 'Servizio portale non disponibile.');
-          return;
+          return null;
         }
         setPortale(d);
         if (d.errore) setPortaleErrore(d.errore);
+        else setPortaleErrore('');
+        if (applicaPreview) applicaPortaleAllaPreview(d);
+        return d;
       })
       .catch(() => {
         setPortale(null);
         setPortaleErrore('Servizio portale non raggiungibile.');
+        return null;
       })
       .finally(() => setPortaleWait(false));
   };
@@ -624,6 +659,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
     if (tabaunoWait) return;
     setError(null);
     setTabaunoWait(true);
+    // In parallelo al PC negozio: Contabile Lotto + Premi Gratta dal portale Lotterie.
+    const portalePromise = caricaPortale(tabaunoDate, { rileggi: true });
     apiFetch('/api/tabauno/requests/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -641,7 +678,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
         const poll = () => {
           apiFetch(`/api/tabauno/requests/${d.id}/`)
             .then(r => r.json())
-            .then(status => {
+            .then(async status => {
               if (typeof status.agent_online === 'boolean') setAgentOnline(status.agent_online);
               if (status.status === 'done') {
                 setTabaunoWait(false);
@@ -652,7 +689,11 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 ));
                 const issues = tabaunoIssues(status.payload?.verifiche);
                 if (issues.length) setError(issues.join(' '));
-                caricaPortale(tabaunoDate);
+                let portaleData = await portalePromise;
+                if (!portaleData?.lotto && !portaleData?.premi_lotterie_vista) {
+                  portaleData = await caricaPortale(tabaunoDate, { rileggi: true });
+                }
+                if (portaleData) applicaPortaleAllaPreview(portaleData);
                 return;
               }
               if (status.status === 'error' || status.status === 'expired') {
@@ -1129,7 +1170,9 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </div>
           {previewData.from_tabauno && (
             <p style={{ color: '#f59e0b', fontSize: '0.8rem', margin: '0 0 0.8rem' }}>
-              Da compilare a mano: entrate e uscite di {manualVociHint(acquisitionFileMode, user?.company?.denominazione)}.
+              {previewData.portale_applied?.length
+                ? <>Compilati dal portale: {previewData.portale_applied.join(', ')}. Altri inserimenti a mano: {manualVociHint(acquisitionFileMode, user?.company?.denominazione)}.</>
+                : <>Da compilare a mano: entrate e uscite di {manualVociHint(acquisitionFileMode, user?.company?.denominazione)}.</>}
             </p>
           )}
 
@@ -1275,7 +1318,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
             </span>
             <button
               type="button"
-              onClick={() => caricaPortale(tabaunoDate, { rileggi: true })}
+              onClick={() => caricaPortale(tabaunoDate, { rileggi: true, applicaPreview: true })}
               disabled={portaleWait}
               style={{ padding: '0.45rem 0.85rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >

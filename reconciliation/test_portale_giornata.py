@@ -161,12 +161,21 @@ class ApiPortaleTests(TestCase):
             tipo=TabaUnoRequest.TIPO_CHIUSURA,
             status=TabaUnoRequest.PROCESSING,
         )
-        r = self.client.post(
-            f'/api/tabauno/agent/result/{row.id}/',
-            data=json.dumps({'ok': True, 'payload': {'voci': [], 'verifiche': {}}}),
-            content_type='application/json',
-            HTTP_AUTHORIZATION='Bearer token-agente',
-        )
+
+        def _run_inline(target=None, **_kwargs):
+            class _T:
+                def start(self_inner):
+                    if target:
+                        target()
+            return _T()
+
+        with patch('threading.Thread', side_effect=_run_inline):
+            r = self.client.post(
+                f'/api/tabauno/agent/result/{row.id}/',
+                data=json.dumps({'ok': True, 'payload': {'voci': [], 'verifiche': {}}}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION='Bearer token-agente',
+            )
         self.assertEqual(r.status_code, 200)
         row.refresh_from_db()
         self.assertEqual(row.status, TabaUnoRequest.DONE)
