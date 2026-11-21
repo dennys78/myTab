@@ -372,6 +372,9 @@ def api_companies_create(request):
         if mode not in {AI_ACQUISITION_MODE_TWO, AI_ACQUISITION_MODE_FIVE}:
             mode = AI_ACQUISITION_MODE_FIVE
         set_ai_acquisition_file_mode(company, mode)
+        if 'portale_auto_su_chiusura' in data:
+            from .portale_giornata import set_portale_auto_su_chiusura
+            set_portale_auto_su_chiusura(company, bool(data.get('portale_auto_su_chiusura')))
         set_active_company(request, company.id)
         return JsonResponse({
             'status': 'success',
@@ -403,6 +406,10 @@ def api_companies_update(request, company_id):
             from .ai_acquisition import set_ai_acquisition_file_mode
 
             set_ai_acquisition_file_mode(company, data.get('ai_acquisition_file_mode'))
+        if 'portale_auto_su_chiusura' in data:
+            from .portale_giornata import set_portale_auto_su_chiusura
+
+            set_portale_auto_su_chiusura(company, bool(data.get('portale_auto_su_chiusura')))
         active = get_active_company(request)
         return JsonResponse({
             'status': 'success',

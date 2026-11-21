@@ -79,6 +79,7 @@ export default function Impostazioni({ section = 'generali' }) {
   const [indirizzo, setIndirizzo] = useState('');
   const [piva, setPiva] = useState('');
   const [aiAcquisitionFileMode, setAiAcquisitionFileMode] = useState('five_files');
+  const [portaleAutoSuChiusura, setPortaleAutoSuChiusura] = useState(false);
   const [companies, setCompanies] = useState([]);
   const [activeCompanyId, setActiveCompanyId] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
@@ -94,12 +95,14 @@ export default function Impostazioni({ section = 'generali' }) {
       setIndirizzo('');
       setPiva('');
       setAiAcquisitionFileMode('five_files');
+      setPortaleAutoSuChiusura(false);
       return;
     }
     setDenominazione(company.denominazione || '');
     setIndirizzo(company.indirizzo || '');
     setPiva(company.piva || '');
     setAiAcquisitionFileMode(company.ai_acquisition_file_mode || 'five_files');
+    setPortaleAutoSuChiusura(Boolean(company.portale_auto_su_chiusura));
   };
 
   const applyCompaniesFromSettings = (data) => {
@@ -188,6 +191,7 @@ export default function Impostazioni({ section = 'generali' }) {
       indirizzo: indirizzo.trim(),
       piva: piva.trim(),
       ai_acquisition_file_mode: aiAcquisitionFileMode,
+      portale_auto_su_chiusura: portaleAutoSuChiusura,
     };
 
     const url = companyMode === 'new'
@@ -237,6 +241,7 @@ export default function Impostazioni({ section = 'generali' }) {
         indirizzo: indirizzo.trim(),
         piva: piva.trim(),
         ai_acquisition_file_mode: aiAcquisitionFileMode,
+        portale_auto_su_chiusura: portaleAutoSuChiusura,
       }),
     })
       .then(r => r.json())
@@ -868,9 +873,36 @@ export default function Impostazioni({ section = 'generali' }) {
                 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
               >
                 {savingAcquisitionMode ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                Salva protocollo
+                Salva acquisizione
               </button>
             </div>
+            <label style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.65rem',
+              marginTop: '1rem',
+              padding: '0.75rem 0.85rem',
+              borderRadius: '10px',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              cursor: 'pointer',
+            }}>
+              <input
+                type="checkbox"
+                checked={portaleAutoSuChiusura}
+                onChange={e => setPortaleAutoSuChiusura(e.target.checked)}
+                style={{ marginTop: '0.2rem', width: '1rem', height: '1rem' }}
+              />
+              <span>
+                <span style={{ display: 'block', fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                  Acquisizione automatica Contabile Lotto / Premi Gratta
+                </span>
+                <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                  Se attivo, con «Importa da TabaUno» legge anche i prospetti dal portale Lotterie e precompila Lottomatica e premi Gratta.
+                  Di default è attivo solo per D3 Solution.
+                </span>
+              </span>
+            </label>
             {acquisitionModeSaved && (
               <p style={{ color: '#22c55e', fontSize: '0.8rem', marginTop: '0.65rem', marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <CheckCircle size={14} /> Protocollo salvato.

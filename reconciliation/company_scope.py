@@ -14,6 +14,7 @@ def serialize_company(company):
     if not company:
         return None
     from .ai_acquisition import get_ai_acquisition_file_mode, max_acquisition_files_for_mode
+    from .portale_giornata import get_portale_auto_su_chiusura
 
     mode = get_ai_acquisition_file_mode(company)
     return {
@@ -23,6 +24,7 @@ def serialize_company(company):
         'piva': company.piva,
         'ai_acquisition_file_mode': mode,
         'max_acquisition_files': max_acquisition_files_for_mode(mode),
+        'portale_auto_su_chiusura': get_portale_auto_su_chiusura(company),
     }
 
 

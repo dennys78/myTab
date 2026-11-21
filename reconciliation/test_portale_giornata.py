@@ -9,8 +9,10 @@ from django.utils import timezone
 
 from reconciliation.models import Company, PortaleGiornata, TabaUnoAgent, TabaUnoRequest
 from reconciliation.portale_giornata import (
+    get_portale_auto_su_chiusura,
     leggi_portale,
     riconcilia,
+    set_portale_auto_su_chiusura,
     testo_telegram,
 )
 from reconciliation.portale_service import PortaleServiceError
@@ -46,6 +48,18 @@ PREMI = {
     'totale': {'qta': 10, 'importo': 86.0},
     'righe': [],
 }
+
+
+class PortaleAutoSettingTests(TestCase):
+    def test_default_solo_d3(self):
+        d3 = Company.objects.create(denominazione='D3 Solution SRL')
+        altra = Company.objects.create(denominazione='Tabaccheria Centro')
+        self.assertTrue(get_portale_auto_su_chiusura(d3))
+        self.assertFalse(get_portale_auto_su_chiusura(altra))
+        set_portale_auto_su_chiusura(altra, True)
+        self.assertTrue(get_portale_auto_su_chiusura(altra))
+        set_portale_auto_su_chiusura(d3, False)
+        self.assertFalse(get_portale_auto_su_chiusura(d3))
 
 
 class RiconciliazioneTests(TestCase):

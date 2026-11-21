@@ -136,6 +136,7 @@ export default function AcquisisciChiusureAI({ onBack }) {
   const isMobile = useIsMobile();
   const compactCaptureUI = useCompactCaptureUI();
   const { user } = useAuth();
+  const portaleAuto = Boolean(user?.company?.portale_auto_su_chiusura);
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const filesRef = useRef([]);
@@ -660,8 +661,10 @@ export default function AcquisisciChiusureAI({ onBack }) {
     if (tabaunoWait) return;
     setError(null);
     setTabaunoWait(true);
-    // In parallelo al PC negozio: Contabile Lotto + Premi Gratta dal portale Lotterie.
-    const portalePromise = caricaPortale(tabaunoDate, { rileggi: true });
+    // Contabile Lotto + Premi Gratta: solo se impostazione azienda attiva (default D3).
+    const portalePromise = portaleAuto
+      ? caricaPortale(tabaunoDate, { rileggi: true })
+      : Promise.resolve(null);
     apiFetch('/api/tabauno/requests/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -690,11 +693,13 @@ export default function AcquisisciChiusureAI({ onBack }) {
                 ));
                 const issues = tabaunoIssues(status.payload?.verifiche);
                 if (issues.length) setError(issues.join(' '));
-                let portaleData = await portalePromise;
-                if (!portaleData?.lotto && !portaleData?.premi_lotterie_vista) {
-                  portaleData = await caricaPortale(tabaunoDate, { rileggi: true });
+                if (portaleAuto) {
+                  let portaleData = await portalePromise;
+                  if (!portaleData?.lotto && !portaleData?.premi_lotterie_vista) {
+                    portaleData = await caricaPortale(tabaunoDate, { rileggi: true });
+                  }
+                  if (portaleData) applicaPortaleAllaPreview(portaleData);
                 }
-                if (portaleData) applicaPortaleAllaPreview(portaleData);
                 return;
               }
               if (status.status === 'error' || status.status === 'expired') {
@@ -1293,15 +1298,17 @@ export default function AcquisisciChiusureAI({ onBack }) {
           </span>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '0.75rem' }}>
-          Un solo passaggio: legge TabaUno dal PC negozio e, in parallelo, Contabile Lotto + Premi Gratta dal portale.
+          {portaleAuto
+            ? 'Un solo passaggio: legge TabaUno dal PC negozio e, in parallelo, Contabile Lotto + Premi Gratta dal portale.'
+            : 'Legge la chiusura da TabaUno sul PC negozio. L’acquisizione automatica Lotto/Premi dal portale è disattivata per questa azienda (Impostazioni).'}
         </p>
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={tabaunoDate} max={localIsoDate()} onChange={e => setTabaunoDate(e.target.value)}
             style={{ padding: '0.55rem 0.7rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '8px' }} />
-          <button type="button" onClick={importFromTabauno} disabled={tabaunoWait || portaleWait}
+          <button type="button" onClick={importFromTabauno} disabled={tabaunoWait || (portaleAuto && portaleWait)}
             style={{ padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-            {(tabaunoWait || portaleWait) ? <Loader2 size={16} className="spin" /> : null}
-            {tabaunoWait || portaleWait ? 'Lettura in corso…' : 'Importa da TabaUno'}
+            {(tabaunoWait || (portaleAuto && portaleWait)) ? <Loader2 size={16} className="spin" /> : null}
+            {tabaunoWait || (portaleAuto && portaleWait) ? 'Lettura in corso…' : 'Importa da TabaUno'}
           </button>
           {!tabaunoWait && error && /negozio|TabaUno/i.test(error) && (
             <button type="button" onClick={importFromTabauno}

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.utils import timezone
 
 from .incassi_parziali import formatta_euro, formatta_ora
-from .models import PortaleGiornata, TabaUnoRequest
+from .models import AppSetting, PortaleGiornata, TabaUnoRequest
 from .portale_service import (
     PortaleServiceError,
     estrai_contabile_e_premi,
@@ -21,12 +22,37 @@ from .portale_service import (
 logger = logging.getLogger(__name__)
 
 CENT = Decimal('0.01')
+SETTING_PORTALE_AUTO = 'portale_auto_su_chiusura'
 GIOCHI_LABEL = (
     ('lotto', 'Lotto'),
     ('diecielotto', '10eLotto'),
     ('millionday', 'MillionDAY'),
     ('fai3fai4', 'Fai3 Fai4'),
 )
+
+
+def _is_d3(company) -> bool:
+    return bool(company and re.search(r'd3', str(company.denominazione or ''), re.I))
+
+
+def get_portale_auto_su_chiusura(company) -> bool:
+    """Default: attivo solo per D3 Solution; altrimenti off finché non impostato."""
+    if not company:
+        return False
+    row = AppSetting.objects.filter(company=company, key=SETTING_PORTALE_AUTO).first()
+    if row is None:
+        return _is_d3(company)
+    return str(row.value or '').strip().lower() in {'1', 'true', 'yes', 'on', 'si', 'sì'}
+
+
+def set_portale_auto_su_chiusura(company, enabled: bool) -> None:
+    if not company:
+        return
+    AppSetting.objects.update_or_create(
+        company=company,
+        key=SETTING_PORTALE_AUTO,
+        defaults={'value': '1' if enabled else '0'},
+    )
 
 
 def _money(value) -> Decimal:
@@ -293,7 +319,9 @@ def leggi_portale(company, day: date, *, tabauno_payload: dict | None = None) ->
 
 
 def prova_leggi_portale_su_chiusura(company, day: date) -> None:
-    """Hook chiusura TabaUno: un errore non deve bloccare."""
+    """Hook chiusura TabaUno: un errore non deve bloccare. Solo se impostazione attiva."""
+    if not get_portale_auto_su_chiusura(company):
+        return
     try:
         leggi_portale(company, day)
     except Exception:
