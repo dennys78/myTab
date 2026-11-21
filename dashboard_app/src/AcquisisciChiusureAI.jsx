@@ -246,7 +246,8 @@ export default function AcquisisciChiusureAI({ onBack }) {
   useEffect(() => { fetchDrafts(); }, []);
 
   useEffect(() => {
-    caricaPortale(tabaunoDate);
+    setPortale(null);
+    setPortaleErrore('');
   }, [tabaunoDate]);
 
   useEffect(() => {
@@ -1285,18 +1286,22 @@ export default function AcquisisciChiusureAI({ onBack }) {
       </p>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-          <strong>Importa da TabaUno</strong>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+          <strong>Importa chiusura</strong>
           <span style={{ fontSize: '0.8rem', color: agentOnline ? '#22c55e' : 'var(--text-muted)' }}>
             {agentOnline === null ? 'PC negozio …' : agentOnline ? 'PC negozio online' : 'PC negozio offline'}
           </span>
         </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '0.75rem' }}>
+          Un solo passaggio: legge TabaUno dal PC negozio e, in parallelo, Contabile Lotto + Premi Gratta dal portale.
+        </p>
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={tabaunoDate} max={localIsoDate()} onChange={e => setTabaunoDate(e.target.value)}
             style={{ padding: '0.55rem 0.7rem', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: '8px' }} />
-          <button type="button" onClick={importFromTabauno} disabled={tabaunoWait}
-            style={{ padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
-            {tabaunoWait ? 'In attesa del PC del negozio…' : 'Importa da TabaUno'}
+          <button type="button" onClick={importFromTabauno} disabled={tabaunoWait || portaleWait}
+            style={{ padding: '0.55rem 0.9rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            {(tabaunoWait || portaleWait) ? <Loader2 size={16} className="spin" /> : null}
+            {tabaunoWait || portaleWait ? 'Lettura in corso…' : 'Importa da TabaUno'}
           </button>
           {!tabaunoWait && error && /negozio|TabaUno/i.test(error) && (
             <button type="button" onClick={importFromTabauno}
@@ -1305,159 +1310,154 @@ export default function AcquisisciChiusureAI({ onBack }) {
             </button>
           )}
         </div>
-      </div>
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-          <strong>Portale Lotterie</strong>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {portale?.letto_alle
-                ? `Letto alle ${new Date(portale.letto_alle).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
-                : 'Nessuna lettura'}
-            </span>
-            <button
-              type="button"
-              onClick={() => caricaPortale(tabaunoDate, { rileggi: true, applicaPreview: true })}
-              disabled={portaleWait}
-              style={{ padding: '0.45rem 0.85rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-            >
-              {portaleWait ? <Loader2 size={14} className="spin" /> : null}
-              {portaleWait ? 'Lettura…' : 'Rileggi dal portale'}
-            </button>
-          </div>
-        </div>
-
-        {portaleErrore && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.7rem 0.85rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '0.85rem', fontSize: '0.88rem' }}>
-            {portaleErrore}
-          </div>
-        )}
-
-        {portale?.lotto ? (
-          <div style={{ marginBottom: '0.9rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>🎱 Lotto</div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '0.55rem', marginBottom: '0.55rem' }}>
-              {[
-                ['Entrate', portale.lotto.entrate],
-                ['Vincite', portale.lotto.uscite],
-                ['Aggio', portale.lotto.aggio],
-                ['Saldo', portale.lotto.saldo],
-              ].map(([label, value]) => (
-                <div key={label} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.7rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{label}</div>
-                  <div style={{ fontWeight: 700 }}>{formatEuro(value)}</div>
-                </div>
-              ))}
+        {(portale || portaleErrore) && (
+          <div style={{ marginTop: '0.9rem', paddingTop: '0.85rem', borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.55rem' }}>
+              <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                Portale Lotterie
+                {portale?.letto_alle ? (
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>
+                    {' '}· letto alle {new Date(portale.letto_alle).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                ) : null}
+              </span>
+              {(portaleErrore || !portale?.lotto) && (
+                <button
+                  type="button"
+                  onClick={() => caricaPortale(tabaunoDate, { rileggi: true, applicaPreview: true })}
+                  disabled={portaleWait || tabaunoWait}
+                  style={{ padding: '0.35rem 0.7rem', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                >
+                  {portaleWait ? <Loader2 size={14} className="spin" /> : null}
+                  Rileggi solo portale
+                </button>
+              )}
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
-                  <th style={{ padding: '0.25rem 0' }}>Gioco</th>
-                  <th style={{ padding: '0.25rem 0' }}>Giocate</th>
-                  <th style={{ padding: '0.25rem 0' }}>Vincite</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ['lotto', 'Lotto'],
-                  ['diecielotto', '10eLotto'],
-                  ['millionday', 'MillionDAY'],
-                  ['fai3fai4', 'Fai3 Fai4'],
-                ].map(([key, label]) => {
-                  const g = portale.lotto.giochi?.[key] || {};
-                  return (
-                    <tr key={key} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: '0.3rem 0' }}>{label}</td>
-                      <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.giocate)}</td>
-                      <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.vincite)}</td>
+
+            {portaleErrore && (
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', padding: '0.65rem 0.8rem', borderRadius: '8px', color: 'var(--danger)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                {portaleErrore}
+              </div>
+            )}
+
+            {portale?.lotto && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.35rem', fontSize: '0.9rem' }}>🎱 Lotto</div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '0.55rem', marginBottom: '0.55rem' }}>
+                  {[
+                    ['Entrate', portale.lotto.entrate],
+                    ['Vincite', portale.lotto.uscite],
+                    ['Aggio', portale.lotto.aggio],
+                    ['Saldo', portale.lotto.saldo],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.7rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{label}</div>
+                      <div style={{ fontWeight: 700 }}>{formatEuro(value)}</div>
+                    </div>
+                  ))}
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.25rem 0' }}>Gioco</th>
+                      <th style={{ padding: '0.25rem 0' }}>Giocate</th>
+                      <th style={{ padding: '0.25rem 0' }}>Vincite</th>
                     </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ['lotto', 'Lotto'],
+                      ['diecielotto', '10eLotto'],
+                      ['millionday', 'MillionDAY'],
+                      ['fai3fai4', 'Fai3 Fai4'],
+                    ].map(([key, label]) => {
+                      const g = portale.lotto.giochi?.[key] || {};
+                      return (
+                        <tr key={key} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '0.3rem 0' }}>{label}</td>
+                          <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.giocate)}</td>
+                          <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.vincite)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {portale?.premi_lotterie_vista && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    🎟️ Premi Gratta pagati:{' '}
+                    <span>{formatEuro(portale.premi_lotterie_vista.totale?.importo)}</span>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>
+                      {' '}({portale.premi_lotterie_vista.totale?.qta || 0})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPortalePremiAperti(v => !v)}
+                    style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '8px', padding: '0.3rem 0.65rem', cursor: 'pointer', fontSize: '0.82rem' }}
+                  >
+                    {portalePremiAperti ? 'Nascondi dettaglio' : 'Mostra dettaglio'}
+                  </button>
+                </div>
+                {portalePremiAperti && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                    <thead>
+                      <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
+                        <th style={{ padding: '0.25rem 0' }}>Codice</th>
+                        <th style={{ padding: '0.25rem 0' }}>Qta</th>
+                        <th style={{ padding: '0.25rem 0' }}>Importo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(portale.premi_lotterie_vista.giochi || []).map(g => (
+                        <tr key={g.codice} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '0.3rem 0' }}>{g.codice}</td>
+                          <td style={{ padding: '0.3rem 0' }}>{g.qta}</td>
+                          <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.importo)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {portale?.riconciliazione && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: '0.35rem', fontSize: '0.9rem' }}>Riconciliazione TabaUno</div>
+                {[portale.riconciliazione.lotto_entrate, portale.riconciliazione.gratta_premi].filter(Boolean).map(riga => {
+                  const diff = riga.differenza;
+                  const ko = riga.stato === 'differenza';
+                  return (
+                    <div
+                      key={riga.etichetta}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1fr 1fr',
+                        gap: '0.35rem',
+                        padding: '0.45rem 0.55rem',
+                        borderRadius: '8px',
+                        marginBottom: '0.35rem',
+                        border: `1px solid ${ko ? 'var(--danger)' : 'var(--border)'}`,
+                        background: ko ? 'rgba(239,68,68,0.1)' : 'var(--bg-elevated)',
+                        color: ko ? 'var(--danger)' : 'var(--text-main)',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      <span>{riga.etichetta}</span>
+                      <span>Portale {riga.portale == null ? '—' : formatEuro(riga.portale)}</span>
+                      <span>TabaUno {riga.tabauno == null ? '—' : formatEuro(riga.tabauno)}</span>
+                      <span>Δ {diff == null ? '—' : formatEuro(diff)}</span>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          !portaleWait && <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '0.75rem' }}>Contabile Lotto non disponibile.</p>
-        )}
-
-        {portale?.premi_lotterie_vista ? (
-          <div style={{ marginBottom: '0.9rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <div style={{ fontWeight: 700 }}>
-                🎟️ Premi Gratta pagati:{' '}
-                <span>{formatEuro(portale.premi_lotterie_vista.totale?.importo)}</span>
-                <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>
-                  {' '}({portale.premi_lotterie_vista.totale?.qta || 0})
-                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setPortalePremiAperti(v => !v)}
-                style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '8px', padding: '0.3rem 0.65rem', cursor: 'pointer', fontSize: '0.82rem' }}
-              >
-                {portalePremiAperti ? 'Nascondi dettaglio' : 'Mostra dettaglio'}
-              </button>
-            </div>
-            {portalePremiAperti && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                <thead>
-                  <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
-                    <th style={{ padding: '0.25rem 0' }}>Codice</th>
-                    <th style={{ padding: '0.25rem 0' }}>Qta</th>
-                    <th style={{ padding: '0.25rem 0' }}>Importo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(portale.premi_lotterie_vista.giochi || []).map(g => (
-                    <tr key={g.codice} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: '0.3rem 0' }}>{g.codice}</td>
-                      <td style={{ padding: '0.3rem 0' }}>{g.qta}</td>
-                      <td style={{ padding: '0.3rem 0' }}>{formatEuro(g.importo)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             )}
-          </div>
-        ) : (
-          !portaleWait && <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Premi Lotterie non disponibili.</p>
-        )}
-
-        {portale?.riconciliazione && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>Riconciliazione TabaUno</div>
-            {!portale.riconciliazione.tabauno_disponibile && (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '0.4rem' }}>
-                Nessuna chiusura TabaUno già letta per questa data.
-              </p>
-            )}
-            {[portale.riconciliazione.lotto_entrate, portale.riconciliazione.gratta_premi].filter(Boolean).map(riga => {
-              const diff = riga.differenza;
-              const ko = riga.stato === 'differenza';
-              return (
-                <div
-                  key={riga.etichetta}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1fr 1fr',
-                    gap: '0.35rem',
-                    padding: '0.45rem 0.55rem',
-                    borderRadius: '8px',
-                    marginBottom: '0.35rem',
-                    border: `1px solid ${ko ? 'var(--danger)' : 'var(--border)'}`,
-                    background: ko ? 'rgba(239,68,68,0.1)' : 'var(--bg-elevated)',
-                    color: ko ? 'var(--danger)' : 'var(--text-main)',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <span>{riga.etichetta}</span>
-                  <span>Portale {riga.portale == null ? '—' : formatEuro(riga.portale)}</span>
-                  <span>TabaUno {riga.tabauno == null ? '—' : formatEuro(riga.tabauno)}</span>
-                  <span>Δ {diff == null ? '—' : formatEuro(diff)}</span>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
