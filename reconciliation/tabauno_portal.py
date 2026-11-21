@@ -321,4 +321,11 @@ def api_tabauno_agent_result(request, request_id):
         row.error = str(data.get('errore') or 'Errore lettura TabaUno')[:2000]
     row.completed_at = timezone.now()
     row.save(update_fields=['payload', 'error', 'status', 'completed_at'])
+    if (
+        data.get('ok')
+        and row.status == TabaUnoRequest.DONE
+        and row.tipo == TabaUnoRequest.TIPO_CHIUSURA
+    ):
+        from .portale_giornata import prova_leggi_portale_su_chiusura
+        prova_leggi_portale_su_chiusura(row.company, row.date)
     return JsonResponse({'status': 'success', 'id': row.id})

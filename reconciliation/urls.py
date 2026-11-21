@@ -4,7 +4,8 @@ from . import ricevute_views
 from . import gratta_views
 from . import giacenze_views
 from . import incassi_views
-from . import n8n_giacenze_views, n8n_incassi_views, n8n_tabacchi_views
+from . import n8n_giacenze_views, n8n_incassi_views, n8n_portale_views, n8n_tabacchi_views
+from . import portale_views
 from . import tabacchi_views
 from . import tabauno_portal
 
@@ -50,7 +51,9 @@ urlpatterns = [
     path('api/n8n/tabacchi/logista/job/<int:job_id>/', n8n_tabacchi_views.api_n8n_tabacchi_logista_job),
     path('api/n8n/giacenze/report/', n8n_giacenze_views.api_n8n_giacenze_report),
     path('api/n8n/cassa/parziali/', n8n_incassi_views.api_n8n_cassa_parziali),
+    path('api/n8n/portale/giornata/', n8n_portale_views.api_n8n_portale_giornata),
     path('api/incassi/parziali/', incassi_views.api_incassi_parziali),
+    path('api/portale/giornata/', portale_views.api_portale_giornata),
     path('api/statistiche/giacenze/lettura/', giacenze_views.api_giacenze_lettura),
     path('api/statistiche/giacenze/', giacenze_views.api_giacenze_analisi),
     path('api/closures/extract/',                   views.api_extract_closure),

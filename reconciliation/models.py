@@ -665,3 +665,26 @@ class LogistaInvioJob(models.Model):
 
     def __str__(self):
         return f'Logista job {self.id} {self.stato}'
+
+
+class PortaleGiornata(models.Model):
+    """Prospetti giornalieri dal portale rivenditorilotterie (Lotto + premi Gratta)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='portale_giornate')
+    data = models.DateField()
+    contabile_lotto = models.JSONField(null=True, blank=True)
+    premi_lotterie = models.JSONField(null=True, blank=True)
+    letto_alle = models.DateTimeField(null=True, blank=True)
+    errore = models.TextField(blank=True, default='')
+    aggiornato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Giornata portale Lotterie'
+        verbose_name_plural = 'Giornate portale Lotterie'
+        constraints = [
+            models.UniqueConstraint(fields=['company', 'data'], name='portale_giornata_company_data_uniq'),
+        ]
+        ordering = ['-data', '-id']
+
+    def __str__(self):
+        return f'Portale {self.company} {self.data}'
