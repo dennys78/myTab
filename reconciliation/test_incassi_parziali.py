@@ -30,6 +30,7 @@ def _payload_base(**overrides):
         'settori': [
             {'codice': '01', 'descrizione': 'TABACCHI', 'n': 3, 'importo': 1579.9},
             {'codice': '90', 'descrizione': 'GRATTA', 'n': 2, 'importo': 465.0},
+            {'codice': '301', 'descrizione': 'INCASSO LOTTO/10&LOTTO', 'n': 4, 'importo': 409.5},
             {'codice': '300', 'descrizione': 'VINCITE', 'n': 1, 'importo': 999.0},
             {'codice': '02', 'descrizione': 'CAFFE', 'n': 1, 'importo': 54.6},
             {'codice': '09', 'descrizione': 'ROSTICCERIA', 'n': 1, 'importo': 16.0},
@@ -44,10 +45,14 @@ def _payload_base(**overrides):
 class NormalizzaParzialiTests(TestCase):
     def test_solo_settori_configurati_gratta_senza_300(self):
         dati = normalizza_payload(_payload_base(), oggi=date(2026, 11, 21))
-        self.assertEqual(set(dati['settori']), {'tabacchi', 'gratta', 'caffe', 'rosticceria', 'pasticceria'})
+        self.assertEqual(
+            set(dati['settori']),
+            {'tabacchi', 'gratta', 'lottomatica', 'caffe', 'rosticceria', 'pasticceria'},
+        )
         self.assertEqual(dati['settori']['gratta']['importo'], 465.0)
         self.assertEqual(dati['settori']['tabacchi']['importo'], 1579.9)
-        self.assertAlmostEqual(dati['totale'], 1579.9 + 465 + 54.6 + 16 + 8.1)
+        self.assertEqual(dati['settori']['lottomatica']['importo'], 409.5)
+        self.assertAlmostEqual(dati['totale'], 1579.9 + 465 + 409.5 + 54.6 + 16 + 8.1)
         self.assertFalse(dati['cassa_non_oggi'])
         self.assertFalse(dati['nessuna_vendita'])
 
@@ -74,7 +79,8 @@ class NormalizzaParzialiTests(TestCase):
         self.assertIn('(ultima vendita 11:05)', testo)
         self.assertIn('🚬 Tabacchi: <b>1.579,90 €</b>', testo)
         self.assertIn('🎟️ Gratta e Vinci: <b>465,00 €</b>', testo)
-        self.assertIn('Totale settori: <b>2.123,60 €</b>', testo)
+        self.assertIn('🎱 Lottomatica: <b>409,50 €</b>', testo)
+        self.assertIn('Totale settori: <b>2.533,10 €</b>', testo)
         self.assertNotIn('999', testo)
 
 

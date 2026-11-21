@@ -16,6 +16,7 @@ from .tabauno_portal import agent_is_online, expire_requests
 SETTORI = (
     ('tabacchi', '01', '🚬', 'Tabacchi'),
     ('gratta', '90', '🎟️', 'Gratta e Vinci'),  # solo vendite; vincite 300 escluse
+    ('lottomatica', '301', '🎱', 'Lottomatica'),
     ('caffe', '02', '☕', 'Caffè'),
     ('rosticceria', '09', '🍕', 'Rosticceria'),
     ('pasticceria', '03', '🥐', 'Pasticceria'),

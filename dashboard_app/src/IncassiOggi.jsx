@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 
-const ORDINE = ['tabacchi', 'gratta', 'caffe', 'rosticceria', 'pasticceria'];
+const ORDINE = ['tabacchi', 'gratta', 'lottomatica', 'caffe', 'rosticceria', 'pasticceria'];
 
 function formattaEuro(value) {
   return `${Number(value || 0).toLocaleString('it-IT', {
@@ -85,7 +85,7 @@ export default function IncassiOggi() {
         <div>
           <h1>Incassi di oggi</h1>
           <p className="tab-sub">
-            Parziali Tabacchi, Gratta e Vinci, Caffè, Rosticceria e Pasticceria
+            Parziali Tabacchi, Gratta e Vinci, Lottomatica, Caffè, Rosticceria e Pasticceria
           </p>
         </div>
       </header>
@@ -168,7 +168,7 @@ export default function IncassiOggi() {
                   <span className="incassi-label">Totale settori</span>
                 </div>
                 <div className="incassi-importo">{formattaEuro(dati.totale)}</div>
-                <div className="incassi-n">somma dei 5 settori</div>
+                <div className="incassi-n">somma dei 6 settori</div>
               </div>
             </div>
           )}
