@@ -12,7 +12,9 @@ from .incassi_parziali import formatta_euro, formatta_ora
 from .models import PortaleGiornata, TabaUnoRequest
 from .portale_service import (
     PortaleServiceError,
+    estrai_contabile_e_premi,
     get_contabile_lotto,
+    get_giornata,
     get_premi_pagati,
 )
 
@@ -245,7 +247,7 @@ def payload_n8n(giornata: PortaleGiornata) -> dict:
 
 
 def leggi_portale(company, day: date, *, tabauno_payload: dict | None = None) -> PortaleGiornata:
-    """Chiama i due endpoint, salva/aggiorna PortaleGiornata. Errori non sollevati verso la chiusura."""
+    """Chiama il servizio portale, salva/aggiorna PortaleGiornata. Errori non bloccano la chiusura."""
     day = day if isinstance(day, date) else _parse_day(day)
     if not day:
         raise ValueError('Data non valida')
@@ -255,17 +257,29 @@ def leggi_portale(company, day: date, *, tabauno_payload: dict | None = None) ->
     premi = None
     errori = []
 
+    # Preferisci l'endpoint combinato (una sola sessione / un solo lock).
     try:
-        contabile = get_contabile_lotto(data_iso)
+        payload = get_giornata(data_iso)
+        contabile, premi = estrai_contabile_e_premi(payload)
+        if contabile is None and premi is None:
+            raise PortaleServiceError('Risposta /portale/giornata senza contabile né premi.')
     except PortaleServiceError as exc:
-        errori.append(f'Contabile Lotto: {exc.messaggio}')
-        logger.info('portale contabile fallito company=%s data=%s: %s', company.id, data_iso, exc.messaggio)
-
-    try:
-        premi = get_premi_pagati(data_iso)
-    except PortaleServiceError as exc:
-        errori.append(f'Premi Lotterie: {exc.messaggio}')
-        logger.info('portale premi fallito company=%s data=%s: %s', company.id, data_iso, exc.messaggio)
+        logger.info(
+            'portale giornata combinata fallita company=%s data=%s: %s — fallback singoli',
+            company.id, data_iso, exc.messaggio,
+        )
+        try:
+            contabile = get_contabile_lotto(data_iso)
+        except PortaleServiceError as exc2:
+            errori.append(f'Contabile Lotto: {exc2.messaggio}')
+            logger.info('portale contabile fallito company=%s data=%s: %s', company.id, data_iso, exc2.messaggio)
+        try:
+            premi = get_premi_pagati(data_iso)
+        except PortaleServiceError as exc2:
+            errori.append(f'Premi Lotterie: {exc2.messaggio}')
+            logger.info('portale premi fallito company=%s data=%s: %s', company.id, data_iso, exc2.messaggio)
+        if not contabile and not premi and not errori:
+            errori.append(exc.messaggio)
 
     row, _created = PortaleGiornata.objects.get_or_create(company=company, data=day)
     if contabile is not None:

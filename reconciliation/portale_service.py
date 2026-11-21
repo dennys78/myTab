@@ -98,3 +98,32 @@ def get_contabile_lotto(data_iso: str) -> dict:
 
 def get_premi_pagati(data_iso: str) -> dict:
     return _get(f'/lotterie/premi-pagati?data={data_iso}')
+
+
+def get_giornata(data_iso: str) -> dict:
+    """Endpoint combinato: contabile + premi in una sola sessione sul Mac mini."""
+    return _get(f'/portale/giornata?data={data_iso}')
+
+
+def estrai_contabile_e_premi(payload: dict) -> tuple[dict | None, dict | None]:
+    """Normalizza le chiavi della risposta combinata /portale/giornata."""
+    if not isinstance(payload, dict):
+        return None, None
+    contabile = (
+        payload.get('contabile_lotto')
+        or payload.get('contabile')
+        or payload.get('lotto')
+    )
+    premi = (
+        payload.get('premi_lotterie')
+        or payload.get('premi_pagati')
+        or payload.get('premi')
+    )
+    if contabile is not None and not isinstance(contabile, dict):
+        contabile = None
+    if premi is not None and not isinstance(premi, dict):
+        premi = None
+    # Risposta già “piatta” contabile (ha entrate/saldo) senza wrapper
+    if contabile is None and ('entrate' in payload or 'giochi' in payload) and 'totale' not in payload:
+        contabile = payload
+    return contabile, premi

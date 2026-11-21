@@ -92,17 +92,28 @@ class LeggiPortaleTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(denominazione='Tabaccheria Portale')
 
-    @patch('reconciliation.portale_giornata.get_premi_pagati', return_value=PREMI)
-    @patch('reconciliation.portale_giornata.get_contabile_lotto', return_value=CONTABILE)
-    def test_salva_giornata(self, _c, _p):
+    @patch('reconciliation.portale_giornata.get_giornata', return_value={
+        'contabile_lotto': CONTABILE,
+        'premi_lotterie': PREMI,
+    })
+    def test_salva_giornata_endpoint_combinato(self, _g):
         row = leggi_portale(self.company, date(2026, 11, 21))
         self.assertEqual(row.contabile_lotto['entrate'], 409.5)
         self.assertEqual(row.premi_lotterie['totale']['importo'], 86.0)
         self.assertEqual(row.errore, '')
 
+    @patch('reconciliation.portale_giornata.get_premi_pagati', return_value=PREMI)
+    @patch('reconciliation.portale_giornata.get_contabile_lotto', return_value=CONTABILE)
+    @patch('reconciliation.portale_giornata.get_giornata', side_effect=PortaleServiceError('404'))
+    def test_fallback_endpoint_singoli(self, _g, _c, _p):
+        row = leggi_portale(self.company, date(2026, 11, 21))
+        self.assertEqual(row.contabile_lotto['entrate'], 409.5)
+        self.assertEqual(row.premi_lotterie['totale']['qta'], 10)
+
     @patch('reconciliation.portale_giornata.get_premi_pagati', side_effect=PortaleServiceError('offline'))
     @patch('reconciliation.portale_giornata.get_contabile_lotto', side_effect=PortaleServiceError('offline'))
-    def test_errore_non_blocca_salva_errore(self, _c, _p):
+    @patch('reconciliation.portale_giornata.get_giornata', side_effect=PortaleServiceError('offline'))
+    def test_errore_non_blocca_salva_errore(self, _g, _c, _p):
         row = leggi_portale(self.company, date(2026, 11, 21))
         self.assertIn('offline', row.errore)
         self.assertIsNone(row.contabile_lotto)
@@ -124,9 +135,11 @@ class ApiPortaleTests(TestCase):
             last_seen=timezone.now(),
         )
 
-    @patch('reconciliation.portale_giornata.get_premi_pagati', return_value=PREMI)
-    @patch('reconciliation.portale_giornata.get_contabile_lotto', return_value=CONTABILE)
-    def test_post_rileggi(self, _c, _p):
+    @patch('reconciliation.portale_giornata.get_giornata', return_value={
+        'contabile_lotto': CONTABILE,
+        'premi_lotterie': PREMI,
+    })
+    def test_post_rileggi(self, _g):
         TabaUnoRequest.objects.create(
             company=self.company,
             date=date(2026, 11, 21),
@@ -151,7 +164,8 @@ class ApiPortaleTests(TestCase):
 
     @patch('reconciliation.portale_giornata.get_premi_pagati', side_effect=PortaleServiceError('offline'))
     @patch('reconciliation.portale_giornata.get_contabile_lotto', side_effect=PortaleServiceError('offline'))
-    def test_chiusura_tabauno_non_bloccata_da_portale(self, _c, _p):
+    @patch('reconciliation.portale_giornata.get_giornata', side_effect=PortaleServiceError('offline'))
+    def test_chiusura_tabauno_non_bloccata_da_portale(self, _g, _c, _p):
         agent = TabaUnoAgent.objects.get(company=self.company)
         agent.token_hash = hashlib.sha256(b'token-agente').hexdigest()
         agent.save(update_fields=['token_hash'])
@@ -213,9 +227,11 @@ class ApiN8nPortaleTests(TestCase):
         self.assertIn('non disponibili', data['testo'])
         self.assertIn('PC offline', data['testo'])
 
-    @patch('reconciliation.portale_giornata.get_premi_pagati', return_value=PREMI)
-    @patch('reconciliation.portale_giornata.get_contabile_lotto', return_value=CONTABILE)
-    def test_ok(self, _c, _p):
+    @patch('reconciliation.portale_giornata.get_giornata', return_value={
+        'contabile_lotto': CONTABILE,
+        'premi_lotterie': PREMI,
+    })
+    def test_ok(self, _g):
         r = self._post()
         self.assertEqual(r.status_code, 200)
         data = r.json()
