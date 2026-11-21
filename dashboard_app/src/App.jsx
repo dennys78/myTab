@@ -15,6 +15,7 @@ import FondoCassa from './FondoCassa';
 import OrdineGratta from './OrdineGratta';
 import OrdineTabacchi from './OrdineTabacchi';
 import StatisticheGiacenze from './StatisticheGiacenze';
+import IncassiOggi from './IncassiOggi';
 import InstallPwa from './InstallPwa';
 import WebPushSetup from './WebPushSetup';
 import PushNotifyButton from './PushNotifyButton';
@@ -96,6 +97,7 @@ function AppShell() {
 
   const statisticheSubsections = [
     { id: 'giacenze', label: 'Giacenze' },
+    { id: 'incassi', label: 'Incassi di oggi' },
   ];
 
   const fetchClosures = useCallback(() => {
@@ -678,7 +680,7 @@ function AppShell() {
         ) : currentView === 'ordini' ? (
           ordiniSection === 'tabacchi' ? <OrdineTabacchi /> : <OrdineGratta />
         ) : currentView === 'statistiche' ? (
-          <StatisticheGiacenze />
+          statisticheSection === 'incassi' ? <IncassiOggi /> : <StatisticheGiacenze />
         ) : (
           <>
             <h1>{currentView === 'chiusure' ? 'Chiusure Cassa' : 'Panoramica'}</h1>

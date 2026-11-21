@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .extract import TabaUnoError, extract_closure
 from .gratta import extract_gratta_data
+from .parziali import extract_parziali_cassa
 from .tabacchi import extract_tabacchi_data
 
 _BACKOFF = (10, 30, 60, 300)
@@ -190,6 +191,8 @@ def _extract_request(config, payload):
         )
     if tipo == 'deposita_ordine_logista':
         return _deposita_ordine_logista(config, payload.get('id'))
+    if tipo == 'parziali_cassa':
+        return extract_parziali_cassa(config['tabauno_db'])
     raise TabaUnoError(f'Tipo richiesta sconosciuto: {tipo}')
 
 
@@ -227,6 +230,12 @@ def poll_once(config, logger) -> None:
         logger.info(
             'deposito id=%s durata=%.3fs path=%s bytes=%s',
             request_id, elapsed, extracted.get('path'), extracted.get('bytes'),
+        )
+    elif tipo == 'parziali_cassa':
+        logger.info(
+            'lettura id=%s tipo=%s data=%s durata=%.3fs settori=%s righe=%s',
+            request_id, tipo, extracted.get('data'), elapsed,
+            len(extracted.get('settori') or []), extracted.get('righe_totali'),
         )
     else:
         logger.info(
