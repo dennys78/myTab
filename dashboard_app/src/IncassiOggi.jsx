@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, Wifi } from 'lucide-react';
 import { apiFetch } from './api';
 
-const ORDINE = ['tabacchi', 'gratta', 'lottomatica', 'caffe', 'rosticceria', 'pasticceria'];
+const ORDINE = ['tabacchi', 'gratta', 'caffe', 'rosticceria', 'pasticceria'];
 
 function formattaEuro(value) {
   return `${Number(value || 0).toLocaleString('it-IT', {
@@ -79,13 +79,16 @@ export default function IncassiOggi() {
     aggiorna();
   }, [aggiorna]);
 
+  const lotto = dati?.lottomatica;
+  const lottoOk = lotto?.disponibile && lotto.importo != null;
+
   return (
     <div className="tab-page gia-page incassi-page">
       <header className="tab-header">
         <div>
           <h1>Incassi di oggi</h1>
           <p className="tab-sub">
-            Parziali Tabacchi, Gratta e Vinci, Lottomatica, Caffè, Rosticceria e Pasticceria
+            Parziali TabaUno (Tabacchi, Gratta, Caffè, Rosticceria, Pasticceria) + Lottomatica dal portale
           </p>
         </div>
       </header>
@@ -144,7 +147,7 @@ export default function IncassiOggi() {
       {dati && (
         <>
           <div className="gia-sep" aria-hidden="true" />
-          {dati.nessuna_vendita ? (
+          {dati.nessuna_vendita && !lottoOk ? (
             <p className="tab-empty">Nessuna vendita registrata dalla chiusura precedente.</p>
           ) : (
             <div className="incassi-grid">
@@ -162,13 +165,35 @@ export default function IncassiOggi() {
                   </div>
                 );
               })}
+
+              <div className={`incassi-card incassi-lottomatica ${lottoOk ? '' : 'incassi-card-muted'}`}>
+                <div className="incassi-card-top">
+                  <span className="incassi-emoji" aria-hidden="true">🎱</span>
+                  <span className="incassi-label">Lottomatica</span>
+                </div>
+                {lottoOk ? (
+                  <>
+                    <div className="incassi-importo">{formattaEuro(lotto.importo)}</div>
+                    <div className="incassi-n">
+                      Entrate Gioco · portale
+                      {lotto.richiesto_alle ? ` · ${formattaOra(lotto.richiesto_alle)}` : ''}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="incassi-importo">—</div>
+                    <div className="incassi-n">{lotto?.errore || 'Portale non disponibile'}</div>
+                  </>
+                )}
+              </div>
+
               <div className="incassi-card incassi-totale">
                 <div className="incassi-card-top">
                   <span className="incassi-emoji" aria-hidden="true">💶</span>
-                  <span className="incassi-label">Totale settori</span>
+                  <span className="incassi-label">Totale settori TabaUno</span>
                 </div>
                 <div className="incassi-importo">{formattaEuro(dati.totale)}</div>
-                <div className="incassi-n">somma dei 6 settori</div>
+                <div className="incassi-n">somma dei 5 settori (senza Lottomatica portale)</div>
               </div>
             </div>
           )}

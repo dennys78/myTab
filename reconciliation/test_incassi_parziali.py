@@ -45,14 +45,11 @@ def _payload_base(**overrides):
 class NormalizzaParzialiTests(TestCase):
     def test_solo_settori_configurati_gratta_senza_300(self):
         dati = normalizza_payload(_payload_base(), oggi=date(2026, 11, 21))
-        self.assertEqual(
-            set(dati['settori']),
-            {'tabacchi', 'gratta', 'lottomatica', 'caffe', 'rosticceria', 'pasticceria'},
-        )
+        self.assertEqual(set(dati['settori']), {'tabacchi', 'gratta', 'caffe', 'rosticceria', 'pasticceria'})
         self.assertEqual(dati['settori']['gratta']['importo'], 465.0)
         self.assertEqual(dati['settori']['tabacchi']['importo'], 1579.9)
-        self.assertEqual(dati['settori']['lottomatica']['importo'], 409.5)
-        self.assertAlmostEqual(dati['totale'], 1579.9 + 465 + 409.5 + 54.6 + 16 + 8.1)
+        self.assertNotIn('lottomatica', dati['settori'])
+        self.assertAlmostEqual(dati['totale'], 1579.9 + 465 + 54.6 + 16 + 8.1)
         self.assertFalse(dati['cassa_non_oggi'])
         self.assertFalse(dati['nessuna_vendita'])
 
@@ -79,8 +76,8 @@ class NormalizzaParzialiTests(TestCase):
         self.assertIn('(ultima vendita 11:05)', testo)
         self.assertIn('🚬 Tabacchi: <b>1.579,90 €</b>', testo)
         self.assertIn('🎟️ Gratta e Vinci: <b>465,00 €</b>', testo)
-        self.assertIn('🎱 Lottomatica: <b>409,50 €</b>', testo)
-        self.assertIn('Totale settori: <b>2.533,10 €</b>', testo)
+        self.assertNotIn('Lottomatica', testo)
+        self.assertIn('Totale settori: <b>2.123,60 €</b>', testo)
         self.assertNotIn('999', testo)
 
 
