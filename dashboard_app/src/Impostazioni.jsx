@@ -13,14 +13,14 @@ export default function Impostazioni({ section = 'generali' }) {
   const showGenerali = section === 'generali';
 
   const sectionTitle = showAzienda
-    ? 'Ragione sociale e archivi'
+    ? 'Azienda e portale'
     : showRettifiche
       ? 'Rettifiche'
       : showParametriPosta
         ? 'Parametri posta'
         : 'IA ed assistenti';
   const sectionHint = showAzienda
-    ? 'Gestisci ragione sociale, archivio immagini e cancellazione dati dell\'azienda attiva.'
+    ? 'Ragione sociale, acquisizione automatica Lotto/Premi dal portale, archivi e cancellazione dati.'
     : showRettifiche
       ? 'Allinea i valori di cassa alla situazione reale del punto vendita.'
       : showParametriPosta
@@ -844,6 +844,63 @@ export default function Impostazioni({ section = 'generali' }) {
         )}
 
         {selectedCompanyId && companyMode !== 'new' && (
+          <>
+          <div style={{
+            marginBottom: '1.25rem',
+            padding: '1rem 1.1rem',
+            borderRadius: '12px',
+            border: '1px solid rgba(34,197,94,0.4)',
+            background: 'rgba(34,197,94,0.08)',
+          }}>
+            <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+              🎱 Portale Lotterie
+            </label>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 0, marginBottom: '0.85rem', lineHeight: 1.45 }}>
+              Contabile Lotto e Premi Gratta letti automaticamente insieme a «Importa da TabaUno».
+              Default: attivo per D3 Solution, disattivo per le altre aziende.
+            </p>
+            <label style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.65rem',
+              padding: '0.75rem 0.85rem',
+              borderRadius: '10px',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              cursor: 'pointer',
+              marginBottom: '0.75rem',
+            }}>
+              <input
+                type="checkbox"
+                checked={portaleAutoSuChiusura}
+                onChange={e => setPortaleAutoSuChiusura(e.target.checked)}
+                style={{ marginTop: '0.2rem', width: '1.05rem', height: '1.05rem' }}
+              />
+              <span>
+                <span style={{ display: 'block', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                  Acquisizione automatica Contabile Lotto / Premi Gratta
+                </span>
+                <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                  Azienda selezionata: <strong style={{ color: 'var(--text-main)' }}>{denominazione || '—'}</strong>
+                </span>
+              </span>
+            </label>
+            <button
+              type="button"
+              onClick={handleSaveAcquisitionMode}
+              disabled={savingAcquisitionMode}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+            >
+              {savingAcquisitionMode ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+              Salva impostazione portale
+            </button>
+            {acquisitionModeSaved && (
+              <p style={{ color: '#22c55e', fontSize: '0.8rem', marginTop: '0.65rem', marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <CheckCircle size={14} /> Impostazione salvata.
+              </p>
+            )}
+          </div>
+
           <div style={{
             marginBottom: '1.25rem',
             padding: '1rem 1.1rem',
@@ -873,42 +930,11 @@ export default function Impostazioni({ section = 'generali' }) {
                 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 1rem', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
               >
                 {savingAcquisitionMode ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                Salva acquisizione
+                Salva protocollo
               </button>
             </div>
-            <label style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0.65rem',
-              marginTop: '1rem',
-              padding: '0.75rem 0.85rem',
-              borderRadius: '10px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)',
-              cursor: 'pointer',
-            }}>
-              <input
-                type="checkbox"
-                checked={portaleAutoSuChiusura}
-                onChange={e => setPortaleAutoSuChiusura(e.target.checked)}
-                style={{ marginTop: '0.2rem', width: '1rem', height: '1rem' }}
-              />
-              <span>
-                <span style={{ display: 'block', fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-main)' }}>
-                  Acquisizione automatica Contabile Lotto / Premi Gratta
-                </span>
-                <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.4 }}>
-                  Se attivo, con «Importa da TabaUno» legge anche i prospetti dal portale Lotterie e precompila Lottomatica e premi Gratta.
-                  Di default è attivo solo per D3 Solution.
-                </span>
-              </span>
-            </label>
-            {acquisitionModeSaved && (
-              <p style={{ color: '#22c55e', fontSize: '0.8rem', marginTop: '0.65rem', marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <CheckCircle size={14} /> Protocollo salvato.
-              </p>
-            )}
           </div>
+          </>
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>

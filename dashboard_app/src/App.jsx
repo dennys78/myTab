@@ -76,7 +76,7 @@ function AppShell() {
 
   const settingsSubsections = isAdmin
     ? [
-        { id: 'azienda', label: 'Ragione sociale e archivi' },
+        { id: 'azienda', label: 'Azienda e portale' },
         { id: 'rettifiche', label: 'Rettifiche' },
         { id: 'reparti', label: 'Reparti' },
         { id: 'utenti', label: 'Utenti' },
@@ -591,7 +591,7 @@ function AppShell() {
         </nav>
 
         {/* Footer sidebar: utente loggato + logout */}
-        <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', marginTop: navItems.some(i => i.pushToBottom) ? '0' : 'auto' }}>
+        <div className="sidebar-footer">
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
             Connesso come <strong style={{ color: 'var(--text-main)' }}>{user?.username}</strong>
           </div>
