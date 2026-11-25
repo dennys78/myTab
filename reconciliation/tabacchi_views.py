@@ -38,6 +38,7 @@ from .tabacchi_preordine import (
     _kg,
     _money,
     calcola_righe,
+    anagrafica_completa_in_payload,
     cerca_anagrafica,
     giorni_alla_consegna,
     inizio_vendite,
@@ -215,6 +216,7 @@ def _preordine_json(preordine, company):
         for riga in preordine.righe.all()
     ]
     totali = totali_ordine(righe)
+    payload = _payload_preordine(preordine) if preordine.request_id else {}
     return {
         'id': preordine.id,
         'stato': preordine.stato,
@@ -234,6 +236,7 @@ def _preordine_json(preordine, company):
         'logista_configurato': logista_configurato(),
         'logista_job': _ultimo_job_logista(preordine),
         'request_id': preordine.request_id,
+        'catalogo_completo': anagrafica_completa_in_payload(payload),
         'righe': righe,
         'aggiornato_il': timezone.localtime(preordine.aggiornato_il).isoformat(timespec='seconds'),
     }
@@ -378,13 +381,18 @@ def api_tabacchi_preordine_anagrafica(request, preordine_id):
     gia_ordine = set(
         preordine.righe.filter(unita__gt=0).values_list('aams', flat=True)
     )
+    payload = _payload_preordine(preordine)
     risultati = cerca_anagrafica(
-        _payload_preordine(preordine),
+        payload,
         query,
         limit=limit,
         escludi=gia_ordine,
     )
-    return JsonResponse({'status': 'success', 'risultati': risultati})
+    return JsonResponse({
+        'status': 'success',
+        'risultati': risultati,
+        'catalogo_completo': anagrafica_completa_in_payload(payload),
+    })
 
 
 @require_auth

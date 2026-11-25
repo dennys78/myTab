@@ -337,6 +337,20 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
     return righe, scartati
 
 
+def _aams_chiave(value) -> str:
+    """Normalizza AAMS per confronto (togli zeri a sinistra sui soli numerici)."""
+    text = _text_code(value)
+    if text.isdigit():
+        return text.lstrip('0') or '0'
+    return text.lower()
+
+
+def anagrafica_completa_in_payload(dati_agente) -> bool:
+    """True se la lettura agente include il catalogo `anagrafica` (non solo i venduti)."""
+    raw = (dati_agente or {}).get('anagrafica')
+    return isinstance(raw, list) and len(raw) > 0
+
+
 def anagrafica_da_payload(dati_agente):
     """Catalogo completo dalla lettura: chiave `anagrafica`, altrimenti fallback su `articoli`."""
     dati = dati_agente or {}
@@ -371,15 +385,22 @@ def anagrafica_da_payload(dati_agente):
 def cerca_anagrafica(dati_agente, query, *, limit=20, escludi=None):
     """Cerca per codice AAMS o descrizione; `escludi` = set di aams già in ordine."""
     testo = ' '.join(str(query or '').strip().lower().split())
-    blocco = {_text_code(code) for code in (escludi or []) if code}
+    testo_aams = _aams_chiave(testo) if testo else ''
+    blocco = {_aams_chiave(code) for code in (escludi or []) if code}
     risultati = []
     for item in anagrafica_da_payload(dati_agente):
-        if item['aams'] in blocco:
+        if _aams_chiave(item['aams']) in blocco:
             continue
         if testo:
             aams_l = item['aams'].lower()
             desc_l = item['descrizione'].lower()
-            if testo not in aams_l and testo not in desc_l:
+            aams_norm = _aams_chiave(item['aams'])
+            match_codice = (
+                testo in aams_l
+                or (testo_aams and testo_aams == aams_norm)
+                or (testo.isdigit() and testo_aams and testo_aams in aams_norm)
+            )
+            if not match_codice and testo not in desc_l:
                 continue
         risultati.append({
             'aams': item['aams'],
@@ -396,8 +417,9 @@ def cerca_anagrafica(dati_agente, query, *, limit=20, escludi=None):
 
 def scheda_anagrafica(dati_agente, aams):
     codice = _text_code(aams)
+    chiave = _aams_chiave(codice)
     for item in anagrafica_da_payload(dati_agente):
-        if item['aams'] == codice:
+        if item['aams'] == codice or _aams_chiave(item['aams']) == chiave:
             return item
     return None
 

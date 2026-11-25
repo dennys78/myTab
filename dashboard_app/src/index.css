@@ -3377,6 +3377,16 @@ tbody tr:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.tab-manuale-miss {
+  margin: 0.45rem 0 0;
+  color: #fdba74;
+  font-size: 0.78rem;
+}
+
+.tab-manuale .tab-empty-warn {
+  margin: 0 0 0.65rem;
+}
+
 .tab-others-toggle {
   width: 100%;
   display: flex;

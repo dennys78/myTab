@@ -55,6 +55,8 @@ export default function OrdineTabacchi() {
   const [manualeRisultati, setManualeRisultati] = useState([]);
   const [manualeScelto, setManualeScelto] = useState(null);
   const [manualeAttesa, setManualeAttesa] = useState(false);
+  const [manualeCatalogoCompleto, setManualeCatalogoCompleto] = useState(null);
+  const [manualeCercato, setManualeCercato] = useState(false);
   const pollRef = useRef(null);
   const saveRef = useRef(null);
   const salvaPendenteRef = useRef(null);
@@ -77,6 +79,15 @@ export default function OrdineTabacchi() {
     setManualeUnita(1);
     setManualeRisultati([]);
     setManualeScelto(null);
+    setManualeCercato(false);
+  };
+
+  const aamsDaQuery = (testo) => {
+    const raw = String(testo || '').trim();
+    if (!raw) return '';
+    if (manualeScelto?.aams) return manualeScelto.aams;
+    const prima = raw.split('·')[0].trim();
+    return prima;
   };
 
   const cercaManuale = useCallback((testo, preordineId) => {
@@ -84,6 +95,7 @@ export default function OrdineTabacchi() {
     const q = String(testo || '').trim();
     if (!preordineId || q.length < 1) {
       setManualeRisultati([]);
+      setManualeCercato(false);
       return;
     }
     manualeTimerRef.current = setTimeout(async () => {
@@ -94,17 +106,28 @@ export default function OrdineTabacchi() {
         const data = await response.json();
         if (data.status !== 'success') {
           setManualeRisultati([]);
+          setManualeCercato(true);
           return;
         }
         setManualeRisultati(data.risultati || []);
+        setManualeCatalogoCompleto(!!data.catalogo_completo);
+        setManualeCercato(true);
+        const exact = (data.risultati || []).find(item => (
+          String(item.aams).toLowerCase() === q.toLowerCase()
+          || String(item.aams).replace(/^0+/, '') === q.replace(/^0+/, '')
+        ));
+        if (exact) setManualeScelto(exact);
       } catch {
         setManualeRisultati([]);
+        setManualeCercato(true);
       }
     }, 220);
   }, []);
 
   const aggiungiManuale = async () => {
-    if (!preordine?.modificabile || !manualeScelto?.aams) return;
+    if (!preordine?.modificabile) return;
+    const aams = aamsDaQuery(manualeQuery);
+    if (!aams) return;
     const unita = Math.max(1, Number.parseInt(manualeUnita, 10) || 1);
     setManualeAttesa(true);
     setErrore('');
@@ -113,20 +136,22 @@ export default function OrdineTabacchi() {
       const response = await apiFetch(`/api/tabacchi/preordini/${preordine.id}/righe/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aams: manualeScelto.aams, unita }),
+        body: JSON.stringify({ aams, unita }),
       });
       const data = await response.json();
       if (data.status !== 'success') {
-        setErrore(data.error || 'Impossibile aggiungere l\'articolo.');
+        const incompleto = manualeCatalogoCompleto === false
+          ? ' Catalogo incompleto: sul PC aggiorna tabauno_sync e fai «Aggiorna da PC».'
+          : '';
+        setErrore((data.error || 'Impossibile aggiungere l\'articolo.') + incompleto);
         return;
       }
+      const riga = data.preordine.righe.find(item => String(item.aams) === String(aams))
+        || data.preordine.righe.find(item => String(item.aams).replace(/^0+/, '') === String(aams).replace(/^0+/, ''));
       setPreordine(data.preordine);
-      setMessaggio(`Aggiunto ${manualeScelto.descrizione || manualeScelto.aams} · ${unita}`);
+      setMessaggio(`Aggiunto ${riga?.descrizione || aams} · ${unita}`);
       resetManuale();
-      const nuovaSezione = sezioneDiRiga(
-        data.preordine.righe.find(riga => riga.aams === manualeScelto.aams) || manualeScelto,
-      );
-      if (nuovaSezione) setSezione(nuovaSezione);
+      if (riga) setSezione(sezioneDiRiga(riga));
     } catch {
       setErrore('Impossibile aggiungere l\'articolo.');
     } finally {
@@ -154,6 +179,11 @@ export default function OrdineTabacchi() {
       setPreordine(data.preordine);
       setScortaUltimo(normalizzaScortaPct(data.preordine.scorta_pct));
       setOnline(data.preordine.agent_online);
+      setManualeCatalogoCompleto(
+        typeof data.preordine.catalogo_completo === 'boolean'
+          ? data.preordine.catalogo_completo
+          : null,
+      );
       const job = data.preordine.logista_job;
       if (job && (STATI_LOGISTA_IN_CORSO.includes(job.stato) || job.stato === 'attesa_conferma')) {
         setLogistaJob(job);
@@ -1006,6 +1036,12 @@ export default function OrdineTabacchi() {
                 <strong>Aggiungi articolo fuori statistica</strong>
                 <span>Cerca in anagrafica per codice AAMS o descrizione · giacenza e vendite a zero</span>
               </div>
+              {manualeCatalogoCompleto === false && (
+                <p className="tab-empty tab-empty-warn">
+                  Questa lettura non ha il catalogo completo. Sul PC negozio aggiorna la cartella
+                  {' '}<code>tabauno_sync</code>, riavvia TabaUnoAgent e premi «Aggiorna da PC».
+                </p>
+              )}
               <div className="tab-controls gia-controls gia-controls-tools tab-manuale-row">
                 <div className="tab-control tab-manuale-cerca">
                   <input
@@ -1018,10 +1054,17 @@ export default function OrdineTabacchi() {
                       const value = e.target.value;
                       setManualeQuery(value);
                       setManualeScelto(null);
+                      setManualeCercato(false);
                       cercaManuale(value, preordine.id);
                     }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        aggiungiManuale();
+                      }
+                    }}
                   />
-                  {manualeRisultati.length > 0 && !manualeScelto && (
+                  {manualeRisultati.length > 0 && !(manualeScelto && manualeRisultati.length === 1) && (
                     <ul className="tab-manuale-suggest" role="listbox">
                       {manualeRisultati.map(item => (
                         <li key={item.aams}>
@@ -1040,6 +1083,14 @@ export default function OrdineTabacchi() {
                       ))}
                     </ul>
                   )}
+                  {manualeCercato && manualeQuery.trim() && manualeRisultati.length === 0 && !manualeScelto && (
+                    <p className="tab-manuale-miss">
+                      Nessun risultato per «{manualeQuery.trim()}».
+                      {manualeCatalogoCompleto === false
+                        ? ' Aggiorna l’agente e rifai la lettura da PC.'
+                        : ' Se il codice non è in anagrafica TabaUno non si può aggiungere da qui.'}
+                    </p>
+                  )}
                 </div>
                 <div className="tab-control">
                   <span className="tab-label">Q.tà</span>
@@ -1057,7 +1108,7 @@ export default function OrdineTabacchi() {
                   <button
                     type="button"
                     className="tab-btn primary"
-                    disabled={manualeAttesa || !manualeScelto}
+                    disabled={manualeAttesa || !aamsDaQuery(manualeQuery)}
                     onClick={aggiungiManuale}
                   >
                     {manualeAttesa ? 'Aggiungo…' : 'Aggiungi'}

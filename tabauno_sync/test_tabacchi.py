@@ -76,7 +76,7 @@ class ExtractTabacchiTests(unittest.TestCase):
         self.assertEqual(payload['ultimo_giorno_chiuso'], '2026-11-16')
         self.assertEqual(payload['giorni_apertura'], ['2026-10-01', '2026-11-15', '2026-11-16'])
         by_aams = {art['aams']: art for art in payload['articoli']}
-        self.assertEqual(set(by_aams), {'201', 'K0011', 'V0PYU'})
+        self.assertEqual(set(by_aams), {'201', '999', 'K0011', 'V0PYU'})
         art = by_aams['201']
         self.assertEqual(art['descrizione'], 'CHESTERFIELD BLUE KS DA 20 A.')
         self.assertEqual(art['giacenza'], 96)
@@ -88,6 +88,7 @@ class ExtractTabacchiTests(unittest.TestCase):
         self.assertEqual(by_aams['K0011']['pacstecca'], 10)
         self.assertEqual(by_aams['K0011']['giacenze_fine_giorno']['2026-11-15'], 20.0)
         self.assertEqual(by_aams['V0PYU']['categoria'], 'SIGARETTE ELETTRONICHE')
+        self.assertEqual(by_aams['999']['vendite_giornaliere'], {})
         self.assertTrue(payload['letto_alle'])
         ana = {row['aams']: row for row in payload['anagrafica']}
         self.assertEqual(set(ana), {'201', '999', 'K0011', 'V0PYU'})

@@ -256,13 +256,11 @@ def _read(main, storico, magx) -> dict:
     catalogo = [_scheda(info) for info in anagrafica.values()]
     catalogo.sort(key=lambda item: (item['descrizione'], item['aams']))
 
+    # Tutti i codici in anagrafica: con vendite (statistica) o senza (fuori statistica).
     articoli = []
-    for aams, sales in vendite.items():
-        info = anagrafica.get(aams)
-        if not info:
-            continue
+    for aams, info in anagrafica.items():
         scheda = _scheda(info)
-        scheda['vendite_giornaliere'] = sales
+        scheda['vendite_giornaliere'] = vendite.get(aams) or {}
         scheda['giacenze_fine_giorno'] = giacenze.get(aams, {})
         articoli.append(scheda)
     articoli.sort(key=lambda item: (item['descrizione'], item['aams']))
