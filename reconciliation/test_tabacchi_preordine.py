@@ -207,6 +207,47 @@ class TabacchiApiTests(TestCase):
                 'vendite_giornaliere': {aperture[0]: 1},
                 'giacenze_fine_giorno': {},
             }],
+            'anagrafica': [{
+                'aams': '201',
+                'descrizione': 'CHESTERFIELD BLUE KS DA 20 A.',
+                'categoria': 'SIGARETTE',
+                'tipo': 'tabacco',
+                'prezzo': 5.8,
+                'prezzo_kg': 290,
+                'minimo_grammi': 200,
+                'pacstecca': 0,
+                'giacenza': 20,
+            }, {
+                'aams': '176',
+                'descrizione': 'MARLBORO GOLD KS DA 20 A.',
+                'categoria': 'SIGARETTE',
+                'tipo': 'tabacco',
+                'prezzo': 6.0,
+                'prezzo_kg': 300,
+                'minimo_grammi': 200,
+                'pacstecca': 0,
+                'giacenza': 0,
+            }, {
+                'aams': 'K0011',
+                'descrizione': '11 - LEVIA RUBY WALTZ',
+                'categoria': 'PRODOTTI SENZA COMBUSTIONE - SOLIDI DIVERSI DA TABACCO',
+                'tipo': 'dispositivo',
+                'prezzo': 5.5,
+                'prezzo_kg': 0,
+                'minimo_grammi': 1,
+                'pacstecca': 10,
+                'giacenza': 5,
+            }, {
+                'aams': '999',
+                'descrizione': 'SENZA PARAMETRI',
+                'categoria': 'SIGARETTE',
+                'tipo': 'tabacco',
+                'prezzo': 0,
+                'prezzo_kg': 0,
+                'minimo_grammi': 0,
+                'pacstecca': 0,
+                'giacenza': 10,
+            }],
         }
 
     def _lettura_pronta(self):
@@ -391,6 +432,63 @@ class TabacchiApiTests(TestCase):
             self.assertEqual(quantita, expected[codice])
         self.assertEqual(sheet.cell_value(1, 0), '0201')
         self.assertEqual(sheet.cell_value(1, 1), '1,4')
+
+    def test_cerca_anagrafica_e_aggiunge_riga_manuale(self):
+        lettura = self._lettura_pronta()
+        creato = self.client.post(
+            f'/api/tabacchi/preordini/da-richiesta/{lettura.id}/',
+            data='{"giorni_copertura":7,"data_consegna":"2026-11-23"}',
+            content_type='application/json',
+        )
+        preordine = creato.json()['preordine']
+        preordine_id = preordine['id']
+        self.assertFalse(any(r['aams'] == '176' for r in preordine['righe']))
+
+        cerca = self.client.get(f'/api/tabacchi/preordini/{preordine_id}/anagrafica/?q=marlboro')
+        self.assertEqual(cerca.status_code, 200)
+        risultati = cerca.json()['risultati']
+        self.assertTrue(any(r['aams'] == '176' for r in risultati))
+
+        # Articoli già in ordine (unita>0) esclusi dalla ricerca
+        self.client.patch(
+            f'/api/tabacchi/preordini/{preordine_id}/',
+            data='{"righe":[{"aams":"201","unita":2}]}',
+            content_type='application/json',
+        )
+        cerca201 = self.client.get(f'/api/tabacchi/preordini/{preordine_id}/anagrafica/?q=chesterfield')
+        self.assertFalse(any(r['aams'] == '201' for r in cerca201.json()['risultati']))
+
+        aggiungi = self.client.post(
+            f'/api/tabacchi/preordini/{preordine_id}/righe/',
+            data='{"aams":"176","unita":3}',
+            content_type='application/json',
+        )
+        self.assertEqual(aggiungi.status_code, 200)
+        body = aggiungi.json()['preordine']
+        riga = next(r for r in body['righe'] if r['aams'] == '176')
+        self.assertEqual(riga['unita'], 3)
+        self.assertEqual(riga['unita_proposte'], 0)
+        self.assertEqual(riga['media'], 0.0)
+        self.assertEqual(riga['giacenza'], 0.0)
+        self.assertTrue(riga['corretto_a_mano'])
+        self.assertGreater(riga['importo'], 0)
+
+        dsp = self.client.post(
+            f'/api/tabacchi/preordini/{preordine_id}/righe/',
+            data='{"aams":"K0011","unita":1}',
+            content_type='application/json',
+        )
+        self.assertEqual(dsp.status_code, 200)
+        riga_dsp = next(r for r in dsp.json()['preordine']['righe'] if r['aams'] == 'K0011')
+        self.assertEqual(riga_dsp['famiglia'], 'Solidi')
+        self.assertEqual(riga_dsp['pacchetti_per_unita'], 10)
+
+        rifiuto = self.client.post(
+            f'/api/tabacchi/preordini/{preordine_id}/righe/',
+            data='{"aams":"999","unita":1}',
+            content_type='application/json',
+        )
+        self.assertEqual(rifiuto.status_code, 409)
 
     def test_deposita_tabauno_accoda_e_agente_scarica(self):
         import hashlib

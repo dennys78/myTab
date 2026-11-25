@@ -41,6 +41,8 @@ urlpatterns = [
     path('api/tabacchi/preordini/', tabacchi_views.api_tabacchi_preordini),
     path('api/tabacchi/preordini/da-richiesta/<int:request_id>/', tabacchi_views.api_tabacchi_preordine_da_richiesta),
     path('api/tabacchi/preordini/<int:preordine_id>/', tabacchi_views.api_tabacchi_preordine_detail),
+    path('api/tabacchi/preordini/<int:preordine_id>/anagrafica/', tabacchi_views.api_tabacchi_preordine_anagrafica),
+    path('api/tabacchi/preordini/<int:preordine_id>/righe/', tabacchi_views.api_tabacchi_preordine_aggiungi_riga),
     path('api/tabacchi/preordini/<int:preordine_id>/csv/', tabacchi_views.api_tabacchi_preordine_csv),
     path('api/tabacchi/preordini/<int:preordine_id>/logista/', tabacchi_views.api_tabacchi_preordine_logista),
     path('api/tabacchi/preordini/<int:preordine_id>/deposita-tabauno/', tabacchi_views.api_tabacchi_preordine_deposita_tabauno),

@@ -337,6 +337,103 @@ def calcola_righe(dati_agente, oggi, *, giorni_copertura=DEFAULT_COPERURA, data_
     return righe, scartati
 
 
+def anagrafica_da_payload(dati_agente):
+    """Catalogo completo dalla lettura: chiave `anagrafica`, altrimenti fallback su `articoli`."""
+    dati = dati_agente or {}
+    raw = dati.get('anagrafica')
+    if not isinstance(raw, list) or not raw:
+        raw = dati.get('articoli') or []
+    catalogo = []
+    visti = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        aams = _text_code(item.get('aams'))
+        if not aams or aams in visti:
+            continue
+        visti.add(aams)
+        catalogo.append({
+            'aams': aams,
+            'descrizione': ' '.join(str(item.get('descrizione') or '').split()),
+            'categoria': ' '.join(str(item.get('categoria') or '').split()),
+            'tipo': item.get('tipo') or ('dispositivo' if is_dispositivo(item) else 'tabacco'),
+            'prezzo': _money(item.get('prezzo')),
+            'prezzo_kg': _decimal(item.get('prezzo_kg')),
+            'minimo_grammi': _decimal(item.get('minimo_grammi')),
+            'pacstecca': int(_decimal(item.get('pacstecca') or 0)),
+            'giacenza': _decimal(item.get('giacenza')),
+            'famiglia': famiglia_da_categoria(item.get('categoria')),
+        })
+    catalogo.sort(key=lambda row: (row['descrizione'].lower(), row['aams']))
+    return catalogo
+
+
+def cerca_anagrafica(dati_agente, query, *, limit=20, escludi=None):
+    """Cerca per codice AAMS o descrizione; `escludi` = set di aams già in ordine."""
+    testo = ' '.join(str(query or '').strip().lower().split())
+    blocco = {_text_code(code) for code in (escludi or []) if code}
+    risultati = []
+    for item in anagrafica_da_payload(dati_agente):
+        if item['aams'] in blocco:
+            continue
+        if testo:
+            aams_l = item['aams'].lower()
+            desc_l = item['descrizione'].lower()
+            if testo not in aams_l and testo not in desc_l:
+                continue
+        risultati.append({
+            'aams': item['aams'],
+            'descrizione': item['descrizione'],
+            'famiglia': item['famiglia'],
+            'tipo': item['tipo'],
+            'prezzo': float(item['prezzo']),
+            'pacstecca': item['pacstecca'],
+        })
+        if len(risultati) >= int(limit):
+            break
+    return risultati
+
+
+def scheda_anagrafica(dati_agente, aams):
+    codice = _text_code(aams)
+    for item in anagrafica_da_payload(dati_agente):
+        if item['aams'] == codice:
+            return item
+    return None
+
+
+def riga_manuale_da_anagrafica(scheda, unita):
+    """Riga fuori statistica: stessa forma delle altre, media/giacenza/proposta a zero."""
+    pezzi = max(0, int(unita or 0))
+    if is_dispositivo(scheda):
+        unita_size, kg_per_unita = unita_ordine_dispositivo(scheda.get('pacstecca'))
+    else:
+        unita_size, kg_or_reason = unita_ordine(
+            scheda.get('prezzo'), scheda.get('prezzo_kg'), scheda.get('minimo_grammi'),
+        )
+        if unita_size is None:
+            return None, kg_or_reason
+        kg_per_unita = kg_or_reason
+    prezzo = _money(scheda.get('prezzo'))
+    pacchetti = pezzi * unita_size
+    return {
+        'aams': _text_code(scheda.get('aams')),
+        'descrizione': ' '.join(str(scheda.get('descrizione') or '').split()),
+        'famiglia': famiglia_da_categoria(scheda.get('categoria')),
+        'tipo': 'dispositivo' if is_dispositivo(scheda) else 'tabacco',
+        'prezzo': prezzo,
+        'pacchetti_per_unita': unita_size,
+        'kg_per_unita': kg_per_unita,
+        'giacenza': ZERO,
+        'media': ZERO,
+        'data_fine': None,
+        'unita_proposte': 0,
+        'unita': pezzi,
+        'importo': _money(pacchetti * prezzo),
+        'corretto_a_mano': True,
+    }, None
+
+
 def numero_json(value, places=2):
     quantized = _decimal(value).quantize(Decimal('1').scaleb(-places), rounding=ROUND_HALF_UP)
     return float(quantized)

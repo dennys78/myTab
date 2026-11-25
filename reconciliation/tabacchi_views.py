@@ -38,6 +38,7 @@ from .tabacchi_preordine import (
     _kg,
     _money,
     calcola_righe,
+    cerca_anagrafica,
     giorni_alla_consegna,
     inizio_vendite,
     logista_xls_bytes,
@@ -46,6 +47,8 @@ from .tabacchi_preordine import (
     proiezione_dopo_ordine,
     proposta_unita,
     prossimo_giorno_consegna,
+    riga_manuale_da_anagrafica,
+    scheda_anagrafica,
     totali_ordine,
     urgenza_data_fine,
 )
@@ -314,6 +317,115 @@ def _logista_attachment(preordine):
     response['Content-Disposition'] = 'attachment; filename="Ordine_Logista.xls"'
     _segna_esportato(preordine)
     return response
+
+
+def _payload_preordine(preordine):
+    return (preordine.request.payload or {}) if preordine.request_id else {}
+
+
+def _crea_riga_manuale(preordine, scheda, unita):
+    dati, motivo = riga_manuale_da_anagrafica(scheda, unita)
+    if dati is None:
+        return None, motivo or 'Articolo non ordinabile.'
+    esistente = preordine.righe.filter(aams=dati['aams']).first()
+    if esistente:
+        esistente.unita = dati['unita']
+        esistente.unita_proposte = 0
+        esistente.corretto_a_mano = True
+        esistente.importo = dati['importo']
+        esistente.media = Decimal('0')
+        esistente.giacenza = Decimal('0')
+        esistente.data_fine = None
+        esistente.save()
+        _salva_totali(preordine)
+        return esistente, None
+    riga = TabacchiPreordineRiga.objects.create(
+        preordine=preordine,
+        aams=dati['aams'],
+        descrizione=dati['descrizione'],
+        famiglia=dati['famiglia'],
+        prezzo=dati['prezzo'],
+        pacchetti_per_unita=dati['pacchetti_per_unita'],
+        kg_per_unita=dati['kg_per_unita'],
+        giacenza=dati['giacenza'],
+        media=dati['media'],
+        data_fine=None,
+        unita_proposte=0,
+        unita=dati['unita'],
+        corretto_a_mano=True,
+        importo=dati['importo'],
+    )
+    _salva_totali(preordine)
+    return riga, None
+
+
+@require_auth
+def api_tabacchi_preordine_anagrafica(request, preordine_id):
+    """Cerca in anagrafica tabacchi (AAMS o descrizione) per aggiungere fuori statistica."""
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'error': 'Usa GET'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    query = request.GET.get('q', '')
+    try:
+        limit = min(40, max(1, int(request.GET.get('limit') or 20)))
+    except (TypeError, ValueError):
+        limit = 20
+    gia_ordine = set(
+        preordine.righe.filter(unita__gt=0).values_list('aams', flat=True)
+    )
+    risultati = cerca_anagrafica(
+        _payload_preordine(preordine),
+        query,
+        limit=limit,
+        escludi=gia_ordine,
+    )
+    return JsonResponse({'status': 'success', 'risultati': risultati})
+
+
+@require_auth
+def api_tabacchi_preordine_aggiungi_riga(request, preordine_id):
+    """Aggiunge (o aggiorna) una riga fuori statistica dall'anagrafica della lettura."""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'error': 'Usa POST'}, status=405)
+    company, err = _company(request)
+    if err:
+        return err
+    preordine = TabacchiPreordine.objects.filter(id=preordine_id, company=company).first()
+    if not preordine:
+        return JsonResponse({'status': 'error', 'error': 'Preordine non trovato.'}, status=404)
+    if preordine.stato not in STATI_MODIFICABILI:
+        return JsonResponse({'status': 'error', 'error': 'Ordine non modificabile.'}, status=409)
+    data = _body(request)
+    if data is None:
+        return JsonResponse({'status': 'error', 'error': 'JSON non valido'}, status=400)
+    aams = str(data.get('aams') or '').strip()
+    if not aams:
+        return JsonResponse({'status': 'error', 'error': 'Indica il codice AAMS.'}, status=400)
+    try:
+        unita = int(data.get('unita') or 1)
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'error': 'Quantità non valida.'}, status=400)
+    if unita < 1:
+        return JsonResponse({'status': 'error', 'error': 'La quantità deve essere almeno 1.'}, status=400)
+    scheda = scheda_anagrafica(_payload_preordine(preordine), aams)
+    if not scheda:
+        return JsonResponse(
+            {'status': 'error', 'error': 'Articolo non trovato in anagrafica tabacchi.'},
+            status=404,
+        )
+    _riga, motivo = _crea_riga_manuale(preordine, scheda, unita)
+    if motivo:
+        return JsonResponse({'status': 'error', 'error': f'Articolo non ordinabile ({motivo}).'}, status=409)
+    if preordine.stato in (TabacchiPreordine.ANNULLATO, TabacchiPreordine.ESPORTATO):
+        preordine.stato = TabacchiPreordine.BOZZA
+        preordine.save(update_fields=['stato', 'aggiornato_il'])
+    preordine.refresh_from_db()
+    return JsonResponse({'status': 'success', 'preordine': _preordine_json(preordine, company)})
 
 
 @require_auth

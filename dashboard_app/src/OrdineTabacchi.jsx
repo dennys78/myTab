@@ -50,20 +50,89 @@ export default function OrdineTabacchi() {
   const [scortaUltimo, setScortaUltimo] = useState(DEFAULT_SCORTA_PCT);
   const [logistaJob, setLogistaJob] = useState(null);
   const [logistaAvvio, setLogistaAvvio] = useState(false);
+  const [manualeQuery, setManualeQuery] = useState('');
+  const [manualeUnita, setManualeUnita] = useState(1);
+  const [manualeRisultati, setManualeRisultati] = useState([]);
+  const [manualeScelto, setManualeScelto] = useState(null);
+  const [manualeAttesa, setManualeAttesa] = useState(false);
   const pollRef = useRef(null);
   const saveRef = useRef(null);
   const salvaPendenteRef = useRef(null);
   const logistaPollRef = useRef(null);
   const seguiJobLogistaRef = useRef(null);
   const copiaRef = useRef(null);
+  const manualeTimerRef = useRef(null);
 
   const ferma = () => {
     if (pollRef.current) clearTimeout(pollRef.current);
     if (saveRef.current) clearTimeout(saveRef.current);
     if (logistaPollRef.current) clearTimeout(logistaPollRef.current);
+    if (manualeTimerRef.current) clearTimeout(manualeTimerRef.current);
   };
 
   useEffect(() => () => ferma(), []);
+
+  const resetManuale = () => {
+    setManualeQuery('');
+    setManualeUnita(1);
+    setManualeRisultati([]);
+    setManualeScelto(null);
+  };
+
+  const cercaManuale = useCallback((testo, preordineId) => {
+    if (manualeTimerRef.current) clearTimeout(manualeTimerRef.current);
+    const q = String(testo || '').trim();
+    if (!preordineId || q.length < 1) {
+      setManualeRisultati([]);
+      return;
+    }
+    manualeTimerRef.current = setTimeout(async () => {
+      try {
+        const response = await apiFetch(
+          `/api/tabacchi/preordini/${preordineId}/anagrafica/?q=${encodeURIComponent(q)}&limit=12`,
+        );
+        const data = await response.json();
+        if (data.status !== 'success') {
+          setManualeRisultati([]);
+          return;
+        }
+        setManualeRisultati(data.risultati || []);
+      } catch {
+        setManualeRisultati([]);
+      }
+    }, 220);
+  }, []);
+
+  const aggiungiManuale = async () => {
+    if (!preordine?.modificabile || !manualeScelto?.aams) return;
+    const unita = Math.max(1, Number.parseInt(manualeUnita, 10) || 1);
+    setManualeAttesa(true);
+    setErrore('');
+    setMessaggio('');
+    try {
+      const response = await apiFetch(`/api/tabacchi/preordini/${preordine.id}/righe/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aams: manualeScelto.aams, unita }),
+      });
+      const data = await response.json();
+      if (data.status !== 'success') {
+        setErrore(data.error || 'Impossibile aggiungere l\'articolo.');
+        return;
+      }
+      setPreordine(data.preordine);
+      setMessaggio(`Aggiunto ${manualeScelto.descrizione || manualeScelto.aams} · ${unita}`);
+      resetManuale();
+      const nuovaSezione = sezioneDiRiga(
+        data.preordine.righe.find(riga => riga.aams === manualeScelto.aams) || manualeScelto,
+      );
+      if (nuovaSezione) setSezione(nuovaSezione);
+    } catch {
+      setErrore('Impossibile aggiungere l\'articolo.');
+    } finally {
+      setManualeAttesa(false);
+    }
+  };
 
   const caricaStato = useCallback(() => {
     apiFetch('/api/tabauno/status/')
@@ -929,6 +998,73 @@ export default function OrdineTabacchi() {
                 </div>
               </div>
             ))
+          )}
+
+          {preordine.modificabile && (
+            <section className="tab-manuale">
+              <div className="tab-manuale-head">
+                <strong>Aggiungi articolo fuori statistica</strong>
+                <span>Cerca in anagrafica per codice AAMS o descrizione · giacenza e vendite a zero</span>
+              </div>
+              <div className="tab-controls gia-controls gia-controls-tools tab-manuale-row">
+                <div className="tab-control tab-manuale-cerca">
+                  <input
+                    type="search"
+                    className="tab-search"
+                    placeholder="Codice AAMS o descrizione…"
+                    value={manualeQuery}
+                    disabled={manualeAttesa}
+                    onChange={e => {
+                      const value = e.target.value;
+                      setManualeQuery(value);
+                      setManualeScelto(null);
+                      cercaManuale(value, preordine.id);
+                    }}
+                  />
+                  {manualeRisultati.length > 0 && !manualeScelto && (
+                    <ul className="tab-manuale-suggest" role="listbox">
+                      {manualeRisultati.map(item => (
+                        <li key={item.aams}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManualeScelto(item);
+                              setManualeQuery(`${item.aams} · ${item.descrizione}`);
+                              setManualeRisultati([]);
+                            }}
+                          >
+                            <strong>{item.descrizione}</strong>
+                            <span className="grt-meta">{item.aams} · {item.famiglia}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="tab-control">
+                  <span className="tab-label">Q.tà</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={manualeUnita}
+                    disabled={manualeAttesa}
+                    onChange={e => setManualeUnita(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
+                    aria-label="Quantità da aggiungere"
+                  />
+                </div>
+                <div className="tab-control gia-control-leggi">
+                  <button
+                    type="button"
+                    className="tab-btn primary"
+                    disabled={manualeAttesa || !manualeScelto}
+                    onClick={aggiungiManuale}
+                  >
+                    {manualeAttesa ? 'Aggiungo…' : 'Aggiungi'}
+                  </button>
+                </div>
+              </div>
+            </section>
           )}
 
           <section className="tab-others">

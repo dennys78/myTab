@@ -240,13 +240,9 @@ def _read(main, storico, magx) -> dict:
         giacenze_dsp = _read_giacenze(magx, 'Dispositivi', stock_start, ultimo)
         giacenze = {**giacenze_taba, **giacenze_dsp}
 
-    articoli = []
-    for aams, sales in vendite.items():
-        info = anagrafica.get(aams)
-        if not info:
-            continue
-        articoli.append({
-            'aams': aams,
+    def _scheda(info):
+        return {
+            'aams': info['aams'],
             'descrizione': info['descrizione'],
             'categoria': info['categoria'],
             'tipo': info.get('tipo') or 'tabacco',
@@ -255,12 +251,24 @@ def _read(main, storico, magx) -> dict:
             'minimo_grammi': float(info['minimo_grammi']),
             'pacstecca': int(info.get('pacstecca') or 0),
             'giacenza': float(info['giacenza']),
-            'vendite_giornaliere': sales,
-            'giacenze_fine_giorno': giacenze.get(aams, {}),
-        })
+        }
+
+    catalogo = [_scheda(info) for info in anagrafica.values()]
+    catalogo.sort(key=lambda item: (item['descrizione'], item['aams']))
+
+    articoli = []
+    for aams, sales in vendite.items():
+        info = anagrafica.get(aams)
+        if not info:
+            continue
+        scheda = _scheda(info)
+        scheda['vendite_giornaliere'] = sales
+        scheda['giacenze_fine_giorno'] = giacenze.get(aams, {})
+        articoli.append(scheda)
     articoli.sort(key=lambda item: (item['descrizione'], item['aams']))
     return {
         'articoli': articoli,
+        'anagrafica': catalogo,
         'giorni_apertura': [_iso(day) for day in aperture],
         'ultimo_giorno_chiuso': _iso(ultimo) if ultimo else None,
         'letto_alle': datetime.now().astimezone().isoformat(timespec='seconds'),

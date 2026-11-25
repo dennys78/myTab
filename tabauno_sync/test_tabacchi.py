@@ -89,6 +89,10 @@ class ExtractTabacchiTests(unittest.TestCase):
         self.assertEqual(by_aams['K0011']['giacenze_fine_giorno']['2026-11-15'], 20.0)
         self.assertEqual(by_aams['V0PYU']['categoria'], 'SIGARETTE ELETTRONICHE')
         self.assertTrue(payload['letto_alle'])
+        ana = {row['aams']: row for row in payload['anagrafica']}
+        self.assertEqual(set(ana), {'201', '999', 'K0011', 'V0PYU'})
+        self.assertEqual(ana['999']['descrizione'], 'SENZA VENDITE')
+        self.assertNotIn('vendite_giornaliere', ana['999'])
 
 
 if __name__ == '__main__':
