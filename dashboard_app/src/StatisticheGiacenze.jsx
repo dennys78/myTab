@@ -62,6 +62,7 @@ export default function StatisticheGiacenze() {
   const [filtroStato, setFiltroStato] = useState('tutti');
   const [sogliaMinima, setSogliaMinima] = useState(SOGLIA_DEFAULT);
   const [ordinamento, setOrdinamento] = useState({ chiave: 'alla_data', direzione: 'asc' });
+  const [messaggio, setMessaggio] = useState('');
   const pollRef = useRef(null);
 
   const ferma = () => {
@@ -110,6 +111,7 @@ export default function StatisticheGiacenze() {
   const leggi = async () => {
     if (online !== true || attesa) return;
     setErrore('');
+    setMessaggio('');
     setAttesa(true);
     ferma();
     const response = await apiFetch('/api/statistiche/giacenze/lettura/', {
@@ -126,21 +128,38 @@ export default function StatisticheGiacenze() {
     }
     setOnline(!!data.agent_online);
     setRequestId(data.id);
+    const started = Date.now();
     const poll = async () => {
-      const stato = await apiFetch(`/api/tabauno/requests/${data.id}/`);
-      const body = await stato.json();
-      setOnline(!!body.agent_online);
-      if (body.status === 'done') {
-        await caricaAnalisi(data.id, dataProiezione || sabatoSettimanaCorrente());
+      try {
+        const stato = await apiFetch(`/api/tabauno/requests/${data.id}/`);
+        const body = await stato.json();
+        setOnline(!!body.agent_online);
+        if (body.status === 'done') {
+          const analisiBody = await caricaAnalisi(data.id, dataProiezione || sabatoSettimanaCorrente());
+          setAttesa(false);
+          if (analisiBody?.pronta) {
+            const quando = analisiBody.analisi?.letto_alle
+              ? String(analisiBody.analisi.letto_alle).replace('T', ' ').slice(0, 19)
+              : '';
+            setMessaggio(quando ? `Giacenze aggiornate · letto alle ${quando}` : 'Giacenze aggiornate.');
+          }
+          return;
+        }
+        if (body.status === 'error' || body.status === 'expired') {
+          setAttesa(false);
+          setErrore(body.error || 'Lettura TabaUno non riuscita.');
+          return;
+        }
+        if (Date.now() - started > 120000) {
+          setAttesa(false);
+          setErrore('Lettura troppo lenta: riprova tra un minuto (eventuale richiesta bloccata sul PC).');
+          return;
+        }
+        pollRef.current = setTimeout(poll, 2000);
+      } catch {
         setAttesa(false);
-        return;
+        setErrore('Errore di rete durante la lettura.');
       }
-      if (body.status === 'error' || body.status === 'expired') {
-        setAttesa(false);
-        setErrore(body.error || 'Lettura TabaUno non riuscita.');
-        return;
-      }
-      pollRef.current = setTimeout(poll, 2000);
     };
     pollRef.current = setTimeout(poll, 2000);
   };
@@ -230,6 +249,7 @@ export default function StatisticheGiacenze() {
       </header>
 
       {errore && <div className="tab-error">{errore}</div>}
+      {messaggio && !errore && <div className="tab-ok">{messaggio}</div>}
 
       <div className="tab-controls gia-controls">
         {analisi && (

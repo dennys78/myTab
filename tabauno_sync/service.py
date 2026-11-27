@@ -76,7 +76,8 @@ def _request(config, method, path, body=None):
         method=method,
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # Letture tabacchi con anagrafica completa possono superare i 30s in upload.
+        with urllib.request.urlopen(request, timeout=120) as response:
             raw = response.read()
             if response.status == 204 or not raw:
                 return response.status, None
@@ -84,6 +85,10 @@ def _request(config, method, path, body=None):
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', errors='replace')
         raise TabaUnoError(f'{method} {path} -> {exc.code}: {detail}') from exc
+    except urllib.error.URLError as exc:
+        raise TabaUnoError(f'{method} {path} -> rete: {exc.reason}') from exc
+    except TimeoutError as exc:
+        raise TabaUnoError(f'{method} {path} -> timeout') from exc
 
 
 def _request_bytes(config, path) -> bytes:
@@ -210,10 +215,13 @@ def poll_once(config, logger) -> None:
         extracted = _extract_request(config, payload)
     except TabaUnoError as exc:
         logger.info('lettura fallita id=%s tipo=%s data=%s errore=%s', request_id, tipo, day, exc)
-        _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
-            'ok': False,
-            'errore': str(exc),
-        })
+        try:
+            _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
+                'ok': False,
+                'errore': str(exc),
+            })
+        except TabaUnoError as send_exc:
+            logger.warning('esito errore non inviato id=%s: %s', request_id, send_exc)
         return
     elapsed = time.perf_counter() - started
     if tipo == 'preordine_gratta':
@@ -223,8 +231,10 @@ def poll_once(config, logger) -> None:
         )
     elif tipo == 'preordine_tabacchi':
         logger.info(
-            'lettura id=%s tipo=%s data=%s durata=%.3fs articoli=%s',
-            request_id, tipo, day, elapsed, len(extracted.get('articoli') or []),
+            'lettura id=%s tipo=%s data=%s durata=%.3fs articoli=%s anagrafica=%s',
+            request_id, tipo, day, elapsed,
+            len(extracted.get('articoli') or []),
+            len(extracted.get('anagrafica') or []),
         )
     elif tipo == 'deposita_ordine_logista':
         logger.info(
@@ -246,10 +256,14 @@ def poll_once(config, logger) -> None:
             extracted.get('totale', {}).get('saldo'),
             (extracted.get('pagamenti') or {}).get('totale'),
         )
-    _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
-        'ok': True,
-        'payload': extracted,
-    })
+    try:
+        _request(config, 'POST', f'/api/tabauno/agent/result/{request_id}/', {
+            'ok': True,
+            'payload': extracted,
+        })
+    except TabaUnoError as send_exc:
+        logger.warning('esito ok non inviato id=%s: %s', request_id, send_exc)
+        raise
 
 
 def run_agent(config_path) -> None:

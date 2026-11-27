@@ -471,6 +471,18 @@ def api_tabacchi_preordini(request):
 def accoda_lettura(company, user):
     """Richiesta preordine_tabacchi all'agente; riusa quella già in coda/in lavorazione."""
     expire_requests()
+    # PROCESSING bloccata: l'agente non la riprende più → libera e crea una nuova.
+    stuck_after = timezone.now() - timedelta(seconds=90)
+    TabaUnoRequest.objects.filter(
+        company=company,
+        tipo=TabaUnoRequest.TIPO_PREORDINE_TABACCHI,
+        status=TabaUnoRequest.PROCESSING,
+        picked_at__lt=stuck_after,
+    ).update(
+        status=TabaUnoRequest.ERROR,
+        error='Lettura interrotta, riprova.',
+        completed_at=timezone.now(),
+    )
     existing = TabaUnoRequest.objects.filter(
         company=company,
         tipo=TabaUnoRequest.TIPO_PREORDINE_TABACCHI,
